@@ -1,0 +1,62 @@
+# Os containers ficam como vetcare-postgres-1, vetcare-api-1 e vetcare-web-1.
+# Não fixamos container_name para não conflitar com bancos avulsos do mesmo nome.
+name: vetcare
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vetcare_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      # Locale brasileiro para que a ordenação de nomes respeite os acentos.
+      LANG: pt_BR.utf8
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    healthcheck:
+      # A API só sobe depois que o banco aceita conexões de verdade.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-vetcare_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: VetCare.API/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB:-vetcare_db};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-admin}
+      # Em produção defina Jwt__Chave por variável de ambiente ou cofre de segredos.
+      Jwt__Chave: ${JWT_CHAVE:-VetCareAPI_ChaveDeDesenvolvimento_TrocarEmProducao_2026}
+      Cors__OrigensPermitidas__0: ${WEB_URL:-http://localhost:8080}
+    ports:
+      - "${API_PORT:-5265}:5265"
+    volumes:
+      # Mídias e documentos precisam sobreviver à troca da imagem.
+      - arquivos-api:/app/wwwroot
+
+  web:
+    build:
+      context: ./VetCare.Web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${API_URL:-http://localhost:5265}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  dados-postgres:
+  arquivos-api:

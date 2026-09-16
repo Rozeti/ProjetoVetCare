@@ -1,0 +1,26 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Expo
+.expo/
+
+# Segredos e ambiente
+.env
+appsettings.Production.json
+
+# Arquivos enviados pelos usuários
+VetCare.API/wwwroot/uploads/
+VetCare.API/wwwroot/documentos/
+
+# Saídas de teste
+capturas/
+TestResults/
+*.log

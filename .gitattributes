@@ -1,0 +1,28 @@
+# O Git no Windows costuma converter as quebras de linha ao gravar o arquivo no disco. Nos
+# arquivos abaixo isso quebraria a execução: um script de shell com quebra de linha do Windows
+# não roda no Git Bash nem dentro de um contêiner Linux. Aqui fixamos o formato.
+
+*           text=auto
+
+*.sh        text eol=lf
+*.mjs       text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+nginx.conf  text eol=lf
+.env.example text eol=lf
+
+# Arquivos de comando do Windows precisam do formato do Windows.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binários não devem sofrer conversão nenhuma.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.ttf       binary
+*.woff      binary
+*.woff2     binary

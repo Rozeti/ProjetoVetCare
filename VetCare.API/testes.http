@@ -1,0 +1,347 @@
+###############################################################################
+# VetCare — requisições de referência da API.
+# Rode a API (dotnet run) e execute na ordem: o login preenche a variável @token
+# usada pelas demais requisições.
+###############################################################################
+
+@host = http://localhost:5265
+
+### Health check (não exige autenticação)
+GET {{host}}/health
+
+### HU-001 — Login
+# @name login
+POST {{host}}/api/usuarios/login
+Content-Type: application/json
+
+{
+  "email": "admin@vetcare.com",
+  "senha": "vetcare123"
+}
+
+@token = {{login.response.body.token}}
+
+### HU-001, CA-2 — Credenciais inválidas devolvem mensagem genérica (401)
+POST {{host}}/api/usuarios/login
+Content-Type: application/json
+
+{
+  "email": "admin@vetcare.com",
+  "senha": "senha-errada"
+}
+
+### Dados do usuário autenticado
+GET {{host}}/api/usuarios/me
+Authorization: Bearer {{token}}
+
+### RNF-002 — Sem token o acesso é negado (401)
+GET {{host}}/api/pets
+
+###############################################################################
+# HU-002 — Gestão de usuários (somente Administrador)
+###############################################################################
+
+### Listar usuários
+GET {{host}}/api/usuarios
+Authorization: Bearer {{token}}
+
+### Cadastrar veterinário (cria também o registro profissional)
+# @name novoVeterinario
+POST {{host}}/api/usuarios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Dr. Rafael Nunes",
+  "email": "rafael@vetcare.com",
+  "senha": "senha123",
+  "perfil": "Veterinario",
+  "crmv": "CRMV-DF 55110",
+  "especialidade": "Fisioterapia veterinária"
+}
+
+@veterinarioId = {{novoVeterinario.response.body.veterinarioId}}
+
+### RN-007 — E-mail duplicado é bloqueado (409)
+POST {{host}}/api/usuarios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Duplicado",
+  "email": "rafael@vetcare.com",
+  "senha": "senha123",
+  "perfil": "Veterinario",
+  "crmv": "CRMV-DF 00000"
+}
+
+### Cadastrar tutor
+# @name novoTutor
+POST {{host}}/api/usuarios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Joana Prado",
+  "email": "joana@vetcare.com",
+  "senha": "senha123",
+  "perfil": "Tutor",
+  "telefone": "(61) 98888-7777",
+  "endereco": "Taguatinga, Brasília - DF"
+}
+
+@tutorId = {{novoTutor.response.body.tutorId}}
+@usuarioTutorId = {{novoTutor.response.body.id}}
+
+### HU-002, CA-5 — Redefinir senha (devolve a senha provisória)
+POST {{host}}/api/usuarios/{{usuarioTutorId}}/redefinir-senha
+Authorization: Bearer {{token}}
+
+### HU-002, CA-4 — Desativar conta (impede acesso sem excluir dados)
+PATCH {{host}}/api/usuarios/{{usuarioTutorId}}/status
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "ativo": false }
+
+### Reativar conta
+PATCH {{host}}/api/usuarios/{{usuarioTutorId}}/status
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "ativo": true }
+
+###############################################################################
+# HU-003 — Pacientes
+###############################################################################
+
+### Cadastrar paciente
+# @name novoPet
+POST {{host}}/api/pets
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Mel",
+  "especie": "Cachorro",
+  "raca": "Beagle",
+  "sexo": "Fêmea",
+  "dataNascimento": "2020-08-30",
+  "pesoAtualKg": 12.4,
+  "tutorId": "{{tutorId}}"
+}
+
+@pacienteId = {{novoPet.response.body.id}}
+
+### RN-001 — Paciente sem tutor é recusado (400)
+POST {{host}}/api/pets
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Sem tutor",
+  "especie": "Gato",
+  "dataNascimento": "2021-01-10",
+  "tutorId": "00000000-0000-0000-0000-000000000000"
+}
+
+### Listar pacientes (aceita busca e filtro por status)
+GET {{host}}/api/pets?busca=Mel&ativo=true
+Authorization: Bearer {{token}}
+
+###############################################################################
+# Tratamento e agenda
+###############################################################################
+
+### Abrir tratamento
+# @name novoTratamento
+POST {{host}}/api/tratamentos
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "dataInicio": "2026-09-16",
+  "objetivoTerapeutico": "Reabilitação de displasia coxofemoral.",
+  "observacoesGerais": "Tutora orientada sobre controle de peso."
+}
+
+@tratamentoId = {{novoTratamento.response.body.id}}
+
+### HU-004, CA-1 — Agendar sessão (nasce Aguardando confirmação)
+# @name novaSessao
+POST {{host}}/api/sessoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "dataHora": "2026-10-05T14:00:00",
+  "observacoes": "Trazer o pet em jejum de duas horas."
+}
+
+@sessaoId = {{novaSessao.response.body.id}}
+
+### RN-002 — Conflito de horário no mesmo veterinário (409)
+POST {{host}}/api/sessoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "dataHora": "2026-10-05T14:00:00"
+}
+
+### HU-004, CA-5 — Agendamento retroativo é bloqueado (400)
+POST {{host}}/api/sessoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "dataHora": "2020-01-10T09:00:00"
+}
+
+### HU-004, CA-3 — Agenda do veterinário (visao = dia | semana | mes)
+GET {{host}}/api/sessoes/agenda/{{veterinarioId}}?data=2026-10-05&visao=semana
+Authorization: Bearer {{token}}
+
+### HU-005 — Agenda geral consolidada da clínica
+GET {{host}}/api/sessoes/agenda-geral?data=2026-10-05&visao=dia
+Authorization: Bearer {{token}}
+
+### HU-006 — Confirmar presença
+PATCH {{host}}/api/sessoes/{{sessaoId}}/status
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "status": "Confirmada" }
+
+###############################################################################
+# HU-007 / HU-008 / HU-009 — Registros clínicos
+###############################################################################
+
+### RN-010 — Avaliação com campo obrigatório vazio é recusada (400)
+POST {{host}}/api/avaliacoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "queixaPrincipal": "Dificuldade para levantar",
+  "anamnese": "",
+  "exameFisico": "Dor à extensão do quadril",
+  "hipoteseDiagnostica": "Displasia coxofemoral",
+  "planoTerapeutico": "Hidroterapia"
+}
+
+### HU-007, CA-1 — Avaliação completa (com observação interna opcional)
+# @name novaAvaliacao
+POST {{host}}/api/avaliacoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "queixaPrincipal": "Dificuldade para levantar após repouso.",
+  "anamnese": "Quadro progressivo nos últimos seis meses.",
+  "exameFisico": "Dor à extensão do quadril, massa muscular reduzida.",
+  "hipoteseDiagnostica": "Displasia coxofemoral bilateral.",
+  "planoTerapeutico": "Hidroterapia semanal e controle de peso.",
+  "observacaoInterna": "Tutora demonstra dificuldade em seguir as orientações."
+}
+
+@avaliacaoId = {{novaAvaliacao.response.body.id}}
+
+### RN-004 — Corrigir a avaliação (a versão anterior é arquivada)
+PUT {{host}}/api/avaliacoes/{{avaliacaoId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "queixaPrincipal": "Dificuldade para levantar após repouso prolongado.",
+  "anamnese": "Quadro progressivo nos últimos seis meses.",
+  "exameFisico": "Dor à extensão do quadril, massa muscular reduzida.",
+  "hipoteseDiagnostica": "Displasia coxofemoral bilateral.",
+  "planoTerapeutico": "Hidroterapia duas vezes por semana e controle de peso."
+}
+
+### RN-004 — Histórico de versões do registro
+GET {{host}}/api/avaliacoes/{{avaliacaoId}}/historico
+Authorization: Bearer {{token}}
+
+### HU-008, CA-2 — Escala de dor fora do intervalo 0–10 é recusada (400)
+POST {{host}}/api/atendimentos
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "sessaoId": "{{sessaoId}}",
+  "tecnicasAplicadas": "Hidroterapia",
+  "escalaDor": 15,
+  "evolucaoClinica": "Teste"
+}
+
+### HU-008, CA-1 — Registrar atendimento
+POST {{host}}/api/atendimentos
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "sessaoId": "{{sessaoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "tecnicasAplicadas": "Hidroterapia, Laserterapia, Cinesioterapia",
+  "escalaDor": 4,
+  "evolucaoClinica": "Melhora na transição deitado-em pé.",
+  "proximosPassos": "Manter o protocolo por mais quatro semanas.",
+  "pesoKg": 12.1,
+  "temperaturaCelsius": 38.2,
+  "frequenciaCardiaca": 88,
+  "frequenciaRespiratoria": 22,
+  "observacaoInterna": "Avaliar encaminhamento ortopédico se não houver ganho."
+}
+
+### HU-009 — Observações internas do paciente (rota fechada ao Tutor)
+GET {{host}}/api/observacoes-internas/paciente/{{pacienteId}}
+Authorization: Bearer {{token}}
+
+###############################################################################
+# HU-011 / HU-012 — Prontuário e documentos
+###############################################################################
+
+### HU-011 — Prontuário completo (linha do tempo, evolução, documentos)
+GET {{host}}/api/prontuarios/paciente/{{pacienteId}}
+Authorization: Bearer {{token}}
+
+### HU-012 — Documentos do paciente
+GET {{host}}/api/documentos/paciente/{{pacienteId}}
+Authorization: Bearer {{token}}
+
+###############################################################################
+# HU-014 / HU-015 / HU-016 / HU-017
+###############################################################################
+
+### Conversas do usuário autenticado
+GET {{host}}/api/mensagens/conversas
+Authorization: Bearer {{token}}
+
+### Notificações
+GET {{host}}/api/notificacoes
+Authorization: Bearer {{token}}
+
+### HU-016 — Indicadores do dia (escopo definido pela RN-008)
+GET {{host}}/api/dashboard/indicadores
+Authorization: Bearer {{token}}
+
+### HU-017 — Relatório de produtividade por período
+GET {{host}}/api/dashboard/relatorio-produtividade?inicio=2026-09-01&fim=2026-09-30
+Authorization: Bearer {{token}}
+
+### Configurações da clínica (RN-002 e RN-009 usam estes valores)
+GET {{host}}/api/clinica
+Authorization: Bearer {{token}}

@@ -1,0 +1,12 @@
+{
+  "name": "vetcare-testes",
+  "private": true,
+  "description": "Dependências dos roteiros de verificação ponta a ponta do VetCare.",
+  "type": "module",
+  "scripts": {
+    "navegador": "node teste-navegador.mjs ./capturas"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

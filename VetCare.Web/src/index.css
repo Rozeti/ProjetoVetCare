@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+/*
+ * RNF-008 — Design system do VetCare.
+ * Tipografia display para títulos, cards arredondados, paleta acessível e
+ * identidade única compartilhada por todos os perfis.
+ */
+@theme {
+  --color-brand-50: #f0f9ff;
+  --color-brand-100: #e0f2fe;
+  --color-brand-200: #bae6fd;
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #38bdf8;
+  --color-brand: #0284c7;
+  --color-brand-600: #0272ae;
+  --color-brand-dark: #0369a1;
+  --color-brand-900: #0c4a6e;
+
+  --color-sucesso: #059669;
+  --color-sucesso-claro: #d1fae5;
+  --color-alerta: #d97706;
+  --color-alerta-claro: #fef3c7;
+  --color-perigo: #dc2626;
+  --color-perigo-claro: #fee2e2;
+  --color-info: #7c3aed;
+  --color-info-claro: #ede9fe;
+
+  --font-display: 'Outfit', 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-family: var(--font-sans);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+
+  /* Foco sempre visível: acessibilidade de navegação por teclado (RNF-001). */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * Registradas como @utility — e não dentro de @layer components — porque no
+ * Tailwind v4 só utilitários podem ser reaproveitados por @apply em outras regras,
+ * que é como as variantes de botão são construídas a partir de .vc-botao.
+ */
+@utility vc-card {
+  @apply bg-white rounded-2xl border border-slate-200 shadow-sm;
+}
+
+@utility vc-titulo-pagina {
+  @apply text-2xl font-bold text-slate-900;
+}
+
+@utility vc-subtitulo {
+  @apply text-sm text-slate-500 mt-1;
+}
+
+@utility vc-rotulo {
+  @apply block text-sm font-semibold text-slate-700 mb-1.5;
+}
+
+@utility vc-campo {
+  @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900
+         transition
+         focus:border-brand focus:ring-2 focus:ring-brand-200 focus:outline-none
+         disabled:bg-slate-100 disabled:text-slate-500;
+}
+
+@utility vc-botao {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+         transition disabled:opacity-60 disabled:cursor-not-allowed;
+}
+
+@utility vc-botao-primario {
+  @apply vc-botao bg-brand text-white hover:bg-brand-dark;
+}
+
+@utility vc-botao-secundario {
+  @apply vc-botao bg-white text-slate-700 border border-slate-300 hover:bg-slate-50;
+}
+
+@utility vc-botao-perigo {
+  @apply vc-botao bg-perigo text-white hover:bg-red-700;
+}
+
+@utility vc-botao-sutil {
+  @apply vc-botao bg-brand-100 text-brand-dark hover:bg-brand-200;
+}
+
+@utility vc-etiqueta {
+  @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold;
+}
+
+@layer components {
+  .vc-campo::placeholder {
+    @apply text-slate-400;
+  }
+
+  .vc-tabela {
+    @apply w-full text-sm text-left;
+  }
+
+  .vc-tabela thead th {
+    @apply px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-50;
+  }
+
+  .vc-tabela tbody td {
+    @apply px-4 py-3 border-t border-slate-100 text-slate-700;
+  }
+
+  .vc-tabela tbody tr:hover {
+    @apply bg-slate-50;
+  }
+}
