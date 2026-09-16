@@ -178,19 +178,35 @@ ainda tem algo rodando ali; volte e feche.
 
 ### Passo 4 — Crie o arquivo de senhas
 
+São **dois arquivos de nomes parecidos**, com papéis opostos. Vale entender antes de rodar
+o comando:
+
+| Arquivo | De onde vem | Vai para o GitHub? | Para que serve |
+|---|---|---|---|
+| `.env.example` | Já vem junto com o projeto | **Sim** | É o modelo, com valores de mentira. Ninguém edita |
+| `.env` | Você cria, com o comando abaixo | **Não, nunca** | Guarda as senhas desta máquina |
+
 ```
 copy .env.example .env
 ```
 
-Isso cria um arquivo novo chamado `.env`. **Abra o `.env`** — e não o `.env.example` — no
-Bloco de Notas e troque duas linhas:
+O comando lê o modelo e faz uma cópia dele com o nome `.env`. Por isso o `.env.example`
+precisa estar no repositório: sem ele, este comando responde *"O sistema não pode encontrar
+o arquivo especificado"*.
+
+E é por isso também que o `.env` **não** está no repositório: ele é diferente em cada
+computador, e conteria a senha de quem o criou.
+
+Agora **abra o `.env`** — e não o `.env.example` — no Bloco de Notas e troque duas linhas:
 
 - `POSTGRES_PASSWORD=` — coloque uma senha sua para o banco
 - `JWT_CHAVE=` — coloque uma frase longa, **com pelo menos 32 caracteres**
 
-Salve e feche. O `.env` nunca vai para o Git: ele guarda as senhas desta máquina. Já o
-`.env.example` é o modelo que vai para o repositório — por isso ele não pode ter senha de
-verdade dentro.
+Salve e feche.
+
+> **Se você pular este passo**, o sistema sobe assim mesmo, usando a senha padrão `admin` e
+> uma chave de exemplo. Serve para estudar, mas qualquer pessoa que conheça o projeto sabe
+> essas senhas — crie o `.env` antes de guardar qualquer dado que importe.
 
 > **Não use o caractere `$` nas senhas.** O Docker entende o cifrão como início de uma
 > variável e apaga o trecho seguinte: uma chave `7xX$mK9!bP2` chega à aplicação como `7xX!bP2`,
