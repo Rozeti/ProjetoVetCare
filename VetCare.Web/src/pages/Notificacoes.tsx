@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CalendarClock, CalendarPlus, CheckCheck, ClipboardList, MessageSquare } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Notificacao } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, SemDados } from '../components/ui';
 import { tempoRelativo } from '../utils/formato';
@@ -34,6 +35,8 @@ export function Notificacoes() {
     buscar,
     'Não foi possível carregar as notificações.',
   );
+
+  useAtualizacao(['notificacoes'], recarregar);
 
   const notificacoes = dados ?? [];
 

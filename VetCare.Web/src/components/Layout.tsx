@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -15,10 +15,13 @@ import {
   Settings,
   Stethoscope,
   Users,
+  Wifi,
+  WifiOff,
   UserSquare2,
   X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/auth';
+import { useAtualizacao, useAtualizacoes } from '../contexts/atualizacoes';
 import { api } from '../services/api';
 import type { Perfil } from '../types';
 import { Avatar } from './ui';
@@ -56,11 +59,19 @@ const NOME_DO_PERFIL: Record<Perfil, string> = {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { usuario, sair } = useAuth();
+  const { conectado } = useAtualizacoes();
   const navigate = useNavigate();
   const local = useLocation();
 
   const [naoLidas, setNaoLidas] = useState(0);
   const [notificacoes, setNotificacoes] = useState(0);
+
+  // Recontar é uma leitura barata; a versão serve só para disparar o efeito abaixo.
+  const [versaoDosContadores, setVersaoDosContadores] = useState(0);
+
+  const recontar = useCallback(() => setVersaoDosContadores((atual) => atual + 1), []);
+
+  useAtualizacao(['mensagens', 'notificacoes', 'sessoes'], recontar);
 
   // Guardar a rota em que o menu foi aberto, em vez de um booleano, faz o menu lateral
   // do celular se fechar sozinho ao navegar — sem precisar de um efeito para isso.
@@ -89,13 +100,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
     carregarContadores();
 
-    const intervalo = window.setInterval(carregarContadores, 30_000);
+    // O mural de atualizações é quem avisa das novidades; a leitura periódica
+    // permanece como rede de segurança caso a conexão com ele esteja caída.
+    const intervalo = window.setInterval(carregarContadores, 60_000);
 
     return () => {
       ativo = false;
       window.clearInterval(intervalo);
     };
-  }, [local.pathname]);
+  }, [local.pathname, versaoDosContadores]);
 
   if (!usuario) {
     return null;
@@ -150,6 +163,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="border-t border-slate-200 p-3">
+          {/* Deixa visível se a tela está ou não recebendo as alterações em tempo real. */}
+          <p
+            className={`mb-2 flex items-center gap-2 px-3 text-xs ${
+              conectado ? 'text-slate-400' : 'text-alerta'
+            }`}
+            title={
+              conectado
+                ? 'Esta tela se atualiza sozinha quando algo muda no sistema.'
+                : 'Sem conexão com as atualizações automáticas. Os dados são recarregados periodicamente.'
+            }
+          >
+            {conectado ? <Wifi size={13} /> : <WifiOff size={13} />}
+            {conectado ? 'Atualizando em tempo real' : 'Reconectando...'}
+          </p>
+
           <Link
             to="/perfil"
             className="flex items-center gap-3 rounded-xl p-2 transition hover:bg-slate-100"

@@ -218,6 +218,45 @@ export interface Mensagem {
   propria: boolean;
 }
 
+/**
+ * Recursos que a API anuncia quando algo muda no banco. O nome vem do controller
+ * correspondente em minúsculas, então `/api/sessoes` publica em `sessoes`.
+ */
+export type RecursoAtualizado =
+  | 'sessoes'
+  | 'pets'
+  | 'tratamentos'
+  | 'atendimentos'
+  | 'avaliacoes'
+  | 'prescricoes'
+  | 'vacinas'
+  | 'alergias'
+  | 'prontuarios'
+  | 'documentos'
+  | 'midias'
+  | 'mensagens'
+  | 'notificacoes'
+  | (string & {});
+
+/** Uma alteração já gravada no banco, avisada às telas abertas. */
+export interface EventoAtualizacao {
+  versao: number;
+  recurso: RecursoAtualizado;
+  acao: 'criado' | 'atualizado' | 'removido';
+  /** Chega vazio no aplicativo do tutor: aqui basta saber que algo mudou (RN-003). */
+  descricao: string;
+  autor: string;
+  propria: boolean;
+  em: string;
+}
+
+export interface FeedAtualizacoes {
+  versao: number;
+  /** O aplicativo perdeu eventos demais e deve recarregar tudo. */
+  reiniciar: boolean;
+  eventos: EventoAtualizacao[];
+}
+
 export interface Notificacao {
   id: string;
   tipo: string;

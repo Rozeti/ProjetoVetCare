@@ -83,6 +83,12 @@ O portal **nunca** fala direto com o banco. Ele pede à API, e a API decide o qu
 É por isso que um tutor não consegue ver a observação interna do veterinário nem trocando o
 endereço no navegador: a API não entrega esse dado para o perfil dele.
 
+As telas também não ficam paradas esperando alguém apertar F5. Cada uma mantém uma linha aberta
+com a API, que avisa na hora em que algo é gravado no banco. Quando o tutor confirma a presença
+pelo celular, a agenda do veterinário, a agenda geral do apoio e o painel do administrativo
+mudam sozinhos em menos de um segundo — e o mesmo vale para cancelamentos, pets novos e
+mensagens. O Teste 3, mais adiante, mostra isso funcionando com duas janelas lado a lado.
+
 ---
 
 ## Parte 2 — Onde fica o banco de dados
@@ -178,35 +184,19 @@ ainda tem algo rodando ali; volte e feche.
 
 ### Passo 4 — Crie o arquivo de senhas
 
-São **dois arquivos de nomes parecidos**, com papéis opostos. Vale entender antes de rodar
-o comando:
-
-| Arquivo | De onde vem | Vai para o GitHub? | Para que serve |
-|---|---|---|---|
-| `.env.example` | Já vem junto com o projeto | **Sim** | É o modelo, com valores de mentira. Ninguém edita |
-| `.env` | Você cria, com o comando abaixo | **Não, nunca** | Guarda as senhas desta máquina |
-
 ```
 copy .env.example .env
 ```
 
-O comando lê o modelo e faz uma cópia dele com o nome `.env`. Por isso o `.env.example`
-precisa estar no repositório: sem ele, este comando responde *"O sistema não pode encontrar
-o arquivo especificado"*.
-
-E é por isso também que o `.env` **não** está no repositório: ele é diferente em cada
-computador, e conteria a senha de quem o criou.
-
-Agora **abra o `.env`** — e não o `.env.example` — no Bloco de Notas e troque duas linhas:
+Isso cria um arquivo novo chamado `.env`. **Abra o `.env`** — e não o `.env.example` — no
+Bloco de Notas e troque duas linhas:
 
 - `POSTGRES_PASSWORD=` — coloque uma senha sua para o banco
 - `JWT_CHAVE=` — coloque uma frase longa, **com pelo menos 32 caracteres**
 
-Salve e feche.
-
-> **Se você pular este passo**, o sistema sobe assim mesmo, usando a senha padrão `admin` e
-> uma chave de exemplo. Serve para estudar, mas qualquer pessoa que conheça o projeto sabe
-> essas senhas — crie o `.env` antes de guardar qualquer dado que importe.
+Salve e feche. O `.env` nunca vai para o Git: ele guarda as senhas desta máquina. Já o
+`.env.example` é o modelo que vai para o repositório — por isso ele não pode ter senha de
+verdade dentro.
 
 > **Não use o caractere `$` nas senhas.** O Docker entende o cifrão como início de uma
 > variável e apaga o trecho seguinte: uma chave `7xX$mK9!bP2` chega à aplicação como `7xX!bP2`,
@@ -482,9 +472,39 @@ Faça nesta ordem, porque cada passo depende do anterior:
 Depois **saia e entre como o tutor** que você criou. Ele deve ver o próprio pet, a agenda e o
 prontuário — **sem** as observações internas, e sem os menus Usuários, Relatórios e Auditoria.
 
-### Teste 3 — Os roteiros automáticos
+### Teste 3 — O tutor cadastra um pet e a clínica vê na hora
 
-Estes são 127 verificações que o sistema faz em si mesmo. Elas criam dados de demonstração,
+Este teste mostra as duas funcionalidades mais recentes ao mesmo tempo. Ele precisa de **duas
+janelas abertas lado a lado** — pode ser o navegador normal numa e uma janela anônima na outra,
+para as duas contas não brigarem pela mesma sessão.
+
+1. **Janela A:** entre como **administrador** e deixe a tela **Pacientes** aberta.
+2. **Janela B:** entre como **tutor** e vá em **Meus pets**.
+3. Na janela B, clique em **Cadastrar pet**. Preencha nome, espécie e data de nascimento e
+   salve. Repare que **não existe campo de tutor**: o sistema sabe quem você é e vincula o
+   animal a você — é a RN-001 sendo garantida pelo servidor, e não pela tela.
+4. **Olhe para a janela A sem tocar em nada.** Em cerca de um segundo o pet novo aparece
+   sozinho na lista de pacientes da clínica.
+
+Agora o caminho inverso, que é o que acontece no dia a dia:
+
+5. **Janela A:** vá em **Agenda geral** e deixe aberta numa data em que exista sessão.
+6. **Janela B:** vá em **Minha agenda** e clique em **Confirmar presença** numa sessão.
+7. **Janela A** muda sozinha: a sessão passa de *Aguardando confirmação* para *Confirmada*.
+
+Vale o mesmo para o cancelamento, e vale nos dois sentidos — se a clínica cancelar uma sessão
+na janela A, a agenda do tutor na janela B se atualiza sozinha. No aplicativo do celular é
+igual: deixe a tela aberta e ela acompanha o que a clínica faz.
+
+> No rodapé do menu lateral há a indicação **"Atualizando em tempo real"**. Se ela mudar para
+> **"Reconectando..."**, a conexão com a API caiu; as telas voltam a buscar os dados de tempos
+> em tempos até ela se restabelecer, então nada se perde.
+
+O mesmo cadastro existe no aplicativo: em **Meus pets**, botão **+ Cadastrar**.
+
+### Teste 4 — Os roteiros automáticos
+
+Estes são 154 verificações que o sistema faz em si mesmo. Elas criam dados de demonstração,
 então **rode num banco de teste, não no que você já começou a usar de verdade.**
 
 Precisa do Git Bash (vem junto com o Git). Clique com o botão direito na pasta do projeto →
@@ -495,6 +515,7 @@ bash testes/criar-dados-demonstracao.sh
 bash testes/teste-regras-negocio.sh
 bash testes/teste-api-mobile.sh
 bash testes/teste-funcionalidades-novas.sh
+bash testes/teste-tempo-real.sh
 ```
 
 Cada um termina com um resumo. O esperado é:
@@ -503,9 +524,10 @@ Cada um termina com um resumo. O esperado é:
  OK: 46   FALHAS: 0
  OK: 26   FALHAS: 0
  OK: 35   FALHAS: 0
+ OK: 27   FALHAS: 0
 ```
 
-Há ainda um quarto roteiro que abre o Microsoft Edge de verdade e clica pelas telas sozinho:
+Há ainda um quinto roteiro que abre o Microsoft Edge de verdade e clica pelas telas sozinho:
 
 ```bash
 npm --prefix testes i puppeteer-core@23
@@ -520,7 +542,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Aprovado: 73`.
+Esperado: `Aprovado: 91`.
 
 ---
 
@@ -605,7 +627,8 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 |---|---|---|
 | **"Ocorreu um erro inesperado"** ao tentar entrar | Uma API antiga, fora do Docker, está ocupando a porta 5265 | Veja o quadro abaixo desta tabela |
 | "Não foi possível falar com o servidor" no portal | A API não está no ar | `docker compose ps` e veja se `api` está `healthy`; senão `docker compose logs api` |
-| `/health/pronto` diz `Unhealthy` no banco | Contêiner do banco parado ou senha diferente | `docker compose start postgres` e confira `POSTGRES_PASSWORD` no `.env` |
+| `/health/pronto` diz `Unhealthy` no banco | Contêiner do banco parado | `docker compose start postgres` |
+| A API fica **para sempre** em `health: starting` e `docker compose logs api` mostra `28P01: password authentication failed` | Você trocou `POSTGRES_PASSWORD` no `.env` depois que o banco já existia | Veja o quadro "A senha do banco não bate com o `.env`" abaixo |
 | A API fica em `Restarting` e o log diz "Jwt:Chave com pelo menos 32 bytes" | A chave no `.env` tem um `$`, que o Docker apagou junto com o resto | Troque `JWT_CHAVE` por uma frase longa sem `$` e rode `docker compose up -d` |
 | "port is already allocated" ao subir | Outro programa usa a porta 5432 ou 8080 | `docker stop vetcare-postgres`, ou mude `POSTGRES_PORT` / `WEB_PORT` no `.env` |
 | "Muitas tentativas" no login | Proteção contra ataque de senha | Espere 1 minuto |
@@ -614,6 +637,36 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 | Tudo travou e você quer recomeçar | — | `docker compose down` e depois `docker compose up -d` (**sem** `-v`, senão apaga os dados) |
 
 ---
+
+### A senha do banco não bate com o `.env`
+
+O sintoma: depois de um `docker compose up -d --build`, o `api` nunca sai de `health: starting`,
+e `docker compose logs api` repete `password authentication failed for user "postgres"` até a
+API desistir, reiniciar e começar de novo.
+
+A causa é uma pegadinha do próprio PostgreSQL. Ele só lê `POSTGRES_PASSWORD` **uma vez**, no
+momento em que cria o volume de dados; daí em diante a senha mora dentro do volume, e mudar o
+`.env` não muda nada lá. Então, se o banco subiu pela primeira vez com a senha de exemplo e você
+só depois colocou a senha de verdade no `.env`, os contêineres antigos continuam funcionando
+(ainda carregam a senha antiga), mas o primeiro `--build` recria a API com a senha nova — e ela
+para de conseguir entrar.
+
+A correção é alinhar a senha do banco à do `.env`, o que preserva todos os dados. Troque
+`SENHA-DO-ENV` pelo valor que está em `POSTGRES_PASSWORD` no seu `.env`:
+
+```
+docker exec -it vetcare-postgres-1 psql -U postgres -c "ALTER USER postgres PASSWORD 'SENHA-DO-ENV';"
+docker compose restart api
+```
+
+Dez segundos depois, `docker compose ps` deve mostrar o `api` como `healthy`.
+
+> Por que o primeiro comando funciona sem pedir senha? Dentro do contêiner, conexões locais são
+> de confiança. É só por esse caminho que dá para trocar a senha — pela rede, a API precisa
+> acertá-la.
+
+Se preferir recomeçar do zero em vez de corrigir, `docker compose down -v` apaga o volume e o
+banco nasce de novo com a senha atual do `.env` — mas **apaga todos os dados**.
 
 ### O erro "Ocorreu um erro inesperado" no login
 

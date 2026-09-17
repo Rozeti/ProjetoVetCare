@@ -1,5 +1,15 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  type KeyboardTypeOptions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { cores, espacos, raios, sombraCard } from '../tema';
 import { iniciais } from '../utils/formato';
 
@@ -98,6 +108,160 @@ export function TituloSecao({ children, estilo }: { children: ReactNode; estilo?
   );
 }
 
+/** Rótulo e campo de texto do formulário, com o mesmo desenho dos cartões. */
+export function CampoTexto({
+  rotulo,
+  valor,
+  aoMudar,
+  obrigatorio,
+  dica,
+  exemplo,
+  teclado = 'default',
+  maximo,
+}: {
+  rotulo: string;
+  valor: string;
+  aoMudar: (texto: string) => void;
+  obrigatorio?: boolean;
+  dica?: string;
+  exemplo?: string;
+  teclado?: KeyboardTypeOptions;
+  maximo?: number;
+}) {
+  return (
+    <View style={estilos.campo}>
+      <Text style={estilos.rotulo}>
+        {rotulo}
+        {obrigatorio ? <Text style={estilos.obrigatorio}> *</Text> : null}
+      </Text>
+
+      <TextInput
+        style={estilos.entrada}
+        value={valor}
+        onChangeText={aoMudar}
+        placeholder={exemplo}
+        placeholderTextColor={cores.textoSuave}
+        keyboardType={teclado}
+        maxLength={maximo}
+        accessibilityLabel={rotulo}
+      />
+
+      {dica ? <Text style={estilos.dica}>{dica}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * Escolha entre poucas opções. Botões lado a lado evitam a lista suspensa, que no
+ * celular exige um toque a mais e esconde as alternativas.
+ */
+export function SeletorDeOpcao({
+  rotulo,
+  opcoes,
+  selecionada,
+  aoSelecionar,
+  obrigatorio,
+}: {
+  rotulo: string;
+  opcoes: readonly string[];
+  selecionada: string;
+  aoSelecionar: (opcao: string) => void;
+  obrigatorio?: boolean;
+}) {
+  return (
+    <View style={estilos.campo}>
+      <Text style={estilos.rotulo}>
+        {rotulo}
+        {obrigatorio ? <Text style={estilos.obrigatorio}> *</Text> : null}
+      </Text>
+
+      <View style={estilos.opcoes}>
+        {opcoes.map((opcao) => {
+          const ativa = opcao === selecionada;
+
+          return (
+            <TouchableOpacity
+              key={opcao}
+              style={[estilos.opcao, ativa && estilos.opcaoAtiva]}
+              onPress={() => aoSelecionar(opcao)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: ativa }}
+            >
+              <Text style={[estilos.opcaoTexto, ativa && estilos.opcaoTextoAtivo]}>{opcao}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/** Caixa de marcação simples, para os campos de sim ou não. */
+export function CampoDeMarcacao({
+  rotulo,
+  marcado,
+  aoAlternar,
+}: {
+  rotulo: string;
+  marcado: boolean;
+  aoAlternar: (valor: boolean) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={estilos.marcacao}
+      onPress={() => aoAlternar(!marcado)}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: marcado }}
+      accessibilityLabel={rotulo}
+    >
+      <View style={[estilos.caixa, marcado && estilos.caixaMarcada]}>
+        {marcado ? <Text style={estilos.caixaTexto}>✓</Text> : null}
+      </View>
+      <Text style={estilos.marcacaoTexto}>{rotulo}</Text>
+    </TouchableOpacity>
+  );
+}
+
+export function Botao({
+  titulo,
+  aoPressionar,
+  variante = 'primario',
+  desabilitado,
+  carregando,
+  estilo,
+}: {
+  titulo: string;
+  aoPressionar: () => void;
+  variante?: 'primario' | 'secundario';
+  desabilitado?: boolean;
+  carregando?: boolean;
+  estilo?: StyleProp<ViewStyle>;
+}) {
+  const ehPrimario = variante === 'primario';
+  const inativo = desabilitado || carregando;
+
+  return (
+    <TouchableOpacity
+      style={[
+        estilos.botao,
+        ehPrimario ? estilos.botaoPrimario : estilos.botaoSecundario,
+        inativo && estilos.botaoInativo,
+        estilo,
+      ]}
+      onPress={aoPressionar}
+      disabled={inativo}
+      accessibilityRole="button"
+    >
+      {carregando ? (
+        <ActivityIndicator size="small" color={ehPrimario ? '#ffffff' : cores.marca} />
+      ) : null}
+      <Text style={ehPrimario ? estilos.botaoPrimarioTexto : estilos.botaoSecundarioTexto}>
+        {titulo}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 const estilos = StyleSheet.create({
   cartao: {
     backgroundColor: cores.superficie,
@@ -174,5 +338,117 @@ const estilos = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: cores.texto,
+  },
+  campo: {
+    marginBottom: espacos.md,
+  },
+  rotulo: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: cores.textoSecundario,
+    marginBottom: 6,
+  },
+  obrigatorio: {
+    color: cores.perigo,
+  },
+  entrada: {
+    backgroundColor: cores.superficie,
+    borderWidth: 1,
+    borderColor: cores.borda,
+    borderRadius: raios.md,
+    paddingHorizontal: espacos.md,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: cores.texto,
+  },
+  dica: {
+    marginTop: 4,
+    fontSize: 12,
+    color: cores.textoSuave,
+  },
+  opcoes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: espacos.sm,
+  },
+  opcao: {
+    paddingHorizontal: espacos.md,
+    paddingVertical: 9,
+    borderRadius: raios.cheio,
+    borderWidth: 1,
+    borderColor: cores.borda,
+    backgroundColor: cores.superficie,
+  },
+  opcaoAtiva: {
+    borderColor: cores.marca,
+    backgroundColor: cores.marcaClara,
+  },
+  opcaoTexto: {
+    fontSize: 14,
+    color: cores.textoSecundario,
+  },
+  opcaoTextoAtivo: {
+    color: cores.marcaEscura,
+    fontWeight: '700',
+  },
+  marcacao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacos.sm,
+    marginBottom: espacos.md,
+  },
+  caixa: {
+    width: 22,
+    height: 22,
+    borderRadius: raios.sm,
+    borderWidth: 1,
+    borderColor: cores.borda,
+    backgroundColor: cores.superficie,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  caixaMarcada: {
+    backgroundColor: cores.marca,
+    borderColor: cores.marca,
+  },
+  caixaTexto: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  marcacaoTexto: {
+    flex: 1,
+    fontSize: 14,
+    color: cores.texto,
+  },
+  botao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: espacos.sm,
+    paddingVertical: 13,
+    paddingHorizontal: espacos.md,
+    borderRadius: raios.md,
+  },
+  botaoPrimario: {
+    backgroundColor: cores.marca,
+  },
+  botaoPrimarioTexto: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  botaoSecundario: {
+    backgroundColor: cores.superficie,
+    borderWidth: 1,
+    borderColor: cores.borda,
+  },
+  botaoSecundarioTexto: {
+    color: cores.textoSecundario,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  botaoInativo: {
+    opacity: 0.5,
   },
 });

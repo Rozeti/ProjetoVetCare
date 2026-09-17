@@ -7,6 +7,7 @@ import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemD
 import { Paginacao } from '../components/Paginacao';
 import { formatarData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
 
 const PERFIS: { valor: Perfil; rotulo: string }[] = [
@@ -71,6 +72,8 @@ export function Usuarios() {
     'Não foi possível carregar os usuários.',
     300,
   );
+
+  useAtualizacao(['usuarios', 'veterinarios', 'tutores'], recarregar);
 
   const pagina = dados ?? paginaVazia<Usuario>();
 

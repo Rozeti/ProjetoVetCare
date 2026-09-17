@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CalendarDays, Check, Info, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Sessao } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { estiloStatusSessao, formatarDataExtensa, formatarHora } from '../utils/formato';
@@ -21,6 +22,9 @@ export function MinhaAgenda() {
     buscar,
     'Não foi possível carregar sua agenda.',
   );
+
+  // O reagendamento ou o cancelamento feito pela clínica chega sem recarregar a página.
+  useAtualizacao(['sessoes', 'tratamentos'], recarregar);
 
   const sessoes = dados ?? [];
 

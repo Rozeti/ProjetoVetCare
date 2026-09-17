@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { api } from './services/api';
 import { useAuth } from './contextos/AuthContext';
+import { useAtualizacao } from './contextos/AtualizacoesContext';
 import { Icone } from './componentes/Icone';
 import { cores } from './tema';
 
@@ -50,11 +51,15 @@ function AbasDoTutor() {
     }
   }, []);
 
-  // HU-015: os contadores acompanham as novidades sem exigir ação do usuário.
+  // HU-015: os contadores acompanham as novidades sem exigir ação do usuário. O mural
+  // de atualizações avisa na hora; o temporizador fica como rede de segurança para o
+  // caso de a conexão com ele estar caída.
+  useAtualizacao(['mensagens', 'notificacoes', 'sessoes'], atualizarContadores);
+
   useEffect(() => {
     atualizarContadores();
 
-    const intervalo = setInterval(atualizarContadores, 30_000);
+    const intervalo = setInterval(atualizarContadores, 60_000);
     return () => clearInterval(intervalo);
   }, [atualizarContadores]);
 

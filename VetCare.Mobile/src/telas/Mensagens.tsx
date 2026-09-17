@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
+import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Conversa, Mensagem, Usuario } from '../tipos';
 import { Avatar, Aviso, Cartao, Carregando, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
@@ -55,6 +56,29 @@ export function Mensagens() {
       if (!selecionado) carregarConversas();
     }, [carregarConversas, selecionado]),
   );
+
+  /** Releitura silenciosa: a tela não pisca quando chega mensagem nova. */
+  const recarregarConversa = useCallback(async (usuarioId: string) => {
+    try {
+      const { data } = await api.get<Mensagem[]>(`/api/mensagens/conversa/${usuarioId}`);
+      setMensagens(data);
+    } catch {
+      // Uma falha momentânea aqui não deve apagar o que já está na tela.
+    }
+  }, []);
+
+  // HU-014: a mensagem aparece no momento em que o outro lado a envia. Com a conversa
+  // aberta relemos a conversa; na lista, relemos a lista.
+  const aoChegarMensagem = useCallback(() => {
+    if (selecionado) {
+      recarregarConversa(selecionado.id);
+      return;
+    }
+
+    carregarConversas();
+  }, [selecionado, recarregarConversa, carregarConversas]);
+
+  useAtualizacao(['mensagens'], aoChegarMensagem);
 
   /** HU-014, CA-3: abrir a conversa marca as mensagens recebidas como lidas. */
   const abrirConversa = useCallback(async (usuarioId: string, nome: string) => {

@@ -9,6 +9,7 @@ em execução, comprovando o comportamento ponta a ponta.
 | `teste-regras-negocio.sh` | 46 | API em `http://localhost:5265` |
 | `teste-api-mobile.sh` | 26 | API + dados de demonstração |
 | `teste-funcionalidades-novas.sh` | 33 a 35 | API + dados de demonstração |
+| `teste-tempo-real.sh` | 27 | API + dados de demonstração |
 | `teste-navegador.mjs` | 20 | API + front-end em `http://localhost:5173` + Microsoft Edge |
 | `criar-dados-demonstracao.sh` | — | API |
 
@@ -75,7 +76,23 @@ Em `Development` percorre a recuperação de senha de ponta a ponta, usando o to
 resposta devolve; em `Production` verifica justamente o contrário — que o token não é
 exposto e que a documentação da API está desligada.
 
-## 4. Interface web (navegador real)
+## 4. Cadastro pelo tutor e sincronia entre as telas
+
+Cobre as duas funcionalidades mais recentes. O cadastro de pet feito pelo próprio tutor é
+verificado de ponta a ponta — inclusive a garantia de que o vínculo da RN-001 sai do token e
+não do corpo da requisição, e de que o animal aparece na lista de pacientes da clínica.
+
+A sincronia é verificada do jeito que o usuário a percebe: telas do veterinário, do apoio e do
+administrativo ficam penduradas no mural enquanto o tutor confirma a presença pelo aplicativo,
+e o roteiro mede quanto tempo levaram para acordar. Também confere o caminho inverso (a
+clínica cancela, o aplicativo do tutor é avisado), a privacidade do aviso que chega ao Tutor
+(RN-003) e que uma requisição recusada não acorda tela nenhuma.
+
+```bash
+bash testes/teste-tempo-real.sh
+```
+
+## 5. Interface web (navegador real)
 
 Roteiro com Puppeteer sobre o Microsoft Edge: percorre login, painel, pacientes,
 prontuário com todas as abas, agenda geral, relatórios, auditoria, responsividade em tela

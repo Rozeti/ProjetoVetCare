@@ -413,6 +413,52 @@ export interface Clinica {
   duracaoSessaoMinutos: number;
 }
 
+/**
+ * Recursos que a API anuncia quando algo muda no banco. O nome vem do controller
+ * correspondente em minúsculas, então `/api/sessoes` publica em `sessoes`.
+ */
+export type RecursoAtualizado =
+  | 'sessoes'
+  | 'pets'
+  | 'tutores'
+  | 'veterinarios'
+  | 'usuarios'
+  | 'tratamentos'
+  | 'atendimentos'
+  | 'avaliacoes'
+  | 'prescricoes'
+  | 'vacinas'
+  | 'alergias'
+  | 'prontuarios'
+  | 'documentos'
+  | 'midias'
+  | 'observacoesinternas'
+  | 'bloqueiosagenda'
+  | 'mensagens'
+  | 'notificacoes'
+  | 'clinica'
+  | (string & {});
+
+/** Uma alteração já gravada no banco, avisada às telas abertas. */
+export interface EventoAtualizacao {
+  versao: number;
+  recurso: RecursoAtualizado;
+  acao: 'criado' | 'atualizado' | 'removido';
+  /** Vem vazio para o perfil Tutor, que recebe apenas o aviso de que algo mudou. */
+  descricao: string;
+  autor: string;
+  /** Verdadeiro quando foi o próprio usuário quem provocou a alteração. */
+  propria: boolean;
+  em: string;
+}
+
+export interface FeedAtualizacoes {
+  versao: number;
+  /** A tela perdeu eventos demais e deve recarregar tudo. */
+  reiniciar: boolean;
+  eventos: EventoAtualizacao[];
+}
+
 export interface HistoricoVersao {
   id: string;
   tipoRegistro: string;

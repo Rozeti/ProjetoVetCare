@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
+import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Notificacao } from '../tipos';
 import { Aviso, Cartao, Carregando, SemDados } from '../componentes/ui';
 import { cores, espacos, raios } from '../tema';
@@ -43,6 +44,8 @@ export function Notificacoes() {
       carregar();
     }, [carregar]),
   );
+
+  useAtualizacao(['notificacoes'], carregar);
 
   async function marcarTodas() {
     try {

@@ -9,6 +9,7 @@ import { AlertasClinicos } from '../components/AlertasClinicos';
 import { Paginacao } from '../components/Paginacao';
 import { formatarPeso, paraValorInputData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
 
 const FORM_VAZIO = {
@@ -63,6 +64,9 @@ export function Pacientes() {
     'Não foi possível carregar os pacientes.',
     300,
   );
+
+  // Um pet cadastrado pelo tutor pelo aplicativo aparece aqui assim que ele salva.
+  useAtualizacao(['pets', 'tutores', 'alergias'], recarregar);
 
   const pagina = dados?.pagina ?? paginaVazia<Pet>();
   const tutores = dados?.tutores ?? [];

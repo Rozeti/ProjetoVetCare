@@ -131,6 +131,10 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - Carteira de vacinação com fabricante, lote, veterinário aplicador e classificação
   automática da dose em **em dia**, **a vencer**, **vencida** ou **dose única**.
 - Registro de óbito, que inativa o paciente e encerra os tratamentos em aberto.
+- **Cadastro feito pelo próprio tutor**, na web e no aplicativo, para o animal recém-adquirido
+  que a clínica ainda não conhece — sem precisar ir até o balcão só para isso. O vínculo com o
+  responsável sai do token de quem está autenticado, nunca do corpo da requisição (RN-001), e a
+  origem do cadastro fica registrada na auditoria.
 
 ### Agenda
 - Agenda individual do veterinário (Dia/Semana/Mês) e agenda geral da clínica.
@@ -150,6 +154,13 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - Mensagens entre tutor e clínica, com histórico e contagem de não lidas.
 - Notificações no portal e no aplicativo.
 
+### Atualização em tempo real
+Toda gravação no banco é anunciada às telas que já estão abertas, em qualquer perfil e em
+qualquer das duas plataformas. Quando o tutor confirma a presença pelo celular, a agenda do
+veterinário, a agenda geral do apoio e o painel do administrativo mudam em menos de um
+segundo — e o mesmo vale para cancelamentos, novos pacientes, registros no prontuário e
+mensagens. Detalhes do funcionamento em [Sincronia entre as telas](#sincronia-entre-as-telas).
+
 ### Acesso
 - Autenticação JWT, bloqueio após tentativas seguidas e limitação de requisições.
 - Recuperação de senha por token de uso único com prazo de validade.
@@ -164,7 +175,7 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 |---|---|---|
 | HU-001 | Autenticar usuário | Web, Mobile |
 | HU-002 | Gerenciar usuários | Web (Administrador) |
-| HU-003 | Gerenciar pacientes | Web |
+| HU-003 | Gerenciar pacientes | Web (equipe); cadastro pelo próprio tutor na Web e no Mobile |
 | HU-004 | Agenda individual do veterinário (Dia/Semana/Mês) | Web |
 | HU-005 | Agenda geral da clínica | Web (Administrador/Apoio) |
 | HU-006 | Confirmar ou cancelar presença | Web, Mobile (Tutor) |
@@ -184,7 +195,7 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 
 | RN | Onde é garantida |
 |---|---|
-| RN-001 Associação tutor–paciente | `GerenciarPacientesUseCase`; chave estrangeira obrigatória |
+| RN-001 Associação tutor–paciente | `GerenciarPacientesUseCase`; chave estrangeira obrigatória. No cadastro feito pelo tutor o responsável vem do token, não do corpo da requisição |
 | RN-002 Exclusividade de horário | `SessaoRepository.ExisteConflitoHorario`, considerando a duração da sessão, mais os bloqueios de agenda |
 | RN-003 Observações internas restritas | `ConsultarProntuarioUseCase` nem consulta as observações para o Tutor; rota dedicada fechada por perfil |
 | RN-004 Integridade do prontuário | Registros não são excluídos; cada edição arquiva a versão anterior em `VersoesRegistrosClinicos`, e nenhuma exclusão do domínio é feita em cascata |
@@ -246,6 +257,36 @@ Mídias e documentos são gravados em disco sob `wwwroot`, com o banco guardando
 metadados e a URL. A troca pelo armazenamento externo previsto no DAS (Amazon S3 ou
 MinIO) exige mudar somente `Services/ArmazenamentoArquivos.cs`.
 
+### Sincronia entre as telas
+
+Um filtro global (`Common/FiltroDeAtualizacoes.cs`) observa toda requisição de escrita que
+termina em 2xx e publica o fato no `Services/CentralDeAtualizacoes.cs`. Ficar nesse ponto —
+depois da ação, antes de a resposta sair — é o que garante a cobertura: qualquer endpoint que
+grave no banco entra na conta, inclusive os que ainda serão escritos, sem que nenhum caso de
+uso precise se lembrar disso. Requisições recusadas por validação ou por permissão não
+publicam nada, porque não mexeram no banco.
+
+Os clientes consomem `GET /api/atualizacoes?desde=<versão>`, que fica pendurado no servidor
+até haver novidade ou até 25 segundos (long polling). Na prática o efeito é o de uma conexão
+em tempo real, sem acrescentar nenhuma dependência aos dois frontends nem exigir build nativo
+no aplicativo. No portal, `contexts/AtualizacoesContext.tsx` mantém uma única conexão e o hook
+`useAtualizacao(recursos, recarregar)` liga cada tela aos recursos que lhe interessam; no
+aplicativo, `contextos/AtualizacoesContext.tsx` faz o mesmo e suspende o laço quando o app vai
+para segundo plano.
+
+Dois cuidados valem menção:
+
+- **Privacidade (RN-003).** Uma clínica tem vários tutores. O evento que chega ao perfil Tutor
+  vai sem descrição e sem autor: ele só fica sabendo que *algo* mudou e recarrega os próprios
+  dados, que a API já filtra. A equipe clínica recebe o evento completo.
+- **Cliente atrasado.** O histórico em memória é curto e proposital — ele não substitui o
+  banco, apenas avisa que o banco mudou. Quem ficou fora tempo demais recebe `reiniciar: true`
+  e recarrega a tela inteira, em vez de aplicar um retrato incompleto.
+
+O estado vive na memória do processo. Numa eventual operação com mais de uma instância da API,
+essa peça passa a precisar de um intermediário compartilhado (Redis ou SignalR com backplane);
+o contrato HTTP visto pelos frontends continua o mesmo.
+
 ### Processos em segundo plano
 
 - `LembreteConfirmacaoService` — a cada 30 minutos, notifica os tutores cujas sessões nas
@@ -257,18 +298,19 @@ MinIO) exige mudar somente `Services/ArmazenamentoArquivos.cs`.
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 73 testes unitários
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 91 testes unitários
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de
 negócio pela API, os endpoints do aplicativo, as funcionalidades clínicas e a interface
-web em um navegador real — **125 a 127 verificações**, conforme o ambiente.
+web em um navegador real — **152 a 154 verificações**, conforme o ambiente.
 
 ```bash
 bash testes/criar-dados-demonstracao.sh     # cenário de avaliação
 bash testes/teste-regras-negocio.sh         # 46
 bash testes/teste-api-mobile.sh             # 26
 bash testes/teste-funcionalidades-novas.sh  # 33 a 35
+bash testes/teste-tempo-real.sh            # 27
 node testes/teste-navegador.mjs ./capturas  # 20
 ```
 

@@ -16,7 +16,12 @@ using VetCare.API.UseCases;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// O filtro global anuncia toda escrita bem-sucedida no mural de atualizações, o que
+// mantém as telas abertas em sincronia sem cada caso de uso ter de se preocupar com isso.
+builder.Services.AddControllers(opcoes =>
+{
+    opcoes.Filters.Add<FiltroDeAtualizacoes>();
+});
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<TratamentoDeErros>();
@@ -236,6 +241,9 @@ static void AdicionarServicos(IServiceCollection servicos)
     servicos.AddScoped<ArmazenamentoArquivos>();
     servicos.AddScoped<NotificacaoService>();
     servicos.AddScoped<AuditoriaService>();
+
+    // Singleton: o mural precisa ser o mesmo para todas as requisições da aplicação.
+    servicos.AddSingleton<CentralDeAtualizacoes>();
 }
 
 static void AdicionarCasosDeUso(IServiceCollection servicos)

@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { api, mensagemDeErro, urlDoArquivo } from '../services/api';
+import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { ItemLinhaTempo, Prescricao, Prontuario as ProntuarioDTO, SituacaoDose, Vacina } from '../tipos';
 import { Aviso, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
@@ -71,6 +72,25 @@ export function Prontuario() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  // RN-004: o prontuário é a soma de muitos registros; qualquer um deles que a clínica
+  // grave precisa aparecer para o tutor que está com a tela aberta.
+  useAtualizacao(
+    [
+      'prontuarios',
+      'avaliacoes',
+      'atendimentos',
+      'prescricoes',
+      'vacinas',
+      'alergias',
+      'documentos',
+      'midias',
+      'tratamentos',
+      'pets',
+      'sessoes',
+    ],
+    carregar,
+  );
 
   return (
     <SafeAreaView style={estilos.area} edges={['top']}>

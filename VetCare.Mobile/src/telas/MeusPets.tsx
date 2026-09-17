@@ -4,8 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, type NavigationProp, useNavigation } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contextos/AuthContext';
+import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Pet, Sessao } from '../tipos';
-import { Avatar, Aviso, Cartao, Carregando, Etiqueta, SemDados, TituloSecao } from '../componentes/ui';
+import { Avatar, Aviso, Botao, Cartao, Carregando, Etiqueta, SemDados, TituloSecao } from '../componentes/ui';
+import { FormularioNovoPet } from '../componentes/FormularioNovoPet';
 import { Icone, iconeDaEspecie } from '../componentes/Icone';
 import { cores, espacos, estiloStatus, raios } from '../tema';
 import { diaDoMes, formatarHora, formatarPeso, mesAbreviado } from '../utils/formato';
@@ -20,6 +22,8 @@ export function MeusPets() {
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState('');
+  const [cadastroAberto, setCadastroAberto] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro('');
@@ -46,6 +50,16 @@ export function MeusPets() {
       carregar();
     }, [carregar]),
   );
+
+  // E também no instante em que a clínica mexe em algo — sem esperar a próxima visita
+  // à aba nem o tutor puxar a lista para baixo.
+  useAtualizacao(['pets', 'sessoes', 'tratamentos', 'alergias', 'vacinas'], carregar);
+
+  function aoCadastrarPet(pet: Pet) {
+    setCadastroAberto(false);
+    setAviso(`${pet.nome} foi cadastrado e já aparece para a equipe da clínica.`);
+    carregar();
+  }
 
   const primeiroNome = usuario?.nome.split(' ')[0] ?? '';
 
@@ -79,18 +93,46 @@ export function MeusPets() {
           </View>
         ) : null}
 
+        {aviso ? (
+          <TouchableOpacity
+            style={estilos.espacoInferior}
+            onPress={() => setAviso('')}
+            accessibilityRole="button"
+            accessibilityLabel="Dispensar aviso"
+          >
+            <Aviso tipo="sucesso">{aviso}</Aviso>
+          </TouchableOpacity>
+        ) : null}
+
         {carregando ? (
           <Carregando texto="Carregando seus pets..." />
         ) : (
           <>
-            <TituloSecao>Meus pets</TituloSecao>
+            <View style={estilos.linhaSecao}>
+              <TituloSecao estilo={estilos.tituloSemMargem}>Meus pets</TituloSecao>
+
+              {/* Adquiriu um animal novo? O cadastro é feito aqui, sem ir à clínica. */}
+              <TouchableOpacity
+                style={estilos.botaoCadastrar}
+                onPress={() => setCadastroAberto(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Cadastrar um novo pet"
+              >
+                <Text style={estilos.botaoCadastrarTexto}>+ Cadastrar</Text>
+              </TouchableOpacity>
+            </View>
 
             {pets.length === 0 ? (
               <Cartao>
                 <SemDados
                   icone="🐾"
                   titulo="Nenhum pet cadastrado"
-                  descricao="Quando a clínica cadastrar um pet sob sua responsabilidade, ele aparece aqui."
+                  descricao="Cadastre aqui o animal que acabou de chegar à família. Pets cadastrados pela clínica também aparecem nesta lista."
+                />
+                <Botao
+                  titulo="Cadastrar meu pet"
+                  aoPressionar={() => setCadastroAberto(true)}
+                  estilo={estilos.botaoVazio}
                 />
               </Cartao>
             ) : (
@@ -176,6 +218,12 @@ export function MeusPets() {
           </>
         )}
       </ScrollView>
+
+      <FormularioNovoPet
+        aberto={cadastroAberto}
+        aoFechar={() => setCadastroAberto(false)}
+        aoCadastrar={aoCadastrarPet}
+      />
     </SafeAreaView>
   );
 }
@@ -269,6 +317,32 @@ const estilos = StyleSheet.create({
   },
   dica: {
     marginTop: espacos.lg,
+  },
+  linhaSecao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: espacos.sm,
+    marginTop: espacos.lg,
+    marginBottom: espacos.sm,
+  },
+  tituloSemMargem: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  botaoCadastrar: {
+    paddingHorizontal: espacos.md,
+    paddingVertical: 7,
+    borderRadius: raios.cheio,
+    backgroundColor: cores.marcaClara,
+  },
+  botaoCadastrarTexto: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: cores.marcaEscura,
+  },
+  botaoVazio: {
+    marginTop: espacos.sm,
   },
   espacoInferior: {
     marginTop: espacos.md,

@@ -7,6 +7,7 @@ import type { PaginaDe, Tutor } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
 
 const FORM_VAZIO = {
@@ -46,6 +47,8 @@ export function Tutores() {
     'Não foi possível carregar os tutores.',
     300,
   );
+
+  useAtualizacao(['tutores', 'usuarios', 'pets'], recarregar);
 
   const pagina = dados ?? paginaVazia<Tutor>();
 

@@ -7,6 +7,7 @@ import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '.
 import { estiloStatusSessao, formatarData, formatarHora, paraValorInputData } from '../utils/formato';
 import { ModalAgendarSessao } from './componentes/ModalAgendarSessao';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 
 const VISOES: { valor: VisaoAgenda; rotulo: string }[] = [
   { valor: 'dia', rotulo: 'Dia' },
@@ -38,6 +39,9 @@ export function AgendaGeral() {
     setErro,
     recarregar,
   } = useCarregamento(buscar, 'Não foi possível carregar a agenda geral.');
+
+  // HU-006: a confirmação e o cancelamento feitos pelo tutor mudam esta tela sozinhos.
+  useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos'], recarregar);
 
   function navegar(passo: number) {
     const nova = new Date(data);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { MessageSquare, Plus, Send, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Conversa, Mensagem, Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { formatarHora, tempoRelativo } from '../utils/formato';
@@ -26,6 +27,18 @@ export function Mensagens() {
   const [versaoDaLista, setVersaoDaLista] = useState(0);
   const atualizarLista = useCallback(() => setVersaoDaLista((atual) => atual + 1), []);
 
+  // A conversa aberta tem a própria versão para que uma mensagem recebida a atualize
+  // sem depender de o usuário trocar de contato.
+  const [versaoDaConversa, setVersaoDaConversa] = useState(0);
+
+  // HU-014: a mensagem chega à tela no momento em que o outro lado a envia.
+  const aoChegarMensagem = useCallback(() => {
+    atualizarLista();
+    setVersaoDaConversa((atual) => atual + 1);
+  }, [atualizarLista]);
+
+  useAtualizacao(['mensagens'], aoChegarMensagem);
+
   useEffect(() => {
     let ativo = true;
 
@@ -42,9 +55,9 @@ export function Mensagens() {
 
     carregar();
 
-    // A conversa não usa WebSocket: a atualização periódica mantém a lista fresca
-    // sem exigir que o usuário recarregue a página.
-    const intervalo = window.setInterval(carregar, 20_000);
+    // O mural de atualizações já avisa quando chega mensagem; a leitura periódica
+    // fica como rede de segurança para o caso de a conexão com ele cair.
+    const intervalo = window.setInterval(carregar, 60_000);
 
     return () => {
       ativo = false;
@@ -83,7 +96,7 @@ export function Mensagens() {
     return () => {
       ativo = false;
     };
-  }, [selecionado, atualizarLista]);
+  }, [selecionado, atualizarLista, versaoDaConversa]);
 
   useEffect(() => {
     fimDaLista.current?.scrollIntoView({ behavior: 'smooth' });

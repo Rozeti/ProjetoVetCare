@@ -46,6 +46,17 @@ namespace VetCare.API.Controllers
                 : this.Responder(resultado);
         }
 
+        /// <summary>
+        /// Cadastro do próprio tutor, para o animal recém-adquirido que ainda não existe no
+        /// sistema. O responsável é deduzido do token, e não do corpo da requisição.
+        /// </summary>
+        [HttpPost("meus")]
+        [Authorize(Roles = Perfis.Tutor)]
+        public async Task<IActionResult> CadastrarMeuPet(CriarPetDoTutorDTO dto)
+        {
+            return this.ResponderCriado(await _useCase.CadastrarComoTutor(dto));
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> ObterPorId(Guid id)
         {

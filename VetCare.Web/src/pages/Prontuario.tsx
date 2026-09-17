@@ -18,6 +18,7 @@ import {
 import { api, mensagemDeErro, urlDoArquivo } from '../services/api';
 import { useAuth } from '../contexts/auth';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Documento, ItemLinhaTempo, Prontuario as ProntuarioDTO } from '../types';
 import {
   Alerta,
@@ -78,6 +79,26 @@ export function Prontuario() {
     setErro,
     recarregar,
   } = useCarregamento(buscar, 'Não foi possível carregar o prontuário.');
+
+  // RN-004: o prontuário é a soma de muitos registros; qualquer um deles que mude na
+  // clínica precisa aparecer aqui, inclusive para o tutor que está com a tela aberta.
+  useAtualizacao(
+    [
+      'prontuarios',
+      'avaliacoes',
+      'atendimentos',
+      'prescricoes',
+      'vacinas',
+      'alergias',
+      'documentos',
+      'midias',
+      'tratamentos',
+      'observacoesinternas',
+      'pets',
+      'sessoes',
+    ],
+    recarregar,
+  );
 
   // O nome da clínica compõe o cabeçalho dos documentos impressos.
   useEffect(() => {

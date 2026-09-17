@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import { useAuth } from '../contexts/auth';
 import type { Indicadores } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Estatistica, Etiqueta, SemDados } from '../components/ui';
@@ -28,7 +29,15 @@ export function Dashboard() {
     dados: indicadores,
     carregando,
     erro,
+    recarregar,
   } = useCarregamento(buscar, 'Não foi possível carregar os indicadores do dia.');
+
+  // HU-016: os números do dia — inclusive o de confirmações pendentes — refletem o
+  // que o tutor acabou de fazer no aplicativo.
+  useAtualizacao(
+    ['sessoes', 'atendimentos', 'avaliacoes', 'pets', 'mensagens', 'notificacoes'],
+    recarregar,
+  );
 
   const primeiroNome = usuario?.nome.split(' ')[0] ?? '';
 

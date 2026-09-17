@@ -17,6 +17,7 @@ import type { ItemAgenda, VisaoAgenda } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { estiloStatusSessao, formatarData, formatarHora, paraValorInputData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import { ModalAgendarSessao } from './componentes/ModalAgendarSessao';
 import { ModalRegistrarAtendimento } from './componentes/ModalRegistrarAtendimento';
 import { ModalBloqueiosAgenda } from './componentes/ModalBloqueiosAgenda';
@@ -60,6 +61,9 @@ export function Agenda() {
     setErro,
     recarregar,
   } = useCarregamento<ItemAgenda[]>(buscar, 'Não foi possível carregar a agenda.');
+
+  // HU-006: a confirmação e o cancelamento feitos pelo tutor mudam esta tela sozinhos.
+  useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos'], recarregar);
 
   // Estabiliza a referência para os useMemo que agrupam a agenda por dia.
   const sessoes = useMemo(() => dados ?? [], [dados]);

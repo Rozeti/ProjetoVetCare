@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
+import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Sessao } from '../tipos';
 import { Aviso, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
@@ -47,6 +48,9 @@ export function Agenda() {
       carregar();
     }, [carregar]),
   );
+
+  // Um reagendamento ou cancelamento feito na clínica aparece sem o tutor fazer nada.
+  useAtualizacao(['sessoes', 'tratamentos'], carregar);
 
   /** HU-006, CA-1: confirmação de presença. */
   async function confirmar(sessao: Sessao) {

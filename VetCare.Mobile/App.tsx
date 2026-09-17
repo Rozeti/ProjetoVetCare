@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from './src/contextos/AuthContext';
+import { AtualizacoesProvider } from './src/contextos/AtualizacoesContext';
 import { Navegacao } from './src/Navegacao';
 import { cores } from './src/tema';
 
@@ -25,10 +26,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer>
-          <StatusBar style="dark" />
-          <Raiz />
-        </NavigationContainer>
+        {/* Uma única conexão com o mural de alterações serve todas as telas. */}
+        <AtualizacoesProvider>
+          <NavigationContainer>
+            <StatusBar style="dark" />
+            <Raiz />
+          </NavigationContainer>
+        </AtualizacoesProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

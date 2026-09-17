@@ -87,7 +87,43 @@ namespace VetCare.API.UseCases
             return Resultado<PetDTO>.Ok(dto);
         }
 
-        public async Task<Resultado<PetDTO>> Cadastrar(CriarPetDTO dto)
+        /// <summary>
+        /// HU-003 estendida: o tutor cadastra um animal recém-adquirido sem depender de um
+        /// atendimento presencial. O vínculo da RN-001 vem do próprio token, nunca do corpo
+        /// da requisição — é isso que impede alguém de registrar um pet no nome de outro.
+        /// </summary>
+        public async Task<Resultado<PetDTO>> CadastrarComoTutor(CriarPetDoTutorDTO dto)
+        {
+            if (!_usuarioAtual.EhTutor)
+            {
+                return Resultado<PetDTO>.NaoAutorizado(
+                    "Este cadastro é exclusivo do tutor responsável pelo animal.");
+            }
+
+            if (_usuarioAtual.TutorId == null)
+            {
+                return Resultado<PetDTO>.NaoEncontrado(
+                    "Não encontramos o seu cadastro de tutor. Procure a clínica para regularizá-lo.");
+            }
+
+            return await Cadastrar(
+                new CriarPetDTO
+                {
+                    TutorId = _usuarioAtual.TutorId.Value,
+                    Nome = dto.Nome,
+                    Especie = dto.Especie,
+                    Raca = dto.Raca,
+                    Sexo = dto.Sexo,
+                    Pelagem = dto.Pelagem,
+                    Microchip = dto.Microchip,
+                    Castrado = dto.Castrado,
+                    PesoAtualKg = dto.PesoAtualKg,
+                    DataNascimento = dto.DataNascimento
+                },
+                cadastradoPeloTutor: true);
+        }
+
+        public async Task<Resultado<PetDTO>> Cadastrar(CriarPetDTO dto, bool cadastradoPeloTutor = false)
         {
             // HU-003, CA-2: sem tutor informado o cadastro é impedido (RN-001).
             if (dto.TutorId == Guid.Empty)
@@ -137,10 +173,21 @@ namespace VetCare.API.UseCases
 
             pet.Tutor = tutor;
 
+            // A origem fica registrada: a equipe precisa saber que o cadastro veio de fora
+            // do balcão para conferir os dados no primeiro atendimento.
             await _auditoria.RegistrarDoUsuarioAtual(
-                AuditoriaService.Acoes.Criacao, "Paciente", pet.Id, $"Cadastro de {pet.Nome}");
+                AuditoriaService.Acoes.Criacao,
+                "Paciente",
+                pet.Id,
+                cadastradoPeloTutor
+                    ? $"Cadastro de {pet.Nome} feito pelo tutor responsável"
+                    : $"Cadastro de {pet.Nome}");
 
-            return Resultado<PetDTO>.Ok(MapearParaDTO(pet), "Paciente cadastrado com sucesso.");
+            return Resultado<PetDTO>.Ok(
+                MapearParaDTO(pet),
+                cadastradoPeloTutor
+                    ? $"{pet.Nome} foi cadastrado e já aparece para a equipe da clínica."
+                    : "Paciente cadastrado com sucesso.");
         }
 
         public async Task<Resultado<PetDTO>> Atualizar(Guid id, AtualizarPetDTO dto)
