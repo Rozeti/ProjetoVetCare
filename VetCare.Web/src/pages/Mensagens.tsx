@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { MessageSquare, Plus, Send, X } from 'lucide-react';
+import { MessageSquare, PawPrint, Plus, Send, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contexts/atualizacoes';
-import type { Conversa, Mensagem, Usuario } from '../types';
+import { useAuth } from '../contexts/auth';
+import type { Conversa, Mensagem, PaginaDe, Pet, Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { formatarHora, tempoRelativo } from '../utils/formato';
 
-/** HU-014: troca de mensagens entre tutor e veterinário. */
+/** HU-014: troca de mensagens entre tutor e equipe clínica. */
 export function Mensagens() {
+  const { ehTutor } = useAuth();
+
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [contatos, setContatos] = useState<Usuario[]>([]);
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [texto, setTexto] = useState('');
+
+  // Uma mensagem pode ser sobre um pet específico; a lista muda conforme a conversa aberta.
+  const [petsDaConversa, setPetsDaConversa] = useState<Pet[]>([]);
+  const [pacienteId, setPacienteId] = useState('');
 
   const [carregandoLista, setCarregandoLista] = useState(true);
   const [carregandoConversa, setCarregandoConversa] = useState(false);
@@ -98,6 +105,43 @@ export function Mensagens() {
     };
   }, [selecionado, atualizarLista, versaoDaConversa]);
 
+  const conversaAtual = conversas.find((c) => c.usuarioId === selecionado);
+  const contatoAtual = contatos.find((c) => c.id === selecionado);
+  const nomeContato = conversaAtual?.nome ?? contatoAtual?.nome ?? '';
+  const perfilContato = conversaAtual?.perfil ?? contatoAtual?.perfil;
+
+  // Os pets a que a mensagem pode se referir: os do próprio tutor, ou os do tutor com quem a equipe fala.
+  useEffect(() => {
+    setPacienteId('');
+    setPetsDaConversa([]);
+
+    if (!selecionado) return;
+
+    let ativo = true;
+
+    async function carregarPets() {
+      try {
+        if (ehTutor) {
+          const { data } = await api.get<Pet[]>('/api/pets/meus');
+          if (ativo) setPetsDaConversa(data);
+        } else if (perfilContato === 'Tutor' && nomeContato) {
+          const { data } = await api.get<PaginaDe<Pet>>('/api/pets', {
+            params: { busca: nomeContato, ativo: true, tamanho: 50 },
+          });
+          if (ativo) setPetsDaConversa(data.itens.filter((pet) => pet.nomeTutor === nomeContato));
+        }
+      } catch {
+        // O seletor de pet é um complemento: sem ele a conversa segue normalmente.
+      }
+    }
+
+    carregarPets();
+
+    return () => {
+      ativo = false;
+    };
+  }, [selecionado, ehTutor, perfilContato, nomeContato]);
+
   useEffect(() => {
     fimDaLista.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensagens]);
@@ -123,6 +167,7 @@ export function Mensagens() {
     try {
       const { data } = await api.post<Mensagem>('/api/mensagens', {
         destinatarioId: selecionado,
+        pacienteId: pacienteId || null,
         conteudo: texto.trim(),
       });
 
@@ -135,9 +180,6 @@ export function Mensagens() {
       setEnviando(false);
     }
   }
-
-  const conversaAtual = conversas.find((c) => c.usuarioId === selecionado);
-  const nomeContato = conversaAtual?.nome ?? contatos.find((c) => c.id === selecionado)?.nome ?? '';
 
   return (
     <>
@@ -172,7 +214,7 @@ export function Mensagens() {
             <SemDados
               icone={<MessageSquare size={36} />}
               titulo="Nenhuma conversa ainda"
-              descricao="Inicie uma conversa com a equipe clínica ou com um tutor."
+              descricao={ehTutor ? 'Inicie uma conversa com a equipe clínica.' : 'Inicie uma conversa com um tutor ou com a equipe.'}
             />
           ) : (
             <ul className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto">
@@ -228,7 +270,7 @@ export function Mensagens() {
           ) : (
             <>
               <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-3">
-                <Avatar nome={nomeContato} />
+                <Avatar nome={nomeContato} rotulo={`Conversa com ${nomeContato}`} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-slate-900">{nomeContato}</p>
                   {conversaAtual && (
@@ -290,27 +332,50 @@ export function Mensagens() {
                 <div ref={fimDaLista} />
               </div>
 
-              <form onSubmit={enviar} className="flex items-end gap-2 border-t border-slate-200 p-4">
-                <textarea
-                  className="vc-campo resize-none"
-                  rows={2}
-                  placeholder="Escreva sua mensagem..."
-                  value={texto}
-                  onChange={(e) => setTexto(e.target.value)}
-                  onKeyDown={(e) => {
-                    // Enter envia; Shift+Enter quebra linha.
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      enviar(e as unknown as FormEvent);
-                    }
-                  }}
-                  disabled={enviando}
-                />
+              <form onSubmit={enviar} className="border-t border-slate-200 p-4">
+                {petsDaConversa.length > 0 && (
+                  <label className="mb-2 flex items-center gap-2 text-xs text-slate-500">
+                    <PawPrint size={14} className="shrink-0 text-brand" />
+                    <span className="shrink-0">Sobre:</span>
+                    <select
+                      className="vc-campo w-auto py-1 text-xs"
+                      value={pacienteId}
+                      onChange={(e) => setPacienteId(e.target.value)}
+                      aria-label="Pet a que a mensagem se refere"
+                    >
+                      <option value="">Nenhum pet em específico</option>
+                      {petsDaConversa.map((pet) => (
+                        <option key={pet.id} value={pet.id}>
+                          {pet.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
-                <button type="submit" className="vc-botao-primario shrink-0" disabled={enviando || !texto.trim()}>
-                  <Send size={16} />
-                  Enviar
-                </button>
+                <div className="flex items-end gap-2">
+                  <textarea
+                    className="vc-campo resize-none"
+                    rows={2}
+                    placeholder="Escreva sua mensagem..."
+                    value={texto}
+                    onChange={(e) => setTexto(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter envia; Shift+Enter quebra linha.
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        enviar(e as unknown as FormEvent);
+                      }
+                    }}
+                    disabled={enviando}
+                    aria-label="Mensagem"
+                  />
+
+                  <button type="submit" className="vc-botao-primario shrink-0" disabled={enviando || !texto.trim()}>
+                    <Send size={16} />
+                    Enviar
+                  </button>
+                </div>
               </form>
             </>
           )}

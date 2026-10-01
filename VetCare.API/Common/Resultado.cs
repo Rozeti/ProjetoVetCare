@@ -46,6 +46,9 @@ namespace VetCare.API.Common
 
         public static Resultado NaoAutenticado(string mensagem)
             => Erro(TipoFalha.NaoAutenticado, mensagem);
+
+        public static Resultado Bloqueado(string mensagem)
+            => Erro(TipoFalha.Bloqueado, mensagem);
     }
 
     public class Resultado<T> : Resultado
@@ -73,7 +76,7 @@ namespace VetCare.API.Common
         public new static Resultado<T> NaoAutenticado(string mensagem)
             => Erro(TipoFalha.NaoAutenticado, mensagem);
 
-        public static Resultado<T> Bloqueado(string mensagem)
+        public new static Resultado<T> Bloqueado(string mensagem)
             => Erro(TipoFalha.Bloqueado, mensagem);
     }
 }

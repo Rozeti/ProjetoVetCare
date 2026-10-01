@@ -43,7 +43,22 @@ A pilha sobe em `Production`, onde a documentação interativa fica desligada. P
 consultá-la, defina `ASPNETCORE_ENVIRONMENT=Development` no `.env`.
 
 O banco é criado e migrado automaticamente na primeira subida. Os volumes
-`dados-postgres` e `arquivos-api` preservam dados e mídias entre atualizações da imagem.
+`dados-postgres`, `arquivos-api` e `emails-api` preservam dados, mídias e e-mails gravados
+localmente entre atualizações da imagem.
+
+#### E-mail e notificações no celular
+
+Os dois canais funcionam sem configuração nenhuma, em modo de demonstração:
+
+- **E-mail** — sem `SMTP_HOST` no `.env`, cada mensagem (recuperação de senha, boas-vindas,
+  avisos do tratamento) é gravada como um arquivo `.html` na pasta `emails-enviados` da API.
+  Para enviar de verdade, preencha `SMTP_HOST`, `SMTP_PORTA`, `SMTP_USUARIO`, `SMTP_SENHA` e
+  `EMAIL_REMETENTE`; o `.env.example` traz os valores dos provedores mais comuns.
+- **Push no celular** — a API usa o serviço de push da Expo e não exige credencial. O
+  aplicativo precisa do identificador do projeto Expo em `extra.eas.projectId` (gerado por
+  `npx eas init`) e de um build de desenvolvimento ou de loja: o Expo Go, no Android, não
+  recebe notificações remotas. A limitação é só do canal push; o mural de avisos dentro do
+  aplicativo e o e-mail funcionam também no Expo Go.
 
 ### Opção B — Execução local
 
@@ -152,7 +167,9 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 
 ### Comunicação
 - Mensagens entre tutor e clínica, com histórico e contagem de não lidas.
-- Notificações no portal e no aplicativo.
+- Notificações no portal e no aplicativo, **entregues também por e-mail e por push no celular
+  do tutor**. A entrega sai de uma fila no banco com novas tentativas em caso de falha, e cada
+  usuário escolhe os canais que quer no próprio perfil.
 
 ### Atualização em tempo real
 Toda gravação no banco é anunciada às telas que já estão abertas, em qualquer perfil e em
@@ -162,8 +179,16 @@ segundo — e o mesmo vale para cancelamentos, novos pacientes, registros no pro
 mensagens. Detalhes do funcionamento em [Sincronia entre as telas](#sincronia-entre-as-telas).
 
 ### Acesso
-- Autenticação JWT, bloqueio após tentativas seguidas e limitação de requisições.
-- Recuperação de senha por token de uso único com prazo de validade.
+- Autenticação JWT com emissor e público validados, bloqueio após tentativas seguidas e
+  limitação de requisições; contas desativadas perdem o acesso em até um minuto, mesmo com
+  o token ainda válido.
+- **Esqueci minha senha**: o usuário informa o e-mail cadastrado e recebe um link (para o
+  portal) e um código de 6 dígitos (para o aplicativo), válidos por 30 minutos, de uso único,
+  com no máximo 5 tentativas de código. A resposta é a mesma para e-mails desconhecidos.
+- **Primeiro acesso**: contas criadas pela clínica sem senha recebem um convite por e-mail
+  para defini-la (válido por 72 horas). Toda troca de senha gera um aviso de segurança.
+- Mídias e documentos clínicos são servidos apenas por URLs assinadas com prazo de validade,
+  nunca como arquivos estáticos públicos.
 
 ---
 
@@ -237,7 +262,8 @@ VetCare.API/
 ├── Models/         entidades do domínio
 ├── DTOs/           contratos de entrada e saída
 ├── Security/       hash de senha, emissão de JWT, perfis, limites de requisição
-├── Services/       arquivos, notificações, auditoria e lembretes automáticos
+├── Services/       arquivos, e-mail (SMTP ou caixa de saída local), push (Expo),
+│                   entrega de notificações, auditoria e lembretes automáticos
 ├── Common/         Resultado, paginação, tratamento de erros e tradução para HTTP
 └── Migrations/     histórico do esquema
 ```
@@ -247,15 +273,19 @@ controller traduz isso no status correto (400, 401, 403, 404, 409 ou 423).
 
 ### Banco de dados
 
-O esquema tem **24 tabelas, 41 chaves estrangeiras e 74 índices**, criado por uma única
-migração. Nenhum relacionamento do domínio apaga em cascata: excluir um registro clínico
+O esquema tem **25 tabelas, 42 chaves estrangeiras e 77 índices**, criado por duas
+migrações (a segunda acrescenta os canais de entrega das notificações, os aparelhos
+registrados para push e o código de recuperação de senha). Nenhum relacionamento do domínio apaga em cascata: excluir um registro clínico
 precisa ser uma decisão explícita, o que preserva a integridade do histórico (RN-004).
 
 ### Armazenamento de arquivos
 
-Mídias e documentos são gravados em disco sob `wwwroot`, com o banco guardando apenas os
-metadados e a URL. A troca pelo armazenamento externo previsto no DAS (Amazon S3 ou
-MinIO) exige mudar somente `Services/ArmazenamentoArquivos.cs`.
+Mídias e documentos são gravados em disco na pasta `arquivos/` da API (configurável em
+`Arquivos:Pasta`), com o banco guardando apenas os metadados e o caminho. A API nunca os
+expõe como arquivos estáticos: cada resposta traz uma URL assinada (`/api/arquivos/...`)
+com validade de quatro horas, verificada por `Security/AssinadorDeArquivos.cs`. A troca
+pelo armazenamento externo previsto no DAS (Amazon S3 ou MinIO) exige mudar somente
+`Services/ArmazenamentoArquivos.cs`.
 
 ### Sincronia entre as telas
 
@@ -292,24 +322,32 @@ o contrato HTTP visto pelos frontends continua o mesmo.
 - `LembreteConfirmacaoService` — a cada 30 minutos, notifica os tutores cujas sessões nas
   próximas 48 horas seguem sem confirmação (HU-015, CA-2).
 - `LembreteVacinacaoService` — avisa sobre doses próximas do vencimento.
+- `EntregadorDeNotificacoes` — lê as notificações pendentes de entrega e as envia por
+  e-mail e por push conforme as preferências do destinatário, com até cinco tentativas e
+  intervalos crescentes; tokens de push rejeitados pela Expo são desativados.
+- `ProcessadorDeEmails` — fila em memória que envia os e-mails transacionais (recuperação
+  de senha, boas-vindas, senha provisória) sem segurar a resposta HTTP.
+
+Todos os horários "do dia" (expediente, indicadores, intervalos da agenda) seguem o fuso da
+clínica (`Aplicacao:FusoHorario`, padrão `America/Sao_Paulo`), e não o do servidor.
 
 ---
 
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 91 testes unitários
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 131 testes unitários
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de
 negócio pela API, os endpoints do aplicativo, as funcionalidades clínicas e a interface
-web em um navegador real — **152 a 154 verificações**, conforme o ambiente.
+web em um navegador real — **159 a 165 verificações**, conforme o ambiente.
 
 ```bash
 bash testes/criar-dados-demonstracao.sh     # cenário de avaliação
 bash testes/teste-regras-negocio.sh         # 46
 bash testes/teste-api-mobile.sh             # 26
-bash testes/teste-funcionalidades-novas.sh  # 33 a 35
+bash testes/teste-funcionalidades-novas.sh  # 40 a 46
 bash testes/teste-tempo-real.sh            # 27
 node testes/teste-navegador.mjs ./capturas  # 20
 ```
@@ -329,8 +367,9 @@ O sistema está funcional, mas alguns itens dependem de decisões de infraestrut
 3. **Armazenamento de mídias** — trocar o disco local por S3/MinIO antes de escalar.
 4. **Tempo real** — o chat e as notificações usam consulta periódica. O DAS prevê
    WebSocket; a troca afeta apenas a camada de transporte, não as regras já implementadas.
-5. **E-mail** — a recuperação de senha gera um token de uso único, mas o envio por SMTP
-   ainda não está conectado: fora de produção o token é devolvido na própria resposta, e
-   em produção é preciso ligar o serviço de e-mail.
+5. **E-mail e push** — sem `SMTP_HOST` os e-mails ficam em `emails-enviados` e, em
+   `Development`, o link e o código de recuperação voltam na própria resposta da API para
+   permitir a demonstração. Em produção configure o SMTP e gere o `projectId` do Expo
+   para o aplicativo (veja [E-mail e notificações no celular](#e-mail-e-notificações-no-celular)).
 6. **Backup** — o DAS exige backup diário com zero perda de registros confirmados; isso é
    configuração do servidor PostgreSQL.

@@ -31,6 +31,7 @@ namespace VetCare.API.Data
         public DbSet<VersaoRegistroClinico> VersoesRegistrosClinicos => Set<VersaoRegistroClinico>();
         public DbSet<RegistroAuditoria> RegistrosAuditoria => Set<RegistroAuditoria>();
         public DbSet<TokenRedefinicaoSenha> TokensRedefinicaoSenha => Set<TokenRedefinicaoSenha>();
+        public DbSet<DispositivoDoUsuario> DispositivosDoUsuario => Set<DispositivoDoUsuario>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -119,11 +120,26 @@ namespace VetCare.API.Data
             builder.Entity<TokenRedefinicaoSenha>(entidade =>
             {
                 entidade.Property(t => t.TokenHash).HasMaxLength(128).IsRequired();
+                entidade.Property(t => t.CodigoHash).HasMaxLength(128).IsRequired();
+                entidade.Property(t => t.Finalidade).HasMaxLength(20).IsRequired();
                 entidade.Ignore(t => t.Valido);
 
                 entidade.HasIndex(t => t.TokenHash).IsUnique();
                 entidade.HasIndex(t => t.UsuarioId);
                 entidade.HasOne(t => t.Usuario).WithMany().HasForeignKey(t => t.UsuarioId);
+            });
+
+            builder.Entity<DispositivoDoUsuario>(entidade =>
+            {
+                entidade.Property(d => d.TokenPush).HasMaxLength(200).IsRequired();
+                entidade.Property(d => d.Plataforma).HasMaxLength(20).IsRequired();
+                entidade.Property(d => d.NomeDoAparelho).HasMaxLength(120);
+
+                // O token identifica o aparelho: se outro usuário entrar no mesmo celular,
+                // o registro muda de dono em vez de duplicar.
+                entidade.HasIndex(d => d.TokenPush).IsUnique();
+                entidade.HasIndex(d => new { d.UsuarioId, d.Ativo });
+                entidade.HasOne(d => d.Usuario).WithMany().HasForeignKey(d => d.UsuarioId);
             });
         }
 
@@ -372,8 +388,13 @@ namespace VetCare.API.Data
                 entidade.Property(n => n.Titulo).HasMaxLength(150).IsRequired();
                 entidade.Property(n => n.Conteudo).HasMaxLength(500).IsRequired();
                 entidade.Property(n => n.LinkRelacionado).HasMaxLength(200);
+                entidade.Property(n => n.SituacaoEntrega).HasMaxLength(20).IsRequired();
+                entidade.Property(n => n.ErroDeEntrega).HasMaxLength(500);
 
                 entidade.HasIndex(n => new { n.UsuarioId, n.Visualizada, n.DataCriacao });
+
+                // Consulta do entregador: só as pendentes cujo prazo de nova tentativa passou.
+                entidade.HasIndex(n => new { n.SituacaoEntrega, n.ProximaTentativaEm });
 
                 entidade.HasOne(n => n.Usuario).WithMany().HasForeignKey(n => n.UsuarioId);
             });

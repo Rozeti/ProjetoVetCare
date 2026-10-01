@@ -46,30 +46,24 @@ export function Agenda() {
       return [];
     }
 
-    const { data: itens } = await api.get<ItemAgenda[]>(
-      `/api/sessoes/agenda/${veterinarioId}`,
-      { params: { data: paraValorInputData(data), visao } },
-    );
+    // O atalho "minha" dispensa o identificador: a API usa o vínculo do próprio token.
+    const { data: itens } = await api.get<ItemAgenda[]>('/api/sessoes/agenda/minha', {
+      params: { data: paraValorInputData(data), visao },
+    });
 
     return itens;
   }, [veterinarioId, data, visao]);
 
-  const {
-    dados,
-    carregando,
-    erro: erroDaBusca,
-    setErro,
-    recarregar,
-  } = useCarregamento<ItemAgenda[]>(buscar, 'Não foi possível carregar a agenda.');
+  const { dados, carregando, erro, setErro, recarregar } = useCarregamento<ItemAgenda[]>(
+    buscar,
+    'Não foi possível carregar a agenda.',
+  );
 
   // HU-006: a confirmação e o cancelamento feitos pelo tutor mudam esta tela sozinhos.
   useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos'], recarregar);
 
   // Estabiliza a referência para os useMemo que agrupam a agenda por dia.
   const sessoes = useMemo(() => dados ?? [], [dados]);
-
-  // Um usuário sem cadastro de veterinário não tem agenda própria para exibir.
-  const erro = veterinarioId ? erroDaBusca : 'Seu usuário não possui cadastro de veterinário vinculado.';
 
   function navegar(passo: number) {
     const nova = new Date(data);
@@ -127,7 +121,7 @@ export function Agenda() {
   return (
     <>
       <CabecalhoPagina
-        titulo="Minha agenda"
+        titulo="Agenda"
         descricao="Organize as sessões de fisioterapia dos seus pacientes."
         acoes={
           <>
@@ -143,6 +137,14 @@ export function Agenda() {
         }
       />
 
+      {/* Um usuário sem cadastro de veterinário não tem agenda própria para exibir. */}
+      {!veterinarioId && (
+        <div className="mb-4">
+          <Alerta tipo="aviso">
+            Seu usuário não possui cadastro de veterinário vinculado. Peça ao administrador para conferir o seu perfil.
+          </Alerta>
+        </div>
+      )}
       {erro && (
         <div className="mb-4">
           <Alerta tipo="erro" aoFechar={() => setErro('')}>

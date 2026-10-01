@@ -8,7 +8,7 @@ em execução, comprovando o comportamento ponta a ponta.
 |---|---|---|
 | `teste-regras-negocio.sh` | 46 | API em `http://localhost:5265` |
 | `teste-api-mobile.sh` | 26 | API + dados de demonstração |
-| `teste-funcionalidades-novas.sh` | 33 a 35 | API + dados de demonstração |
+| `teste-funcionalidades-novas.sh` | 40 a 46 | API + dados de demonstração |
 | `teste-tempo-real.sh` | 27 | API + dados de demonstração |
 | `teste-navegador.mjs` | 20 | API + front-end em `http://localhost:5173` + Microsoft Edge |
 | `criar-dados-demonstracao.sh` | — | API |
@@ -60,8 +60,10 @@ bash testes/teste-api-mobile.sh
 ## 3. Funcionalidades clínicas e de plataforma
 
 Carteira de vacinação e classificação das doses, receituário, alertas clínicos,
-bloqueios de agenda, trilha de auditoria, paginação (RNF-004), recuperação de senha por
-token de uso único e limitação de requisições nos endpoints de autenticação.
+bloqueios de agenda, trilha de auditoria, paginação (RNF-004), preferências de notificação
+por e-mail e push, registro do aparelho do tutor, conta criada sem senha (primeiro acesso),
+recuperação de senha pelo código de 6 dígitos (aplicativo) e pelo link (portal), e
+limitação de requisições nos endpoints de autenticação.
 
 ```bash
 bash testes/teste-funcionalidades-novas.sh
@@ -72,9 +74,10 @@ bash testes/teste-funcionalidades-novas.sh
 > pausa manual.
 
 A contagem varia porque o roteiro se adapta ao ambiente da API, que ele detecta sozinho.
-Em `Development` percorre a recuperação de senha de ponta a ponta, usando o token que a
-resposta devolve; em `Production` verifica justamente o contrário — que o token não é
-exposto e que a documentação da API está desligada.
+Em `Development` sem servidor de e-mail percorre a recuperação de senha de ponta a ponta,
+usando o código e o link que a resposta devolve; em `Production` verifica justamente o
+contrário — que nem o código nem o link são expostos e que a documentação da API está
+desligada. Os e-mails gerados durante o roteiro ficam na pasta `emails-enviados` da API.
 
 ## 4. Cadastro pelo tutor e sincronia entre as telas
 

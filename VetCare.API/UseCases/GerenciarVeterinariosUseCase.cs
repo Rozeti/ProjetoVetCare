@@ -3,6 +3,7 @@ using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
 using VetCare.API.Security;
+using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
@@ -10,8 +11,8 @@ namespace VetCare.API.UseCases
     {
         /// <summary>
         /// HU-005, CA-1: paleta fixa usada para diferenciar cada profissional na agenda geral.
-        /// A cor é derivada da posição do veterinário na lista, o que a mantém estável entre
-        /// consultas sem precisar persistir a escolha.
+        /// A cor sai do próprio identificador do veterinário, então ela não muda quando um
+        /// colega entra ou sai da equipe.
         /// </summary>
         private static readonly string[] Paleta =
         {
@@ -22,17 +23,20 @@ namespace VetCare.API.UseCases
         private readonly IVeterinarioRepository _veterinarios;
         private readonly IUsuarioRepository _usuarios;
         private readonly PasswordHasher _hasher;
+        private readonly ContasService _contas;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarVeterinariosUseCase(
             IVeterinarioRepository veterinarios,
             IUsuarioRepository usuarios,
             PasswordHasher hasher,
+            ContasService contas,
             UsuarioAtual usuarioAtual)
         {
             _veterinarios = veterinarios;
             _usuarios = usuarios;
             _hasher = hasher;
+            _contas = contas;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -51,7 +55,7 @@ namespace VetCare.API.UseCases
                 return Resultado<VeterinarioDTO>.NaoEncontrado("Veterinário não encontrado.");
             }
 
-            return Resultado<VeterinarioDTO>.Ok(MapearParaDTO(veterinario, 0));
+            return Resultado<VeterinarioDTO>.Ok(MapearParaDTO(veterinario));
         }
 
         public async Task<Resultado<VeterinarioDTO>> Cadastrar(CriarVeterinarioDTO dto)
@@ -62,6 +66,8 @@ namespace VetCare.API.UseCases
             }
 
             Usuario usuario;
+            var usuarioNovo = false;
+            var senhaDefinidaPelaClinica = !string.IsNullOrWhiteSpace(dto.Senha);
 
             if (dto.UsuarioId.HasValue && dto.UsuarioId.Value != Guid.Empty)
             {
@@ -92,20 +98,24 @@ namespace VetCare.API.UseCases
                     return Resultado<VeterinarioDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
                 }
 
-                var senha = string.IsNullOrWhiteSpace(dto.Senha) ? _hasher.GerarSenhaProvisoria() : dto.Senha;
+                if (senhaDefinidaPelaClinica && PasswordHasher.ValidarForca(dto.Senha) is { } erroDeSenha)
+                {
+                    return Resultado<VeterinarioDTO>.Invalido(erroDeSenha);
+                }
 
                 usuario = new Usuario
                 {
                     ClinicaId = _usuarioAtual.ClinicaId,
                     Nome = dto.Nome.Trim(),
                     Email = dto.Email.Trim().ToLowerInvariant(),
-                    SenhaHash = _hasher.Gerar(senha),
+                    SenhaHash = _hasher.Gerar(senhaDefinidaPelaClinica ? dto.Senha! : _hasher.GerarSenhaProvisoria()),
                     Perfil = Perfis.Veterinario
                 };
 
                 // Gravado junto com o veterinário, mais abaixo, para que um usuário
                 // nunca fique sem o cadastro correspondente.
                 await _usuarios.Adicionar(usuario);
+                usuarioNovo = true;
             }
 
             var veterinario = new Veterinario
@@ -122,7 +132,16 @@ namespace VetCare.API.UseCases
 
             veterinario.Usuario = usuario;
 
-            return Resultado<VeterinarioDTO>.Ok(MapearParaDTO(veterinario, 0), "Veterinário cadastrado com sucesso.");
+            if (usuarioNovo)
+            {
+                await _contas.EnviarBoasVindas(usuario, senhaDefinidaPelaClinica);
+            }
+
+            return Resultado<VeterinarioDTO>.Ok(
+                MapearParaDTO(veterinario),
+                usuarioNovo && !senhaDefinidaPelaClinica
+                    ? "Veterinário cadastrado. Ele recebeu por e-mail o link para criar a própria senha."
+                    : "Veterinário cadastrado com sucesso.");
         }
 
         public async Task<Resultado<VeterinarioDTO>> Atualizar(Guid id, AtualizarVeterinarioDTO dto)
@@ -140,24 +159,32 @@ namespace VetCare.API.UseCases
             }
 
             veterinario.Crmv = dto.Crmv.Trim();
-            veterinario.Especialidade = dto.Especialidade.Trim();
+
+            // Especialidade omitida mantém a atual; só o que veio preenchido é alterado.
+            if (dto.Especialidade != null)
+            {
+                veterinario.Especialidade = string.IsNullOrWhiteSpace(dto.Especialidade)
+                    ? "Fisioterapia veterinária"
+                    : dto.Especialidade.Trim();
+            }
 
             _veterinarios.Atualizar(veterinario);
             await _veterinarios.SalvarAlteracoes();
 
-            return Resultado<VeterinarioDTO>.Ok(MapearParaDTO(veterinario, 0), "Veterinário atualizado com sucesso.");
+            return Resultado<VeterinarioDTO>.Ok(MapearParaDTO(veterinario), "Veterinário atualizado com sucesso.");
         }
 
-        public static List<VeterinarioDTO> MapearLista(List<Veterinario> veterinarios)
+        public static List<VeterinarioDTO> MapearLista(List<Veterinario> veterinarios) =>
+            veterinarios.Select(MapearParaDTO).ToList();
+
+        /// <summary>Cor estável do profissional, derivada do seu identificador.</summary>
+        public static string ObterCor(Guid veterinarioId)
         {
-            return veterinarios
-                .Select((veterinario, indice) => MapearParaDTO(veterinario, indice))
-                .ToList();
+            var indice = BitConverter.ToUInt32(veterinarioId.ToByteArray(), 0) % (uint)Paleta.Length;
+            return Paleta[indice];
         }
 
-        public static string ObterCor(int indice) => Paleta[Math.Abs(indice) % Paleta.Length];
-
-        private static VeterinarioDTO MapearParaDTO(Veterinario veterinario, int indice)
+        public static VeterinarioDTO MapearParaDTO(Veterinario veterinario)
         {
             return new VeterinarioDTO
             {
@@ -168,7 +195,7 @@ namespace VetCare.API.UseCases
                 Crmv = veterinario.Crmv,
                 Especialidade = veterinario.Especialidade,
                 Ativo = veterinario.Usuario?.Ativo ?? false,
-                Cor = ObterCor(indice)
+                Cor = ObterCor(veterinario.Id)
             };
         }
     }

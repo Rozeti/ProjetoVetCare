@@ -38,6 +38,8 @@ namespace VetCare.API.Services
             public const string Inativacao = "Inativacao";
             public const string Download = "Download";
             public const string RedefinicaoSenha = "RedefinicaoSenha";
+            public const string SolicitacaoDeSenha = "SolicitacaoDeSenha";
+            public const string Exclusao = "Exclusao";
         }
 
         public Task RegistrarDoUsuarioAtual(string acao, string entidade, Guid? entidadeId = null, string detalhe = "")

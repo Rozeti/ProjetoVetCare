@@ -71,15 +71,22 @@ namespace VetCare.API.Data
 
         public async Task<List<MidiaSessao>> ObterMidias(Guid prontuarioId)
         {
-            // A mídia se liga à sessão; o vínculo com o prontuário vem pelo atendimento
-            // registrado naquela sessão.
-            var sessoesDoProntuario = _context.Atendimentos
-                .Where(a => a.ProntuarioId == prontuarioId)
-                .Select(a => a.SessaoId);
+            // A mídia se liga à sessão, e a sessão ao tratamento do paciente. Passar por esse
+            // caminho — e não pelo atendimento — inclui as fotos anexadas a sessões que ainda
+            // não tiveram o atendimento registrado.
+            var pacienteId = await _context.Prontuarios
+                .Where(p => p.Id == prontuarioId)
+                .Select(p => (Guid?)p.PacienteId)
+                .FirstOrDefaultAsync();
+
+            if (pacienteId == null)
+            {
+                return new List<MidiaSessao>();
+            }
 
             return await _context.MidiasSessao
                 .AsNoTracking()
-                .Where(m => sessoesDoProntuario.Contains(m.SessaoId))
+                .Where(m => m.Sessao!.Tratamento!.PacienteId == pacienteId.Value)
                 .OrderByDescending(m => m.DataUpload)
                 .ToListAsync();
         }

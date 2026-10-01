@@ -70,7 +70,7 @@ namespace VetCare.API.UseCases
                 return Resultado<SessaoDTO>.NaoAutorizado("Este tratamento pertence a outra clínica.");
             }
 
-            if (tratamento.Status != "Em Andamento")
+            if (tratamento.Status != StatusTratamento.EmAndamento)
             {
                 return Resultado<SessaoDTO>.Invalido(
                     "Não é possível agendar sessões para um tratamento que não está em andamento.");
@@ -116,7 +116,7 @@ namespace VetCare.API.UseCases
                 TratamentoId = dto.TratamentoId,
                 VeterinarioId = veterinarioId,
                 DataHora = dataHora,
-                Status = "Aguardando confirmação",
+                Status = StatusSessao.AguardandoConfirmacao,
                 Observacoes = dto.Observacoes.Trim()
             };
 
@@ -144,24 +144,18 @@ namespace VetCare.API.UseCases
                 "Sessão agendada com sucesso.");
         }
 
+        /// <summary>O expediente é definido no horário da clínica, não no do servidor.</summary>
         private static bool DentroDoExpediente(DateTime dataHoraUtc, int duracaoMinutos, Clinica clinica)
         {
-            var local = dataHoraUtc.ToLocalTime();
+            var local = RelogioDaClinica.Padrao.ParaLocal(dataHoraUtc);
             var inicio = local.TimeOfDay;
             var fim = local.AddMinutes(duracaoMinutos).TimeOfDay;
 
             return inicio >= clinica.HorarioAbertura && fim <= clinica.HorarioFechamento;
         }
 
-        public static DateTime NormalizarParaUtc(DateTime valor)
-        {
-            return valor.Kind switch
-            {
-                DateTimeKind.Utc => valor,
-                DateTimeKind.Local => valor.ToUniversalTime(),
-                _ => DateTime.SpecifyKind(valor, DateTimeKind.Utc)
-            };
-        }
+        /// <summary>Horários sem fuso são lidos como horário da clínica; com "Z" são UTC.</summary>
+        public static DateTime NormalizarParaUtc(DateTime valor) => RelogioDaClinica.Padrao.NormalizarParaUtc(valor);
 
         public static SessaoDTO MapearParaDTO(Sessao sessao, int horasMinimasCancelamento, bool possuiAtendimento)
         {
@@ -185,7 +179,7 @@ namespace VetCare.API.UseCases
         /// <summary>RN-009: o cancelamento pelo tutor respeita a antecedência mínima da clínica.</summary>
         public static bool PodeCancelar(Sessao sessao, int horasMinimasCancelamento)
         {
-            if (sessao.Status is "Cancelada" or "Concluída")
+            if (StatusSessao.Encerrada(sessao.Status))
             {
                 return false;
             }

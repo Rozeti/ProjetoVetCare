@@ -28,6 +28,7 @@ namespace VetCare.Tests
             new PrescricaoRepository(Contexto),
             new AlergiaRepository(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
+            Dependencias.Assinador(),
             usuarioAtual);
 
         private async Task<AvaliacaoClinica> RegistrarAvaliacaoComObservacaoInterna()
@@ -148,6 +149,7 @@ namespace VetCare.Tests
             var casoDeUso = new RegistrarObservacaoInternaUseCase(
                 new ObservacaoInternaRepository(Contexto),
                 new ProntuarioRepository(Contexto),
+                new PetRepository(Contexto),
                 usuarioAtual);
 
             var leitura = await casoDeUso.ListarPorPaciente(Paciente.Id);

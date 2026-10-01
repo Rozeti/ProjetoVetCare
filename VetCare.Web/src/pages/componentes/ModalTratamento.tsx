@@ -40,11 +40,26 @@ function Formulario({ pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
+    // O veterinário assume o próprio tratamento; só a administração escolhe o responsável.
+    if (ehVeterinario && usuario?.veterinarioId) {
+      return;
+    }
+
+    let ativo = true;
+
     api
       .get<Veterinario[]>('/api/veterinarios')
-      .then(({ data }) => setVeterinarios(data))
-      .catch((falha) => setErro(mensagemDeErro(falha, 'Não foi possível carregar os veterinários.')));
-  }, []);
+      .then(({ data }) => {
+        if (ativo) setVeterinarios(data);
+      })
+      .catch((falha) => {
+        if (ativo) setErro(mensagemDeErro(falha, 'Não foi possível carregar os veterinários.'));
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [ehVeterinario, usuario?.veterinarioId]);
 
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
@@ -103,9 +118,12 @@ function Formulario({ pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
               className="vc-campo"
               value={veterinarioId}
               onChange={(e) => setVeterinarioId(e.target.value)}
-              disabled={ehVeterinario}
+              disabled={ehVeterinario && !!usuario?.veterinarioId}
             >
               <option value="">Selecione</option>
+              {ehVeterinario && usuario?.veterinarioId && (
+                <option value={usuario.veterinarioId}>{usuario.nome}</option>
+              )}
               {veterinarios.map((vet) => (
                 <option key={vet.id} value={vet.id}>
                   {vet.nome}

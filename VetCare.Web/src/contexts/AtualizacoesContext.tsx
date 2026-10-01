@@ -32,7 +32,6 @@ export function AtualizacoesProvider({ children }: { children: ReactNode }) {
   const { usuario } = useAuth();
 
   const [conectado, setConectado] = useState(false);
-  const [ultimoEvento, setUltimoEvento] = useState<EventoAtualizacao | null>(null);
 
   const ouvintes = useRef(new Set<OuvinteDeAtualizacao>());
 
@@ -79,12 +78,6 @@ export function AtualizacoesProvider({ children }: { children: ReactNode }) {
           desde = data.versao;
 
           if (eventos.length > 0) {
-            const alheios = eventos.filter((evento) => !evento.propria);
-
-            if (alheios.length > 0) {
-              setUltimoEvento(alheios[alheios.length - 1]);
-            }
-
             ouvintes.current.forEach((ouvinte) => ouvinte(eventos));
           }
         } catch (falha) {
@@ -109,10 +102,7 @@ export function AtualizacoesProvider({ children }: { children: ReactNode }) {
     };
   }, [usuario]);
 
-  const valor = useMemo<DadosAtualizacoes>(
-    () => ({ conectado, ultimoEvento, assinar }),
-    [conectado, ultimoEvento, assinar],
-  );
+  const valor = useMemo<DadosAtualizacoes>(() => ({ conectado, assinar }), [conectado, assinar]);
 
   return <AtualizacoesContext.Provider value={valor}>{children}</AtualizacoesContext.Provider>;
 }

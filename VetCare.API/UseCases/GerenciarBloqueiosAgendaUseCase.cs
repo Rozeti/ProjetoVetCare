@@ -82,7 +82,7 @@ namespace VetCare.API.UseCases
             // Bloquear um período que já tem sessões marcadas deixaria a agenda
             // inconsistente: o usuário precisa remarcá-las antes.
             var sessoesNoPeriodo = await _sessoes.ObterPorPeriodo(veterinarioId, inicio, fim);
-            var ativas = sessoesNoPeriodo.Where(s => s.Status != "Cancelada").ToList();
+            var ativas = sessoesNoPeriodo.Where(s => s.Status != StatusSessao.Cancelada).ToList();
 
             if (ativas.Count > 0)
             {

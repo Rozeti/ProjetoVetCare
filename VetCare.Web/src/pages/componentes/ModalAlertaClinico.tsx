@@ -29,7 +29,17 @@ interface Props {
 }
 
 /** Registro de alergias, comorbidades e restrições do paciente. */
-export function ModalAlertaClinico({ aberto, pacienteId, alertas, aoFechar, aoSalvar }: Props) {
+export function ModalAlertaClinico({ aberto, ...props }: Props) {
+  // O formulário só existe enquanto o modal está aberto: cada abertura monta campos
+  // novos, sem herdar o tipo e a gravidade escolhidos da vez anterior.
+  if (!aberto) {
+    return null;
+  }
+
+  return <Formulario {...props} />;
+}
+
+function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
   const [tipo, setTipo] = useState<TipoAlerta>('Alergia');
   const [descricao, setDescricao] = useState('');
   const [gravidade, setGravidade] = useState<Gravidade>('Moderada');
@@ -40,7 +50,9 @@ export function ModalAlertaClinico({ aberto, pacienteId, alertas, aoFechar, aoSa
     evento.preventDefault();
     setErro('');
 
-    if (descricao.trim().length < 3) {
+    const texto = descricao.trim();
+
+    if (texto.length < 3) {
       setErro('Descreva o alerta clínico.');
       return;
     }
@@ -48,7 +60,7 @@ export function ModalAlertaClinico({ aberto, pacienteId, alertas, aoFechar, aoSa
     setSalvando(true);
 
     try {
-      await api.post('/api/alergias', { pacienteId, tipo, descricao, gravidade });
+      await api.post('/api/alergias', { pacienteId, tipo, descricao: texto, gravidade });
 
       setDescricao('');
       aoSalvar();
@@ -71,7 +83,7 @@ export function ModalAlertaClinico({ aberto, pacienteId, alertas, aoFechar, aoSa
 
   return (
     <Modal
-      aberto={aberto}
+      aberto
       titulo="Alertas clínicos"
       descricao="Alergias e comorbidades aparecem em destaque no topo do prontuário."
       aoFechar={aoFechar}

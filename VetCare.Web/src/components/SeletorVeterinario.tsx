@@ -29,6 +29,7 @@ export function SeletorVeterinario({
   const { ehVeterinario } = useAuth();
 
   const [veterinarios, setVeterinarios] = useState<Veterinario[]>([]);
+  const [carregando, setCarregando] = useState(true);
   const [falhouAoCarregar, setFalhouAoCarregar] = useState(false);
 
   // Guardar o callback numa referência mantém o efeito dependente apenas do perfil. Se ele
@@ -61,6 +62,8 @@ export function SeletorVeterinario({
         }
       } catch {
         if (ativo) setFalhouAoCarregar(true);
+      } finally {
+        if (ativo) setCarregando(false);
       }
     }
 
@@ -73,6 +76,17 @@ export function SeletorVeterinario({
 
   if (ehVeterinario) {
     return null;
+  }
+
+  // Enquanto a lista não chega, o campo fica neutro: avisar "nenhum veterinário" aqui seria falso.
+  if (carregando) {
+    return (
+      <Campo rotulo={rotulo} obrigatorio={obrigatorio}>
+        <select className="vc-campo" disabled value="">
+          <option value="">Carregando...</option>
+        </select>
+      </Campo>
+    );
   }
 
   if (falhouAoCarregar) {

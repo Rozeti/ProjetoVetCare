@@ -77,7 +77,9 @@ PASSADO=$(date -u -d "-2 days 10:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -
 r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$PASSADO\"}")
 checa "HU-004 CA-5 agendamento retroativo bloqueado" "passad" "$r"
 
-r=$(get "/api/sessoes/agenda/$VETID?visao=semana" "$ADMIN")
+# A semana consultada é a da sessão recém-criada: em quinta, sexta ou sábado ela cai na
+# semana seguinte, e a visão da semana corrente viria vazia sem que nada estivesse errado.
+r=$(get "/api/sessoes/agenda/$VETID?visao=semana&data=${FUTURO%%T*}" "$ADMIN")
 checa "HU-004 CA-3 visão semana" "sessaoId" "$r"
 
 r=$(get "/api/sessoes/agenda-geral?visao=mes" "$ADMIN")

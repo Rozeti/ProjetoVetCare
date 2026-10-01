@@ -20,6 +20,7 @@ export function formatarDataExtensa(valor: string | Date): string {
     weekday: 'long',
     day: '2-digit',
     month: 'long',
+    year: 'numeric',
   });
 }
 

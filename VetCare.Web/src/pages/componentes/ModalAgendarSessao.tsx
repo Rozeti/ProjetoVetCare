@@ -122,6 +122,11 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
       return;
     }
 
+    if (!veterinarioId && !vetSelecionado) {
+      setErro('Selecione o veterinário responsável pela sessão.');
+      return;
+    }
+
     setSalvando(true);
 
     try {

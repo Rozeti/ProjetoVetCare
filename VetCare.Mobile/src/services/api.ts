@@ -5,11 +5,14 @@ import Constants from 'expo-constants';
 export const CHAVE_TOKEN = '@VetCareMobile:token';
 export const CHAVE_USUARIO = '@VetCareMobile:usuario';
 
+/** Porta em que a API escuta em desenvolvimento; muda com EXPO_PUBLIC_API_PORT. */
+const PORTA_DA_API = process.env.EXPO_PUBLIC_API_PORT ?? '5265';
+
 /**
  * O celular não enxerga o `localhost` do computador que roda a API. Em
  * desenvolvimento, descobrimos o IP da máquina a partir do host do próprio
  * Metro/Expo, o que evita ter que editar este arquivo a cada troca de rede.
- * Para apontar para outro servidor, defina `EXPO_PUBLIC_API_URL`.
+ * Para apontar para outro servidor (inclusive em HTTPS), defina `EXPO_PUBLIC_API_URL`.
  */
 function descobrirUrlDaApi(): string {
   const configurada = process.env.EXPO_PUBLIC_API_URL;
@@ -24,11 +27,11 @@ function descobrirUrlDaApi(): string {
 
   if (hostDoExpo) {
     const ip = hostDoExpo.split(':')[0];
-    return `http://${ip}:5265`;
+    return `http://${ip}:${PORTA_DA_API}`;
   }
 
   // Última alternativa: emulador Android acessa o host pelo endereço 10.0.2.2.
-  return 'http://10.0.2.2:5265';
+  return `http://10.0.2.2:${PORTA_DA_API}`;
 }
 
 export const URL_API = descobrirUrlDaApi();
@@ -62,9 +65,19 @@ export function mensagemDeErro(erro: unknown, alternativa = 'Não foi possível 
     }
   }
 
+  if (erro instanceof Error && erro.message) {
+    return erro.message;
+  }
+
   return alternativa;
 }
 
+/** Verdadeiro quando a API respondeu recusando a sessão (token inválido, expirado ou conta inativa). */
+export function sessaoRecusada(erro: unknown): boolean {
+  return axios.isAxiosError(erro) && (erro.response?.status === 401 || erro.response?.status === 403);
+}
+
+/** Monta a URL absoluta de um arquivo servido pela API (mídias e documentos, já com assinatura). */
 export function urlDoArquivo(caminhoRelativo: string): string {
   if (!caminhoRelativo) {
     return '';

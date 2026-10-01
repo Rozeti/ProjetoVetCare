@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Security;
 using VetCare.API.Services;
@@ -25,12 +26,17 @@ namespace VetCare.API.Controllers
         /// </summary>
         private const int EsperaMaximaEmSegundos = 30;
 
+        /// <summary>Com que frequência, no máximo, a presença do usuário é regravada no banco.</summary>
+        private static readonly TimeSpan IntervaloDePresenca = TimeSpan.FromMinutes(2);
+
         private readonly CentralDeAtualizacoes _central;
+        private readonly IUsuarioRepository _usuarios;
         private readonly UsuarioAtual _usuarioAtual;
 
-        public AtualizacoesController(CentralDeAtualizacoes central, UsuarioAtual usuarioAtual)
+        public AtualizacoesController(CentralDeAtualizacoes central, IUsuarioRepository usuarios, UsuarioAtual usuarioAtual)
         {
             _central = central;
+            _usuarios = usuarios;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -45,6 +51,11 @@ namespace VetCare.API.Controllers
             [FromQuery] int espera = 25,
             CancellationToken cancelamento = default)
         {
+            // Enquanto a tela está aberta este laço roda sem parar, então ele é a medida mais
+            // fiel de "está usando o sistema agora" — é o que alimenta o indicador "online"
+            // das conversas (HU-014, CA-2).
+            await _usuarios.RegistrarAtividade(_usuarioAtual.Id, IntervaloDePresenca);
+
             var segundos = Math.Clamp(espera, 0, EsperaMaximaEmSegundos);
 
             var leitura = await _central.Aguardar(

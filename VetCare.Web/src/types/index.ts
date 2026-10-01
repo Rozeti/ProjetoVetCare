@@ -25,18 +25,29 @@ export interface Usuario {
   ativo: boolean;
   dataCadastro: string;
   ultimoAcesso?: string | null;
+  /** HU-015: canais pelos quais o usuário aceita ser avisado além do sistema. */
+  notificarPorEmail: boolean;
+  notificarPorPush: boolean;
   veterinarioId?: string | null;
   crmv?: string | null;
   especialidade?: string | null;
   tutorId?: string | null;
   telefone?: string | null;
   endereco?: string | null;
+  cpf?: string | null;
 }
 
 export interface RespostaLogin {
   token: string;
   expiraEm: string;
   usuario: Usuario;
+}
+
+/** Resposta do pedido de redefinição; os campos de desenvolvimento só existem sem SMTP configurado. */
+export interface RespostaRecuperacao {
+  mensagem: string;
+  tokenDesenvolvimento?: string | null;
+  codigoDesenvolvimento?: string | null;
 }
 
 export interface Tutor {
@@ -205,7 +216,6 @@ export interface AgendaGeral {
   fim: string;
   veterinarios: Veterinario[];
   sessoes: ItemAgenda[];
-  vazia: boolean;
 }
 
 export interface Sessao {
@@ -230,6 +240,7 @@ export interface Midia {
   atendimentoId?: string | null;
   tipo: 'Imagem' | 'Video';
   nomeArquivo: string;
+  /** URL assinada pela API, válida por algumas horas; recarregar a tela gera outra. */
   urlArquivo: string;
   dataUpload: string;
 }
@@ -244,10 +255,12 @@ export interface ObservacaoInterna {
   dataRegistro: string;
 }
 
+export type TipoItemLinhaTempo = 'Avaliação Clínica' | 'Atendimento' | 'Observação Interna';
+
 export interface ItemLinhaTempo {
   id: string;
   data: string;
-  tipo: 'Avaliação Clínica' | 'Atendimento' | 'Observação Interna';
+  tipo: TipoItemLinhaTempo;
   autor: string;
   descricao: string;
   detalhes: string;
@@ -270,6 +283,7 @@ export interface Documento {
   prontuarioId: string;
   nomeArquivo: string;
   tipoDocumento: string;
+  /** URL assinada pela API, válida por algumas horas. */
   urlArquivo: string;
   tamanhoBytes: number;
   enviadoPor: string;
@@ -362,9 +376,18 @@ export interface Conversa {
   online: boolean;
 }
 
+/** Gatilhos de notificação da HU-015 e dos lembretes automáticos. */
+export type TipoNotificacao =
+  | 'SessaoAgendada'
+  | 'LembreteConfirmacao'
+  | 'StatusSessao'
+  | 'NovoRegistroProntuario'
+  | 'NovaMensagem'
+  | 'DoseDeVacina';
+
 export interface Notificacao {
   id: string;
-  tipo: string;
+  tipo: TipoNotificacao;
   titulo: string;
   conteudo: string;
   linkRelacionado?: string | null;
@@ -467,3 +490,6 @@ export interface HistoricoVersao {
   alteradoPor: string;
   dataAlteracao: string;
 }
+
+/** Espécies oferecidas nos formulários; a API aceita qualquer texto. */
+export const ESPECIES = ['Cachorro', 'Gato', 'Ave', 'Roedor', 'Outro'] as const;

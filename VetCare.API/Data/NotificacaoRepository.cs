@@ -17,11 +17,6 @@ namespace VetCare.API.Data
             await _context.Notificacoes.AddAsync(notificacao);
         }
 
-        public async Task AdicionarVarias(IEnumerable<Notificacao> notificacoes)
-        {
-            await _context.Notificacoes.AddRangeAsync(notificacoes);
-        }
-
         public async Task<Notificacao?> ObterPorId(Guid id)
         {
             return await _context.Notificacoes.FirstOrDefaultAsync(n => n.Id == id);
@@ -54,6 +49,17 @@ namespace VetCare.API.Data
             return await _context.Notificacoes
                 .Where(n => n.UsuarioId == usuarioId && !n.Visualizada)
                 .ExecuteUpdateAsync(s => s.SetProperty(n => n.Visualizada, true));
+        }
+
+        public async Task<List<Notificacao>> ObterPendentesDeEntrega(DateTime agora, int limite)
+        {
+            return await _context.Notificacoes
+                .Include(n => n.Usuario)
+                .Where(n => n.SituacaoEntrega == SituacoesDeEntrega.Pendente &&
+                            (n.ProximaTentativaEm == null || n.ProximaTentativaEm <= agora))
+                .OrderBy(n => n.DataCriacao)
+                .Take(limite)
+                .ToListAsync();
         }
 
         public async Task SalvarAlteracoes()

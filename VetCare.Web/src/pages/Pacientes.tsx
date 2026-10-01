@@ -1,13 +1,13 @@
 import { useCallback, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { FileText, Loader2, PawPrint, Pencil, Plus, Power, Search, Syringe } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { FileText, Loader2, PawPrint, Pencil, Plus, Power, Search, Syringe, Trash2, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contexts/auth';
-import type { PaginaDe, Pet, Tutor } from '../types';
+import { ESPECIES, type PaginaDe, type Pet, type Tutor } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { Paginacao } from '../components/Paginacao';
-import { formatarPeso, paraValorInputData } from '../utils/formato';
+import { formatarData, formatarPeso, paraValorInputData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
@@ -23,6 +23,7 @@ const FORM_VAZIO = {
   dataNascimento: '',
   pesoAtualKg: '',
   tutorId: '',
+  dataObito: '',
 };
 
 /** HU-003: gestão dos pacientes (pets) vinculados a um tutor responsável. */
@@ -30,6 +31,11 @@ export function Pacientes() {
   const { temPerfil } = useAuth();
   const podeEditar = temPerfil('Administrador', 'Veterinario', 'Apoio');
   const podeInativar = temPerfil('Administrador', 'Veterinario');
+  const podeExcluir = temPerfil('Administrador');
+
+  // O atalho "Ver pacientes" da tela de tutores chega com ?tutor=<id>.
+  const [parametros, setParametros] = useSearchParams();
+  const tutorFiltrado = parametros.get('tutor') ?? '';
 
   const [numeroPagina, setNumeroPagina] = useState(1);
   const [busca, setBusca] = useState('');
@@ -47,6 +53,7 @@ export function Pacientes() {
       api.get<PaginaDe<Pet>>('/api/pets', {
         params: {
           busca: busca || undefined,
+          tutorId: tutorFiltrado || undefined,
           ativo: mostrarInativos ? undefined : true,
           pagina: numeroPagina,
           tamanho: 20,
@@ -56,7 +63,7 @@ export function Pacientes() {
     ]);
 
     return { pagina: respostaPets.data, tutores: respostaTutores.data };
-  }, [busca, mostrarInativos, numeroPagina]);
+  }, [busca, tutorFiltrado, mostrarInativos, numeroPagina]);
 
   // O atraso evita disparar uma requisição por tecla digitada na busca.
   const { dados, carregando, erro, setErro, recarregar } = useCarregamento(
@@ -70,6 +77,7 @@ export function Pacientes() {
 
   const pagina = dados?.pagina ?? paginaVazia<Pet>();
   const tutores = dados?.tutores ?? [];
+  const nomeDoTutorFiltrado = tutores.find((t) => t.id === tutorFiltrado)?.nome;
 
   // Um filtro novo invalida a página atual: o resultado pode ter menos páginas.
   function filtrar(aplicar: () => void) {
@@ -77,9 +85,15 @@ export function Pacientes() {
     setNumeroPagina(1);
   }
 
+  function limparFiltroDeTutor() {
+    parametros.delete('tutor');
+    setParametros(parametros, { replace: true });
+    setNumeroPagina(1);
+  }
+
   function abrirNovo() {
     setEmEdicao(null);
-    setForm(FORM_VAZIO);
+    setForm({ ...FORM_VAZIO, tutorId: tutorFiltrado });
     setErroForm('');
     setModalAberto(true);
   }
@@ -97,6 +111,7 @@ export function Pacientes() {
       dataNascimento: paraValorInputData(pet.dataNascimento),
       pesoAtualKg: pet.pesoAtualKg?.toString() ?? '',
       tutorId: pet.tutorId,
+      dataObito: pet.dataObito ? paraValorInputData(pet.dataObito) : '',
     });
     setErroForm('');
     setModalAberto(true);
@@ -117,6 +132,11 @@ export function Pacientes() {
       return;
     }
 
+    if (form.dataObito && form.dataObito < form.dataNascimento) {
+      setErroForm('A data de óbito não pode ser anterior à data de nascimento.');
+      return;
+    }
+
     setSalvando(true);
 
     const corpo = {
@@ -134,7 +154,8 @@ export function Pacientes() {
 
     try {
       if (emEdicao) {
-        await api.put(`/api/pets/${emEdicao.id}`, corpo);
+        // A edição envia a data de óbito junto: omiti-la apagaria o registro existente.
+        await api.put(`/api/pets/${emEdicao.id}`, { ...corpo, dataObito: form.dataObito || null });
         setAviso('Paciente atualizado com sucesso.');
       } else {
         await api.post('/api/pets', corpo);
@@ -160,6 +181,23 @@ export function Pacientes() {
       recarregar();
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível alterar o status do paciente.'));
+    }
+  }
+
+  /** HU-003, CA-4: só um cadastro sem histórico clínico pode ser excluído de fato. */
+  async function excluir(pet: Pet) {
+    if (!window.confirm(`Excluir o cadastro de ${pet.nome}? Esta ação só é permitida sem registros clínicos e não pode ser desfeita.`)) {
+      return;
+    }
+
+    setErro('');
+
+    try {
+      await api.delete(`/api/pets/${pet.id}`);
+      setAviso(`${pet.nome} foi excluído.`);
+      recarregar();
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível excluir o paciente.'));
     }
   }
 
@@ -215,6 +253,18 @@ export function Pacientes() {
             />
             Mostrar inativos
           </label>
+
+          {tutorFiltrado && (
+            <button
+              type="button"
+              onClick={limparFiltroDeTutor}
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand-100 px-3 py-1 text-xs font-semibold text-brand-dark hover:bg-brand-200"
+              title="Remover o filtro por tutor"
+            >
+              Tutor: {nomeDoTutorFiltrado ?? 'selecionado'}
+              <X size={14} />
+            </button>
+          )}
         </div>
       </Card>
 
@@ -224,9 +274,9 @@ export function Pacientes() {
         <Card>
           <SemDados
             icone={<PawPrint size={40} />}
-            titulo={busca ? 'Nenhum paciente encontrado' : 'Nenhum paciente cadastrado'}
+            titulo={busca || tutorFiltrado ? 'Nenhum paciente encontrado' : 'Nenhum paciente cadastrado'}
             descricao={
-              busca
+              busca || tutorFiltrado
                 ? 'Tente outro termo de busca ou limpe o filtro.'
                 : 'Cadastre o primeiro paciente para começar a registrar a evolução clínica.'
             }
@@ -282,9 +332,15 @@ export function Pacientes() {
                       {pet.telefoneTutor && <span className="text-xs text-slate-400">{pet.telefoneTutor}</span>}
                     </td>
                     <td>
-                      <Etiqueta className={pet.ativo ? 'bg-sucesso-claro text-emerald-800' : 'bg-slate-200 text-slate-600'}>
-                        {pet.ativo ? 'Ativo' : 'Inativo'}
-                      </Etiqueta>
+                      {pet.dataObito ? (
+                        <span title={`Óbito em ${formatarData(pet.dataObito)}`}>
+                          <Etiqueta className="bg-slate-200 text-slate-600">Falecido</Etiqueta>
+                        </span>
+                      ) : (
+                        <Etiqueta className={pet.ativo ? 'bg-sucesso-claro text-emerald-800' : 'bg-slate-200 text-slate-600'}>
+                          {pet.ativo ? 'Ativo' : 'Inativo'}
+                        </Etiqueta>
+                      )}
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-1">
@@ -315,7 +371,7 @@ export function Pacientes() {
                           </button>
                         )}
 
-                        {podeInativar && (
+                        {podeInativar && !pet.dataObito && (
                           <button
                             type="button"
                             onClick={() => alternarStatus(pet)}
@@ -325,6 +381,17 @@ export function Pacientes() {
                             title={pet.ativo ? 'Inativar paciente' : 'Reativar paciente'}
                           >
                             <Power size={16} />
+                          </button>
+                        )}
+
+                        {podeExcluir && (
+                          <button
+                            type="button"
+                            onClick={() => excluir(pet)}
+                            className="rounded-lg p-2 text-slate-400 hover:bg-perigo-claro hover:text-perigo"
+                            title="Excluir cadastro (apenas sem histórico clínico)"
+                          >
+                            <Trash2 size={16} />
                           </button>
                         )}
                       </div>
@@ -362,11 +429,9 @@ export function Pacientes() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo rotulo="Espécie" obrigatorio>
               <select className="vc-campo" value={form.especie} onChange={(e) => setForm({ ...form, especie: e.target.value })}>
-                <option>Cachorro</option>
-                <option>Gato</option>
-                <option>Ave</option>
-                <option>Roedor</option>
-                <option>Outro</option>
+                {ESPECIES.map((especie) => (
+                  <option key={especie}>{especie}</option>
+                ))}
               </select>
             </Campo>
 
@@ -444,6 +509,22 @@ export function Pacientes() {
               ))}
             </select>
           </Campo>
+
+          {emEdicao && (
+            <Campo
+              rotulo="Data de óbito"
+              dica="Registrar o óbito inativa o paciente e encerra os tratamentos em aberto. Deixe em branco se não se aplica."
+            >
+              <input
+                type="date"
+                className="vc-campo"
+                min={form.dataNascimento || undefined}
+                max={paraValorInputData(new Date())}
+                value={form.dataObito}
+                onChange={(e) => setForm({ ...form, dataObito: e.target.value })}
+              />
+            </Campo>
+          )}
 
           {erroForm && <Alerta tipo="erro">{erroForm}</Alerta>}
 

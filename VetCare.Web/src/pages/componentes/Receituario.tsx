@@ -113,7 +113,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
     }
 
     try {
-      await api.patch(`/api/prescricoes/${prescricao.id}/cancelar`, { status: 'Cancelada', motivo });
+      await api.patch(`/api/prescricoes/${prescricao.id}/cancelar`, { motivo });
       aoAtualizar();
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível cancelar a receita.'));

@@ -30,6 +30,7 @@ namespace VetCare.Tests
             new ObservacaoInternaRepository(Contexto),
             new VersaoRegistroRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
+            Dependencias.Assinador(),
             usuarioAtual);
 
         private CriarAvaliacaoDTO AvaliacaoCompleta() => new()

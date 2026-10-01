@@ -1,24 +1,40 @@
 /** Contratos da VetCare.API usados pelo aplicativo do tutor. */
 
+export type Perfil = 'Administrador' | 'Veterinario' | 'Tutor' | 'Apoio';
+
 export type StatusSessao = 'Aguardando confirmação' | 'Confirmada' | 'Cancelada' | 'Concluída';
 
 export interface Usuario {
   id: string;
   nome: string;
   email: string;
-  perfil: 'Administrador' | 'Veterinario' | 'Tutor' | 'Apoio';
+  perfil: Perfil;
   ativo: boolean;
   dataCadastro: string;
   ultimoAcesso?: string | null;
+  /** HU-015: canais pelos quais o usuário aceita ser avisado além do sistema. */
+  notificarPorEmail: boolean;
+  notificarPorPush: boolean;
+  veterinarioId?: string | null;
+  crmv?: string | null;
+  especialidade?: string | null;
   tutorId?: string | null;
   telefone?: string | null;
   endereco?: string | null;
+  cpf?: string | null;
 }
 
 export interface RespostaLogin {
   token: string;
   expiraEm: string;
   usuario: Usuario;
+}
+
+/** Resposta do pedido de redefinição; os campos de desenvolvimento só existem sem SMTP configurado. */
+export interface RespostaRecuperacao {
+  mensagem: string;
+  tokenDesenvolvimento?: string | null;
+  codigoDesenvolvimento?: string | null;
 }
 
 export type TipoAlerta = 'Alergia' | 'Comorbidade' | 'Restricao' | 'Cirurgia';
@@ -51,6 +67,7 @@ export interface Pet {
   pesoAtualKg?: number | null;
   tutorId: string;
   nomeTutor: string;
+  telefoneTutor: string;
   ativo: boolean;
   dataObito?: string | null;
   alertasClinicos: AlergiaCondicao[];
@@ -64,6 +81,8 @@ export type SituacaoDose = 'Em dia' | 'A vencer' | 'Vencida' | 'Dose única';
 export interface Vacina {
   id: string;
   pacienteId: string;
+  nomePaciente: string;
+  nomeTutor: string;
   tipo: TipoVacina;
   nome: string;
   fabricante: string;
@@ -90,6 +109,9 @@ export interface Prescricao {
   id: string;
   pacienteId: string;
   nomePaciente: string;
+  especie: string;
+  raca: string;
+  nomeTutor: string;
   nomeVeterinario: string;
   crmv: string;
   dataEmissao: string;
@@ -118,16 +140,20 @@ export interface Sessao {
 export interface Midia {
   id: string;
   sessaoId: string;
+  atendimentoId?: string | null;
   tipo: 'Imagem' | 'Video';
   nomeArquivo: string;
+  /** URL assinada pela API, válida por algumas horas; recarregar a tela gera outra. */
   urlArquivo: string;
   dataUpload: string;
 }
 
+export type TipoItemLinhaTempo = 'Avaliação Clínica' | 'Atendimento' | 'Observação Interna';
+
 export interface ItemLinhaTempo {
   id: string;
   data: string;
-  tipo: string;
+  tipo: TipoItemLinhaTempo;
   autor: string;
   descricao: string;
   detalhes: string;
@@ -147,8 +173,10 @@ export interface PontoEvolucao {
 
 export interface Documento {
   id: string;
+  prontuarioId: string;
   nomeArquivo: string;
   tipoDocumento: string;
+  /** URL assinada pela API, válida por algumas horas. */
   urlArquivo: string;
   tamanhoBytes: number;
   enviadoPor: string;
@@ -157,6 +185,9 @@ export interface Documento {
 
 export interface Tratamento {
   id: string;
+  pacienteId: string;
+  nomePaciente: string;
+  veterinarioId: string;
   nomeVeterinario: string;
   dataInicio: string;
   dataFim?: string | null;
@@ -182,6 +213,7 @@ export interface Prontuario {
   idadeDescritiva: string;
   nomeTutor: string;
   telefoneTutor: string;
+  dataCriacao: string;
   ultimaAtualizacao: string;
   dataObito?: string | null;
   exibeObservacoesInternas: boolean;
@@ -198,7 +230,7 @@ export interface Prontuario {
 export interface Conversa {
   usuarioId: string;
   nome: string;
-  perfil: string;
+  perfil: Perfil;
   ultimaMensagem: string;
   dataUltimaMensagem: string;
   naoLidas: number;
@@ -257,12 +289,25 @@ export interface FeedAtualizacoes {
   eventos: EventoAtualizacao[];
 }
 
+/** Gatilhos de notificação da HU-015 e dos lembretes automáticos. */
+export type TipoNotificacao =
+  | 'SessaoAgendada'
+  | 'LembreteConfirmacao'
+  | 'StatusSessao'
+  | 'NovoRegistroProntuario'
+  | 'NovaMensagem'
+  | 'DoseDeVacina';
+
 export interface Notificacao {
   id: string;
-  tipo: string;
+  tipo: TipoNotificacao;
   titulo: string;
   conteudo: string;
+  /** Caminho no portal web ("/minha-agenda", "/prontuario/{id}"); o app o traduz para as próprias telas. */
   linkRelacionado?: string | null;
   dataCriacao: string;
   visualizada: boolean;
 }
+
+/** Espécies oferecidas no cadastro; a API aceita qualquer texto. */
+export const ESPECIES = ['Cachorro', 'Gato', 'Ave', 'Roedor', 'Outro'] as const;

@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, type ReactNode } from 'react';
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
+import { iniciais } from '../../utils/formato';
 
 /** Peças visuais reutilizadas em todas as telas, conforme o design system (RNF-008). */
 
@@ -161,6 +162,10 @@ export function Modal({
   );
 }
 
+/**
+ * Rótulo e campo de formulário. O rótulo é ligado ao campo filho por `id`/`htmlFor`:
+ * clicar no texto foca o campo e os leitores de tela anunciam o nome (RNF-001).
+ */
 export function Campo({
   rotulo,
   obrigatorio,
@@ -174,36 +179,41 @@ export function Campo({
   erro?: string;
   children: ReactNode;
 }) {
+  const idGerado = useId();
+
+  const filho = isValidElement<{ id?: string }>(children)
+    ? cloneElement(children, { id: children.props.id ?? idGerado })
+    : children;
+
+  const idDoCampo = isValidElement<{ id?: string }>(children) ? (children.props.id ?? idGerado) : undefined;
+
   return (
     <div>
-      <label className="vc-rotulo">
+      <label className="vc-rotulo" htmlFor={idDoCampo}>
         {rotulo}
         {obrigatorio && <span className="ml-0.5 text-perigo">*</span>}
       </label>
-      {children}
+      {filho}
       {dica && !erro && <p className="mt-1 text-xs text-slate-500">{dica}</p>}
       {erro && <p className="mt-1 text-xs text-perigo">{erro}</p>}
     </div>
   );
 }
 
-export function Avatar({ nome, cor }: { nome: string; cor?: string }) {
-  const letras = nome
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join('')
-    .toUpperCase();
-
+/**
+ * Iniciais do nome num círculo. Sem `rotulo`, o avatar é decorativo (o nome já aparece
+ * ao lado); com `rotulo`, ele é a única identificação visual e é anunciado.
+ */
+export function Avatar({ nome, cor, rotulo }: { nome: string; cor?: string; rotulo?: string }) {
   return (
     <div
       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
       style={{ backgroundColor: cor ?? '#0284c7' }}
-      aria-hidden="true"
+      role={rotulo ? 'img' : undefined}
+      aria-label={rotulo}
+      aria-hidden={rotulo ? undefined : true}
     >
-      {letras || '?'}
+      {iniciais(nome)}
     </div>
   );
 }

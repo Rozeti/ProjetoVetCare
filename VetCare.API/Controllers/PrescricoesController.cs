@@ -40,7 +40,7 @@ namespace VetCare.API.Controllers
         /// <summary>RN-004: a receita é cancelada, não excluída.</summary>
         [HttpPatch("{id:guid}/cancelar")]
         [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
-        public async Task<IActionResult> Cancelar(Guid id, [FromBody] AtualizarStatusSessaoDTO dto)
+        public async Task<IActionResult> Cancelar(Guid id, [FromBody] CancelarPrescricaoDTO dto)
         {
             return this.Responder(await _useCase.Cancelar(id, dto.Motivo));
         }

@@ -8,6 +8,9 @@ namespace VetCare.API.Security
 {
     public class TokenService
     {
+        /// <summary>Emissor e público padrão do JWT; configuráveis em Jwt:Emissor e Jwt:Publico.</summary>
+        public const string EmissorPadrao = "VetCare";
+
         private readonly IConfiguration _configuration;
 
         public TokenService(IConfiguration configuration)
@@ -47,6 +50,8 @@ namespace VetCare.API.Security
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
+                Issuer = Emissor,
+                Audience = Publico,
                 // RNF-002: expiração automática da sessão.
                 Expires = DateTime.UtcNow.AddHours(HorasValidade),
                 SigningCredentials = new SigningCredentials(
@@ -59,6 +64,10 @@ namespace VetCare.API.Security
         }
 
         public int HorasValidade => _configuration.GetValue<int?>("Jwt:HorasValidade") ?? 8;
+
+        public string Emissor => _configuration["Jwt:Emissor"] is { Length: > 0 } emissor ? emissor : EmissorPadrao;
+
+        public string Publico => _configuration["Jwt:Publico"] is { Length: > 0 } publico ? publico : EmissorPadrao;
 
         public string ObterChave()
         {

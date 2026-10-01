@@ -22,16 +22,9 @@ namespace VetCare.API.Data
             return await _context.AvaliacoesClinicas
                 .Include(a => a.Veterinario)
                     .ThenInclude(v => v!.Usuario)
+                .Include(a => a.Tratamento)
+                    .ThenInclude(t => t!.Paciente)
                 .FirstOrDefaultAsync(a => a.Id == id);
-        }
-
-        public async Task<List<AvaliacaoClinica>> ObterPorTratamento(Guid tratamentoId)
-        {
-            return await _context.AvaliacoesClinicas
-                .AsNoTracking()
-                .Where(a => a.TratamentoId == tratamentoId)
-                .OrderByDescending(a => a.DataRegistro)
-                .ToListAsync();
         }
 
         public void Atualizar(AvaliacaoClinica avaliacao)

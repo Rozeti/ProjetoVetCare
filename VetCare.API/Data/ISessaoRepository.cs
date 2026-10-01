@@ -2,6 +2,9 @@ using VetCare.API.Models;
 
 namespace VetCare.API.Data
 {
+    /// <summary>Quantas sessões um tratamento tem e quantas já foram concluídas.</summary>
+    public sealed record ContagemDeSessoes(int Total, int Concluidas);
+
     public interface ISessaoRepository
     {
         Task Adicionar(Sessao sessao);
@@ -17,8 +20,6 @@ namespace VetCare.API.Data
         void Atualizar(Sessao sessao);
         Task SalvarAlteracoes();
 
-        Task<List<Sessao>> ObterSessoesDoDia(Guid veterinarioId, DateTime data);
-
         /// <summary>Agenda do veterinário em um intervalo, cobrindo as visões Dia, Semana e Mês (HU-004).</summary>
         Task<List<Sessao>> ObterPorPeriodo(Guid veterinarioId, DateTime inicio, DateTime fim);
 
@@ -29,6 +30,9 @@ namespace VetCare.API.Data
         Task<List<Sessao>> ObterPorTutor(Guid tutorId, bool apenasFuturas);
 
         Task<List<Sessao>> ObterPorTratamento(Guid tratamentoId);
+
+        /// <summary>Totais de vários tratamentos numa só consulta, para listas e prontuário.</summary>
+        Task<Dictionary<Guid, ContagemDeSessoes>> ContarPorTratamentos(IEnumerable<Guid> tratamentosIds);
 
         /// <summary>Sessões ainda não confirmadas dentro da janela de lembrete (HU-015, CA-2).</summary>
         Task<List<Sessao>> ObterPendentesDeLembrete(DateTime limite);

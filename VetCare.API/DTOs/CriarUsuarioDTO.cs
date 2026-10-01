@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace VetCare.API.DTOs
 {
     /// <summary>
-    /// HU-002: cadastro feito pelo Administrador. Quando o perfil é Veterinario ou Tutor,
-    /// os dados profissionais correspondentes são criados na mesma operação.
+    /// HU-002: cadastro feito pelo Administrador. Quando o perfil é Veterinario, Tutor ou
+    /// Apoio, os dados profissionais correspondentes são criados na mesma operação.
     /// </summary>
     public class CriarUsuarioDTO
     {
@@ -16,9 +16,12 @@ namespace VetCare.API.DTOs
         [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
         public string Email { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "A senha é obrigatória.")]
-        [StringLength(64, MinimumLength = 6, ErrorMessage = "A senha deve ter no mínimo 6 caracteres.")]
-        public string Senha { get; set; } = string.Empty;
+        /// <summary>
+        /// Opcional. Em branco, o usuário recebe por e-mail um link e um código para criar a
+        /// própria senha; preenchida, a clínica a comunica pessoalmente.
+        /// </summary>
+        [StringLength(64, ErrorMessage = "A senha deve ter no máximo 64 caracteres.")]
+        public string? Senha { get; set; }
 
         [Required(ErrorMessage = "O perfil é obrigatório.")]
         public string Perfil { get; set; } = string.Empty;

@@ -11,8 +11,9 @@ namespace VetCare.API.Data
     /// </summary>
     public static class SeedInicial
     {
-        public const string EmailAdministrador = "admin@vetcare.com";
-        public const string SenhaPadrao = "vetcare123";
+        /// <summary>Usados quando <c>Seed:EmailAdministrador</c> e <c>Seed:SenhaAdministrador</c> não estão configurados.</summary>
+        public const string EmailAdministradorPadrao = "admin@vetcare.com";
+        public const string SenhaAdministradorPadrao = "vetcare123";
 
         public static async Task Executar(IServiceProvider provedor)
         {
@@ -20,13 +21,14 @@ namespace VetCare.API.Data
 
             var context = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
             var hasher = escopo.ServiceProvider.GetRequiredService<PasswordHasher>();
+            var configuracao = escopo.ServiceProvider.GetRequiredService<IConfiguration>();
             var logger = escopo.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SeedInicial");
 
-            var clinica = await GarantirClinica(context, logger);
-            await GarantirAdministrador(context, clinica, hasher, logger);
+            var clinica = await GarantirClinica(context, configuracao, logger);
+            await GarantirAdministrador(context, clinica, hasher, configuracao, logger);
         }
 
-        private static async Task<Clinica> GarantirClinica(AppDbContext context, ILogger logger)
+        private static async Task<Clinica> GarantirClinica(AppDbContext context, IConfiguration configuracao, ILogger logger)
         {
             var clinica = await context.Clinicas.OrderBy(c => c.DataCadastro).FirstOrDefaultAsync();
 
@@ -37,7 +39,7 @@ namespace VetCare.API.Data
 
             clinica = new Clinica
             {
-                Nome = "Clínica VetSPA",
+                Nome = configuracao["Aplicacao:NomeDaClinica"] is { Length: > 0 } nome ? nome : "Clínica VetSPA",
                 Telefone = string.Empty,
                 Endereco = string.Empty
             };
@@ -59,6 +61,7 @@ namespace VetCare.API.Data
             AppDbContext context,
             Clinica clinica,
             PasswordHasher hasher,
+            IConfiguration configuracao,
             ILogger logger)
         {
             if (await context.Usuarios.AnyAsync(u => u.Perfil == Perfis.Administrador && u.Ativo))
@@ -66,11 +69,18 @@ namespace VetCare.API.Data
                 return;
             }
 
-            if (await context.Usuarios.AnyAsync(u => u.Email == EmailAdministrador))
+            var email = (configuracao["Seed:EmailAdministrador"] is { Length: > 0 } e ? e : EmailAdministradorPadrao)
+                .Trim()
+                .ToLowerInvariant();
+
+            var senha = configuracao["Seed:SenhaAdministrador"] is { Length: > 0 } s ? s : SenhaAdministradorPadrao;
+            var senhaEhPadrao = senha == SenhaAdministradorPadrao;
+
+            if (await context.Usuarios.AnyAsync(u => u.Email == email))
             {
                 logger.LogWarning(
                     "Nenhum administrador ativo encontrado, mas o e-mail {Email} já está em uso. " +
-                    "Reative a conta diretamente no banco de dados.", EmailAdministrador);
+                    "Reative a conta diretamente no banco de dados.", email);
 
                 return;
             }
@@ -79,17 +89,20 @@ namespace VetCare.API.Data
             {
                 ClinicaId = clinica.Id,
                 Nome = "Administrador",
-                Email = EmailAdministrador,
-                SenhaHash = hasher.Gerar(SenhaPadrao),
+                Email = email,
+                SenhaHash = hasher.Gerar(senha),
                 Perfil = Perfis.Administrador,
                 Ativo = true
             });
 
             await context.SaveChangesAsync();
 
+            // A senha nunca vai para o log: a padrão está na documentação, e a configurada
+            // só quem a definiu conhece.
             logger.LogWarning(
-                "Conta de administrador criada: {Email} / senha '{Senha}'. Altere essa senha no primeiro acesso.",
-                EmailAdministrador, SenhaPadrao);
+                "Conta de administrador criada para {Email} {Origem}. Altere a senha no primeiro acesso.",
+                email,
+                senhaEhPadrao ? "com a senha padrão da documentação" : "com a senha definida em Seed:SenhaAdministrador");
         }
     }
 }

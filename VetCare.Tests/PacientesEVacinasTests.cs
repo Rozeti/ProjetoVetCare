@@ -25,6 +25,7 @@ namespace VetCare.Tests
         private GerenciarVacinasUseCase CriarCasoDeVacinas(UsuarioAtual usuarioAtual) => new(
             new VacinaRepository(Contexto),
             new PetRepository(Contexto),
+            new VeterinarioRepository(Contexto),
             usuarioAtual);
 
         private CriarPetDTO PacienteNovo() => new()

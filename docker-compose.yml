@@ -36,14 +36,42 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__DefaultConnection: >-
         Host=postgres;Port=5432;Database=${POSTGRES_DB:-vetcare_db};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-admin}
-      # Em produção defina Jwt__Chave por variável de ambiente ou cofre de segredos.
-      Jwt__Chave: ${JWT_CHAVE:-VetCareAPI_ChaveDeDesenvolvimento_TrocarEmProducao_2026}
+      # Sem valor a pilha não sobe: uma chave conhecida por todos assinaria qualquer sessão.
+      Jwt__Chave: ${JWT_CHAVE:?Defina JWT_CHAVE no arquivo .env (mínimo de 32 caracteres)}
       Cors__OrigensPermitidas__0: ${WEB_URL:-http://localhost:8080}
+
+      # Links dos e-mails apontam para o portal; o expediente segue o fuso da clínica.
+      Aplicacao__UrlPortal: ${WEB_URL:-http://localhost:8080}
+      Aplicacao__NomeDaClinica: ${NOME_DA_CLINICA:-Clínica VetSPA}
+      Aplicacao__FusoHorario: ${FUSO_HORARIO:-America/Sao_Paulo}
+      TZ: ${FUSO_HORARIO:-America/Sao_Paulo}
+
+      # E-mail: deixe SMTP_HOST vazio para gravar os e-mails na pasta emails-enviados.
+      Email__Remetente: ${EMAIL_REMETENTE:-nao-responda@vetcare.local}
+      Email__NomeRemetente: ${EMAIL_NOME_REMETENTE:-VetCare}
+      Email__Smtp__Host: ${SMTP_HOST:-}
+      Email__Smtp__Porta: ${SMTP_PORTA:-587}
+      Email__Smtp__Usuario: ${SMTP_USUARIO:-}
+      Email__Smtp__Senha: ${SMTP_SENHA:-}
+      Email__Smtp__Seguranca: ${SMTP_SEGURANCA:-StartTls}
+
+      # Push no celular do tutor (serviço da Expo). O token só é necessário com a
+      # "Enhanced Push Security" ligada no painel da Expo.
+      Push__Habilitado: ${PUSH_HABILITADO:-true}
+      Push__Expo__TokenDeAcesso: ${EXPO_ACCESS_TOKEN:-}
+
+      # Conta inicial de administrador (só usada quando o banco nasce vazio).
+      Seed__EmailAdministrador: ${ADMIN_EMAIL:-}
+      Seed__SenhaAdministrador: ${ADMIN_SENHA:-}
+
+      # Documentação interativa (/scalar) fora de desenvolvimento.
+      Documentacao__Habilitada: ${API_DOCS:-false}
     ports:
       - "${API_PORT:-5265}:5265"
     volumes:
-      # Mídias e documentos precisam sobreviver à troca da imagem.
-      - arquivos-api:/app/wwwroot
+      # Mídias, documentos e e-mails gravados localmente precisam sobreviver à troca da imagem.
+      - arquivos-api:/app/arquivos
+      - emails-api:/app/emails-enviados
 
   web:
     build:
@@ -60,3 +88,4 @@ services:
 volumes:
   dados-postgres:
   arquivos-api:
+  emails-api:

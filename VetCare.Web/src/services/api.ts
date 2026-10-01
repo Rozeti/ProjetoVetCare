@@ -5,6 +5,9 @@ export const URL_API = import.meta.env.VITE_API_URL ?? 'http://localhost:5265';
 export const CHAVE_TOKEN = '@VetCare:token';
 export const CHAVE_USUARIO = '@VetCare:usuario';
 
+/** Telas que funcionam sem sessão: um 401 nelas é resposta de negócio, não sessão expirada. */
+const TELAS_PUBLICAS = ['/login', '/recuperar-senha', '/primeiro-acesso'];
+
 export const api = axios.create({
   baseURL: URL_API,
 });
@@ -27,9 +30,9 @@ api.interceptors.response.use(
     // nesse caso a tela precisa mostrar a mensagem, não redirecionar.
     const naoAutenticado = erro?.response?.status === 401;
     const ehChamadaDeLogin = (erro?.config?.url ?? '').includes('/usuarios/login');
-    const jaEstaNoLogin = window.location.pathname === '/login';
+    const emTelaPublica = TELAS_PUBLICAS.includes(window.location.pathname);
 
-    if (naoAutenticado && !ehChamadaDeLogin && !jaEstaNoLogin) {
+    if (naoAutenticado && !ehChamadaDeLogin && !emTelaPublica) {
       localStorage.removeItem(CHAVE_TOKEN);
       localStorage.removeItem(CHAVE_USUARIO);
       window.location.href = '/login';
@@ -59,7 +62,12 @@ export function mensagemDeErro(erro: unknown, alternativa = 'Não foi possível 
   return alternativa;
 }
 
-/** Monta a URL absoluta de um arquivo servido pela API (mídias e documentos). */
+/** Verdadeiro quando a API respondeu recusando a sessão (token inválido, expirado ou conta inativa). */
+export function sessaoRecusada(erro: unknown): boolean {
+  return axios.isAxiosError(erro) && (erro.response?.status === 401 || erro.response?.status === 403);
+}
+
+/** Monta a URL absoluta de um arquivo servido pela API (mídias e documentos, já com assinatura). */
 export function urlDoArquivo(caminhoRelativo: string): string {
   if (!caminhoRelativo) {
     return '';

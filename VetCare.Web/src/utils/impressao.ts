@@ -27,9 +27,10 @@ function abrirParaImpressao(titulo: string, corpo: string) {
   janela.document.close();
   janela.focus();
 
-  // A impressão só é disparada depois do load para que as fontes e o layout
-  // já estejam aplicados na prévia.
-  janela.onload = () => janela.print();
+  // Numa janela aberta em branco e preenchida com document.write o evento load já
+  // aconteceu; adiar a impressão para o próximo ciclo é o que garante que o layout e
+  // os estilos estejam aplicados na prévia em todos os navegadores.
+  window.setTimeout(() => janela.print(), 50);
 }
 
 const ESTILOS = `
@@ -224,7 +225,10 @@ export function baixarCsv(nomeArquivo: string, cabecalhos: string[], linhas: (st
   const link = document.createElement('a');
   link.href = url;
   link.download = nomeArquivo.endsWith('.csv') ? nomeArquivo : `${nomeArquivo}.csv`;
+  document.body.appendChild(link);
   link.click();
+  link.remove();
 
-  URL.revokeObjectURL(url);
+  // Revogar na hora cancelaria o download em alguns navegadores.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

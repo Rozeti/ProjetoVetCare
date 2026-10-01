@@ -4,18 +4,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contextos/AtualizacoesContext';
-import type { Notificacao } from '../tipos';
-import { Aviso, Cartao, Carregando, SemDados } from '../componentes/ui';
+import { abrirDestinoDaNotificacao } from '../navegacao/rotas';
+import type { Notificacao, TipoNotificacao } from '../tipos';
+import { Alerta, Cartao, Carregando, SemDados } from '../componentes/ui';
 import { cores, espacos, raios } from '../tema';
 import { tempoRelativo } from '../utils/formato';
 
-/** Ícone e cor de cada gatilho previsto na HU-015. */
-const ESTILO_POR_TIPO: Record<string, { icone: string; fundo: string }> = {
+/** Ícone e cor de cada gatilho previsto na HU-015 (mesma leitura do portal web). */
+const ESTILO_POR_TIPO: Record<TipoNotificacao, { icone: string; fundo: string }> = {
   SessaoAgendada: { icone: '📅', fundo: cores.marcaClara },
   LembreteConfirmacao: { icone: '⏰', fundo: cores.alertaClaro },
   StatusSessao: { icone: '🔄', fundo: cores.infoClaro },
   NovoRegistroProntuario: { icone: '🩺', fundo: cores.sucessoClaro },
   NovaMensagem: { icone: '💬', fundo: cores.marcaClara },
+  DoseDeVacina: { icone: '💉', fundo: cores.alertaClaro },
 };
 
 /** HU-015: notificações dos eventos relevantes do tratamento. */
@@ -32,7 +34,7 @@ export function Notificacoes() {
       const { data } = await api.get<Notificacao[]>('/api/notificacoes');
       setNotificacoes(data);
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível carregar as notificações.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível carregar os avisos.'));
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -52,20 +54,26 @@ export function Notificacoes() {
       await api.patch('/api/notificacoes/todas/visualizadas');
       await carregar();
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível marcar as notificações.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível marcar os avisos.'));
     }
   }
 
+  /** Marca como lido e leva à tela a que o aviso se refere (agenda, mensagens, prontuário). */
   async function abrir(notificacao: Notificacao) {
-    if (notificacao.visualizada) return;
-
-    try {
-      await api.patch(`/api/notificacoes/${notificacao.id}/visualizada`);
+    if (!notificacao.visualizada) {
       setNotificacoes((atual) =>
         atual.map((n) => (n.id === notificacao.id ? { ...n, visualizada: true } : n)),
       );
-    } catch {
-      // Falhar ao marcar não deve atrapalhar a leitura.
+
+      try {
+        await api.patch(`/api/notificacoes/${notificacao.id}/visualizada`);
+      } catch {
+        // Falhar ao marcar não deve atrapalhar a leitura.
+      }
+    }
+
+    if (notificacao.linkRelacionado) {
+      abrirDestinoDaNotificacao(notificacao.linkRelacionado);
     }
   }
 
@@ -89,35 +97,35 @@ export function Notificacoes() {
       >
         <View style={estilos.cabecalho}>
           <View style={estilos.cabecalhoTexto}>
-            <Text style={estilos.titulo}>Notificações</Text>
+            <Text style={estilos.titulo}>Avisos</Text>
             <Text style={estilos.subtitulo}>
               {naoVisualizadas > 0
-                ? `${naoVisualizadas} não ${naoVisualizadas === 1 ? 'lida' : 'lidas'}`
+                ? `${naoVisualizadas} não ${naoVisualizadas === 1 ? 'lido' : 'lidos'}`
                 : 'Tudo em dia'}
             </Text>
           </View>
 
           {naoVisualizadas > 0 && (
             <TouchableOpacity onPress={marcarTodas} accessibilityRole="button">
-              <Text style={estilos.marcarTodas}>Marcar todas</Text>
+              <Text style={estilos.marcarTodas}>Marcar todos</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {erro ? (
           <View style={estilos.espaco}>
-            <Aviso tipo="erro">{erro}</Aviso>
+            <Alerta tipo="erro">{erro}</Alerta>
           </View>
         ) : null}
 
         {carregando ? (
-          <Carregando texto="Carregando notificações..." />
+          <Carregando texto="Carregando avisos..." />
         ) : notificacoes.length === 0 ? (
           <Cartao>
             <SemDados
               icone="🔔"
-              titulo="Nenhuma notificação"
-              descricao="Avisos de sessões agendadas, lembretes de confirmação, novos registros no prontuário e mensagens aparecem aqui."
+              titulo="Nenhum aviso"
+              descricao="Sessões agendadas, lembretes de confirmação, novos registros no prontuário, doses de vacina e mensagens aparecem aqui."
             />
           </Cartao>
         ) : (
@@ -130,6 +138,8 @@ export function Notificacoes() {
                 activeOpacity={0.7}
                 onPress={() => abrir(notificacao)}
                 accessibilityRole="button"
+                accessibilityLabel={`${notificacao.visualizada ? '' : 'Novo: '}${notificacao.titulo}`}
+                accessibilityHint={notificacao.linkRelacionado ? 'Abre a tela relacionada' : undefined}
               >
                 <Cartao estilo={[estilos.cartao, !notificacao.visualizada && estilos.cartaoNovo]}>
                   <View style={[estilos.icone, { backgroundColor: estilo.fundo }]}>

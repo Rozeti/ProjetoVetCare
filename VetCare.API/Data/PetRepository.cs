@@ -61,16 +61,6 @@ namespace VetCare.API.Data
             return await consulta.OrderBy(p => p.Nome).Paginar(parametros);
         }
 
-        public async Task<List<Pet>> ObterPorTutor(Guid tutorId)
-        {
-            return await _context.Pets
-                .AsNoTracking()
-                .Include(p => p.AlergiasCondicoes.Where(a => a.Ativa))
-                .Where(p => p.TutorId == tutorId && p.Ativo)
-                .OrderBy(p => p.Nome)
-                .ToListAsync();
-        }
-
         public void Atualizar(Pet pet) => _context.Pets.Update(pet);
 
         public async Task<bool> PossuiRegistrosClinicos(Guid petId)
@@ -79,7 +69,9 @@ namespace VetCare.API.Data
                 .Where(p => p.PacienteId == petId)
                 .AnyAsync(p => _context.AvaliacoesClinicas.Any(a => a.ProntuarioId == p.Id) ||
                                _context.Atendimentos.Any(a => a.ProntuarioId == p.Id) ||
-                               _context.Prescricoes.Any(pr => pr.ProntuarioId == p.Id));
+                               _context.Prescricoes.Any(pr => pr.ProntuarioId == p.Id) ||
+                               _context.DocumentosClinicos.Any(d => d.ProntuarioId == p.Id) ||
+                               _context.ObservacoesInternas.Any(o => o.ProntuarioId == p.Id));
 
             if (temProntuarioComRegistros)
             {
@@ -88,6 +80,18 @@ namespace VetCare.API.Data
 
             return await _context.Tratamentos.AnyAsync(t => t.PacienteId == petId) ||
                    await _context.Vacinas.AnyAsync(v => v.PacienteId == petId);
+        }
+
+        public async Task Remover(Pet pet)
+        {
+            // Só o que nasce junto com o cadastro sai junto com ele: o prontuário vazio e os
+            // alertas clínicos. Qualquer registro além disso bloqueia a exclusão antes daqui.
+            var alertas = await _context.AlergiasCondicoes.Where(a => a.PacienteId == pet.Id).ToListAsync();
+            var prontuarios = await _context.Prontuarios.Where(p => p.PacienteId == pet.Id).ToListAsync();
+
+            _context.AlergiasCondicoes.RemoveRange(alertas);
+            _context.Prontuarios.RemoveRange(prontuarios);
+            _context.Pets.Remove(pet);
         }
 
         public async Task<bool> MicrochipEmUso(Guid clinicaId, string microchip, Guid? ignorarPetId = null)

@@ -50,8 +50,8 @@ export const sombraCard = {
   shadowRadius: 6,
 } as const;
 
-/** HU-004, CA-4: cada status da sessão recebe um badge com cores próprias. */
-export const estiloStatus: Record<string, { fundo: string; texto: string }> = {
+/** HU-004, CA-4: cada status da sessão recebe um badge com cores próprias (mesmo nome do portal web). */
+export const estiloStatusSessao: Record<string, { fundo: string; texto: string }> = {
   'Aguardando confirmação': { fundo: cores.alertaClaro, texto: '#92400e' },
   Confirmada: { fundo: cores.sucessoClaro, texto: '#065f46' },
   Cancelada: { fundo: cores.perigoClaro, texto: '#991b1b' },

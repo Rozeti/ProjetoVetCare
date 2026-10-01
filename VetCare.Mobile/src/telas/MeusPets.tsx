@@ -2,27 +2,28 @@ import { useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, type NavigationProp, useNavigation } from '@react-navigation/native';
+import type { RotasDaPilha } from '../navegacao/rotas';
 import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contextos/AuthContext';
 import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Pet, Sessao } from '../tipos';
-import { Avatar, Aviso, Botao, Cartao, Carregando, Etiqueta, SemDados, TituloSecao } from '../componentes/ui';
+import { Alerta, Avatar, Botao, Cartao, Carregando, Etiqueta, SemDados, TituloSecao } from '../componentes/ui';
 import { FormularioNovoPet } from '../componentes/FormularioNovoPet';
 import { Icone, iconeDaEspecie } from '../componentes/Icone';
-import { cores, espacos, estiloStatus, raios } from '../tema';
+import { cores, espacos, estiloStatusSessao, raios } from '../tema';
 import { diaDoMes, formatarHora, formatarPeso, mesAbreviado } from '../utils/formato';
 
 /** HU-013, CA-1: o tutor vê apenas os pets sob sua responsabilidade. */
 export function MeusPets() {
-  const navegacao = useNavigation<NavigationProp<Record<string, object | undefined>>>();
+  const navegacao = useNavigation<NavigationProp<RotasDaPilha>>();
   const { usuario } = useAuth();
 
   const [pets, setPets] = useState<Pet[]>([]);
-  const [sessoes, setSessoes] = useState<Sessao[]>([]);
+  const [proximasSessoes, setProximasSessoes] = useState<Sessao[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState('');
-  const [aviso, setAviso] = useState('');
+  const [sucesso, setSucesso] = useState('');
   const [cadastroAberto, setCadastroAberto] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -35,7 +36,7 @@ export function MeusPets() {
       ]);
 
       setPets(respostaPets.data);
-      setSessoes(respostaSessoes.data.slice(0, 3));
+      setProximasSessoes(respostaSessoes.data.slice(0, 3));
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível carregar seus dados.'));
     } finally {
@@ -57,7 +58,7 @@ export function MeusPets() {
 
   function aoCadastrarPet(pet: Pet) {
     setCadastroAberto(false);
-    setAviso(`${pet.nome} foi cadastrado e já aparece para a equipe da clínica.`);
+    setSucesso(`${pet.nome} foi cadastrado e já aparece para a equipe da clínica.`);
     carregar();
   }
 
@@ -89,18 +90,18 @@ export function MeusPets() {
 
         {erro ? (
           <View style={estilos.espacoInferior}>
-            <Aviso tipo="erro">{erro}</Aviso>
+            <Alerta tipo="erro">{erro}</Alerta>
           </View>
         ) : null}
 
-        {aviso ? (
+        {sucesso ? (
           <TouchableOpacity
             style={estilos.espacoInferior}
-            onPress={() => setAviso('')}
+            onPress={() => setSucesso('')}
             accessibilityRole="button"
             accessibilityLabel="Dispensar aviso"
           >
-            <Aviso tipo="sucesso">{aviso}</Aviso>
+            <Alerta tipo="sucesso">{sucesso}</Alerta>
           </TouchableOpacity>
         ) : null}
 
@@ -156,7 +157,7 @@ export function MeusPets() {
                         {pet.raca ? ` · ${pet.raca}` : ''}
                       </Text>
                       <Text style={estilos.detalhePet}>
-                        {pet.idadeAnos} {pet.idadeAnos === 1 ? 'ano' : 'anos'} · {formatarPeso(pet.pesoAtualKg)}
+                        {pet.idadeDescritiva} · {formatarPeso(pet.pesoAtualKg)}
                       </Text>
                     </View>
 
@@ -168,7 +169,7 @@ export function MeusPets() {
 
             <TituloSecao>Próximas sessões</TituloSecao>
 
-            {sessoes.length === 0 ? (
+            {proximasSessoes.length === 0 ? (
               <Cartao>
                 <SemDados
                   icone="📅"
@@ -177,14 +178,14 @@ export function MeusPets() {
                 />
               </Cartao>
             ) : (
-              sessoes.map((sessao) => {
-                const estilo = estiloStatus[sessao.status] ?? { fundo: cores.fundo, texto: cores.textoSecundario };
+              proximasSessoes.map((sessao) => {
+                const estilo = estiloStatusSessao[sessao.status] ?? { fundo: cores.fundo, texto: cores.textoSecundario };
 
                 return (
                   <TouchableOpacity
                     key={sessao.id}
                     activeOpacity={0.7}
-                    onPress={() => navegacao.navigate('Agenda' as never)}
+                    onPress={() => navegacao.navigate('Principal', { screen: 'MinhaAgenda' })}
                     accessibilityRole="button"
                   >
                     <Cartao estilo={estilos.cartaoSessao}>
@@ -211,9 +212,9 @@ export function MeusPets() {
             )}
 
             <View style={estilos.dica}>
-              <Aviso tipo="info">
+              <Alerta tipo="info">
                 Lembre-se de não alimentar o pet nas duas horas anteriores à sessão de fisioterapia.
-              </Aviso>
+              </Alerta>
             </View>
           </>
         )}

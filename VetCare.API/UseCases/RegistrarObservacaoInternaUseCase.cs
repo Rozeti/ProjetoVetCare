@@ -14,15 +14,18 @@ namespace VetCare.API.UseCases
     {
         private readonly IObservacaoInternaRepository _observacoes;
         private readonly IProntuarioRepository _prontuarios;
+        private readonly IPetRepository _pets;
         private readonly UsuarioAtual _usuarioAtual;
 
         public RegistrarObservacaoInternaUseCase(
             IObservacaoInternaRepository observacoes,
             IProntuarioRepository prontuarios,
+            IPetRepository pets,
             UsuarioAtual usuarioAtual)
         {
             _observacoes = observacoes;
             _prontuarios = prontuarios;
+            _pets = pets;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -39,17 +42,12 @@ namespace VetCare.API.UseCases
                 return Resultado<ObservacaoInternaDTO>.Invalido("O conteúdo da observação é obrigatório.");
             }
 
-            var prontuario = await ResolverProntuario(dto);
+            var prontuario = await ResolverProntuarioDaClinica(dto.ProntuarioId, dto.PacienteId);
 
             if (prontuario == null)
             {
                 return Resultado<ObservacaoInternaDTO>.NaoEncontrado(
-                    "Informe um prontuário ou um paciente válido para vincular a observação.");
-            }
-
-            if (prontuario.Paciente != null && prontuario.Paciente.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<ObservacaoInternaDTO>.NaoAutorizado("Este prontuário pertence a outra clínica.");
+                    "Informe um prontuário ou um paciente válido desta clínica para vincular a observação.");
             }
 
             var observacao = new ObservacaoInterna
@@ -80,6 +78,13 @@ namespace VetCare.API.UseCases
                     "Observações internas são restritas aos perfis Administrador e Veterinário.");
             }
 
+            var pet = await _pets.ObterPorId(pacienteId);
+
+            if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<List<ObservacaoInternaDTO>>.NaoEncontrado("Paciente não encontrado.");
+            }
+
             var prontuario = await _prontuarios.ObterPorPacienteId(pacienteId);
 
             if (prontuario == null)
@@ -92,20 +97,36 @@ namespace VetCare.API.UseCases
             return Resultado<List<ObservacaoInternaDTO>>.Ok(observacoes.Select(MapearParaDTO).ToList());
         }
 
-        private async Task<Prontuario?> ResolverProntuario(CriarObservacaoInternaDTO dto)
+        /// <summary>Só devolve o prontuário quando o paciente é desta clínica; sem paciente carregado, recusa.</summary>
+        private async Task<Prontuario?> ResolverProntuarioDaClinica(Guid? prontuarioId, Guid? pacienteId)
         {
-            if (dto.ProntuarioId.HasValue && dto.ProntuarioId.Value != Guid.Empty)
+            Prontuario? prontuario = null;
+
+            if (prontuarioId.HasValue && prontuarioId.Value != Guid.Empty)
             {
-                return await _prontuarios.ObterPorId(dto.ProntuarioId.Value);
+                prontuario = await _prontuarios.ObterPorId(prontuarioId.Value);
+            }
+            else if (pacienteId.HasValue && pacienteId.Value != Guid.Empty)
+            {
+                var pet = await _pets.ObterPorId(pacienteId.Value);
+
+                if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return null;
+                }
+
+                prontuario = await _prontuarios.ObterPorPacienteId(pet.Id)
+                             ?? await _prontuarios.ObterOuCriarPorPacienteId(pet.Id);
+
+                prontuario.Paciente ??= pet;
             }
 
-            if (dto.PacienteId.HasValue && dto.PacienteId.Value != Guid.Empty)
+            if (prontuario?.Paciente == null || prontuario.Paciente.ClinicaId != _usuarioAtual.ClinicaId)
             {
-                return await _prontuarios.ObterPorPacienteId(dto.PacienteId.Value)
-                       ?? await _prontuarios.ObterOuCriarPorPacienteId(dto.PacienteId.Value);
+                return null;
             }
 
-            return null;
+            return prontuario;
         }
 
         public static ObservacaoInternaDTO MapearParaDTO(ObservacaoInterna observacao)

@@ -52,14 +52,9 @@ namespace VetCare.API.UseCases
 
             var tratamento = await _tratamentos.ObterPorIdComRelacionamentos(dto.TratamentoId);
 
-            if (tratamento == null)
+            if (tratamento == null || tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<AvaliacaoDTO>.NaoEncontrado("Tratamento não encontrado.");
-            }
-
-            if (tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<AvaliacaoDTO>.NaoAutorizado("Este tratamento pertence a outra clínica.");
             }
 
             var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? tratamento.VeterinarioId;
@@ -132,7 +127,7 @@ namespace VetCare.API.UseCases
                     $"Preencha os campos obrigatórios da avaliação: {string.Join(", ", camposPendentes)}.");
             }
 
-            var avaliacao = await _avaliacoes.ObterPorId(id);
+            var avaliacao = await ObterDaClinica(id);
 
             if (avaliacao == null)
             {
@@ -172,7 +167,7 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<AvaliacaoDTO>> ObterPorId(Guid id)
         {
-            var avaliacao = await _avaliacoes.ObterPorId(id);
+            var avaliacao = await ObterDaClinica(id);
 
             return avaliacao == null
                 ? Resultado<AvaliacaoDTO>.NaoEncontrado("Avaliação não encontrada.")
@@ -181,19 +176,24 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<List<HistoricoVersaoDTO>>> ObterHistorico(Guid id)
         {
+            if (await ObterDaClinica(id) == null)
+            {
+                return Resultado<List<HistoricoVersaoDTO>>.NaoEncontrado("Avaliação não encontrada.");
+            }
+
             var versoes = await _versoes.ObterHistorico(TipoRegistro, id);
 
-            var dtos = versoes.Select(v => new HistoricoVersaoDTO
-            {
-                Id = v.Id,
-                TipoRegistro = v.TipoRegistro,
-                RegistroId = v.RegistroId,
-                ConteudoAnterior = v.ConteudoAnterior,
-                AlteradoPor = v.AlteradoPor?.Nome ?? string.Empty,
-                DataAlteracao = v.DataAlteracao
-            }).ToList();
+            return Resultado<List<HistoricoVersaoDTO>>.Ok(HistoricoVersaoDTO.MapearLista(versoes));
+        }
 
-            return Resultado<List<HistoricoVersaoDTO>>.Ok(dtos);
+        /// <summary>Qualquer leitura ou edição passa por aqui: registro de outra clínica não existe para quem pede.</summary>
+        private async Task<AvaliacaoClinica?> ObterDaClinica(Guid id)
+        {
+            var avaliacao = await _avaliacoes.ObterPorId(id);
+
+            return avaliacao?.Tratamento?.Paciente?.ClinicaId == _usuarioAtual.ClinicaId
+                ? avaliacao
+                : null;
         }
 
         private async Task AtualizarProntuario(Prontuario prontuario)

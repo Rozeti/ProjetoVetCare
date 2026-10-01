@@ -1,25 +1,39 @@
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bell, CalendarClock, CalendarPlus, CheckCheck, ClipboardList, MessageSquare } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Bell,
+  CalendarClock,
+  CalendarPlus,
+  CheckCheck,
+  ClipboardList,
+  MessageSquare,
+  Settings2,
+  Syringe,
+} from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { useAuth } from '../contexts/auth';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
-import type { Notificacao } from '../types';
+import type { Notificacao, TipoNotificacao } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, SemDados } from '../components/ui';
 import { tempoRelativo } from '../utils/formato';
 
 /** Ícone e cor por gatilho de notificação (HU-015). */
-const ESTILO_POR_TIPO: Record<string, { Icone: typeof Bell; cor: string; fundo: string }> = {
+const ESTILO_POR_TIPO: Record<TipoNotificacao, { Icone: typeof Bell; cor: string; fundo: string }> = {
   SessaoAgendada: { Icone: CalendarPlus, cor: 'text-brand', fundo: 'bg-brand-100' },
   LembreteConfirmacao: { Icone: CalendarClock, cor: 'text-alerta', fundo: 'bg-alerta-claro' },
   StatusSessao: { Icone: CalendarClock, cor: 'text-info', fundo: 'bg-info-claro' },
   NovoRegistroProntuario: { Icone: ClipboardList, cor: 'text-sucesso', fundo: 'bg-sucesso-claro' },
   NovaMensagem: { Icone: MessageSquare, cor: 'text-brand', fundo: 'bg-brand-100' },
+  DoseDeVacina: { Icone: Syringe, cor: 'text-alerta', fundo: 'bg-alerta-claro' },
 };
+
+const ESTILO_PADRAO = { Icone: Bell, cor: 'text-slate-500', fundo: 'bg-slate-100' };
 
 /** HU-015: notificações dos eventos relevantes do tratamento. */
 export function Notificacoes() {
   const navigate = useNavigate();
+  const { ehTutor, usuario } = useAuth();
 
   const [apenasNovas, setApenasNovas] = useState(false);
 
@@ -54,17 +68,21 @@ export function Notificacoes() {
       try {
         await api.patch(`/api/notificacoes/${notificacao.id}/visualizada`);
         recarregar();
-      } catch {
+      } catch (falha) {
         // Falhar ao marcar não deve impedir a navegação para o conteúdo.
+        console.warn('Não foi possível marcar a notificação como visualizada.', falha);
       }
     }
 
-    if (notificacao.linkRelacionado) {
-      navigate(notificacao.linkRelacionado);
+    const destino = destinoDaNotificacao(notificacao.linkRelacionado, ehTutor);
+
+    if (destino) {
+      navigate(destino);
     }
   }
 
   const naoVisualizadas = notificacoes.filter((n) => !n.visualizada).length;
+  const canais = [usuario?.notificarPorEmail && 'e-mail', usuario?.notificarPorPush && 'celular'].filter(Boolean);
 
   return (
     <>
@@ -72,12 +90,18 @@ export function Notificacoes() {
         titulo="Notificações"
         descricao="Acompanhe o andamento do tratamento sem precisar verificar o sistema o tempo todo."
         acoes={
-          naoVisualizadas > 0 && (
-            <button type="button" className="vc-botao-secundario" onClick={marcarTodas}>
-              <CheckCheck size={16} />
-              Marcar todas como lidas
-            </button>
-          )
+          <>
+            <Link to="/perfil" className="vc-botao-secundario" title="Escolher por quais canais ser avisado">
+              <Settings2 size={16} />
+              {canais.length > 0 ? `Também por ${canais.join(' e ')}` : 'Só no sistema'}
+            </Link>
+            {naoVisualizadas > 0 && (
+              <button type="button" className="vc-botao-secundario" onClick={marcarTodas}>
+                <CheckCheck size={16} />
+                Marcar todas como lidas
+              </button>
+            )}
+          </>
         }
       />
 
@@ -108,18 +132,14 @@ export function Notificacoes() {
           <SemDados
             icone={<Bell size={40} />}
             titulo={apenasNovas ? 'Nenhuma notificação nova' : 'Nenhuma notificação'}
-            descricao="Avisos de sessões agendadas, lembretes de confirmação, novos registros no prontuário e mensagens aparecem aqui."
+            descricao="Avisos de sessões agendadas, lembretes de confirmação, vacinas a vencer, novos registros no prontuário e mensagens aparecem aqui."
           />
         </Card>
       ) : (
         <Card>
           <ul className="divide-y divide-slate-100">
             {notificacoes.map((notificacao) => {
-              const estilo = ESTILO_POR_TIPO[notificacao.tipo] ?? {
-                Icone: Bell,
-                cor: 'text-slate-500',
-                fundo: 'bg-slate-100',
-              };
+              const estilo = ESTILO_POR_TIPO[notificacao.tipo] ?? ESTILO_PADRAO;
               const { Icone } = estilo;
 
               return (
@@ -155,4 +175,20 @@ export function Notificacoes() {
       )}
     </>
   );
+}
+
+/**
+ * A API já envia o caminho certo para cada perfil; a tradução aqui é uma rede de
+ * segurança para notificações antigas, gravadas antes dessa regra existir.
+ */
+function destinoDaNotificacao(link: string | null | undefined, ehTutor: boolean): string | null {
+  if (!link) {
+    return null;
+  }
+
+  if (ehTutor && link === '/agenda') {
+    return '/minha-agenda';
+  }
+
+  return link;
 }

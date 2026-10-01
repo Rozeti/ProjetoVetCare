@@ -101,6 +101,7 @@ export function Usuarios() {
       especialidade: usuario.especialidade ?? '',
       telefone: usuario.telefone ?? '',
       endereco: usuario.endereco ?? '',
+      cpf: usuario.cpf ?? '',
     });
     setErroForm('');
     setModalAberto(true);
@@ -115,8 +116,8 @@ export function Usuarios() {
       return;
     }
 
-    if (!emEdicao && form.senha.length < 6) {
-      setErroForm('A senha inicial deve ter no mínimo 6 caracteres.');
+    if (!emEdicao && form.senha && form.senha.length < 6) {
+      setErroForm('A senha inicial deve ter no mínimo 6 caracteres, ou ficar em branco.');
       return;
     }
 
@@ -137,8 +138,18 @@ export function Usuarios() {
 
         setAviso('Usuário atualizado com sucesso.');
       } else {
-        await api.post('/api/usuarios', form);
-        setAviso('Usuário cadastrado com sucesso.');
+        const { data } = await api.post<{ mensagem?: string }>('/api/usuarios', {
+          ...form,
+          senha: form.senha || null,
+        });
+
+        setAviso(
+          form.senha
+            ? 'Usuário cadastrado com sucesso. Ele recebeu um e-mail de boas-vindas.'
+            : 'Usuário cadastrado. Ele recebeu por e-mail o link para criar a própria senha.',
+        );
+
+        void data;
       }
 
       setModalAberto(false);
@@ -164,8 +175,16 @@ export function Usuarios() {
     }
   }
 
-  /** HU-002, CA-5: o sistema gera uma nova senha provisória. */
+  /** HU-002, CA-5: o sistema gera uma nova senha provisória e a envia ao usuário por e-mail. */
   async function redefinirSenha(usuario: Usuario) {
+    const confirmado = window.confirm(
+      `Gerar uma nova senha provisória para ${usuario.nome}? A senha atual deixará de funcionar imediatamente.`,
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
     setErro('');
 
     try {
@@ -350,15 +369,6 @@ export function Usuarios() {
 
           {!emEdicao && (
             <>
-              <Campo rotulo="Senha inicial" obrigatorio dica="Mínimo de 6 caracteres.">
-                <input
-                  type="password"
-                  className="vc-campo"
-                  value={form.senha}
-                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
-                />
-              </Campo>
-
               <Campo rotulo="Perfil de acesso" obrigatorio>
                 <select
                   className="vc-campo"
@@ -371,6 +381,19 @@ export function Usuarios() {
                     </option>
                   ))}
                 </select>
+              </Campo>
+
+              <Campo
+                rotulo="Senha inicial"
+                dica="Deixe em branco para o usuário criar a própria senha pelo link enviado por e-mail (válido por 72 horas)."
+              >
+                <input
+                  type="password"
+                  className="vc-campo"
+                  value={form.senha}
+                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                  autoComplete="new-password"
+                />
               </Campo>
             </>
           )}
@@ -403,18 +426,24 @@ export function Usuarios() {
                 />
               </Campo>
 
-              <Campo rotulo="Endereço">
-                <input
-                  className="vc-campo"
-                  value={form.endereco}
-                  onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                />
+              <Campo rotulo="CPF">
+                <input className="vc-campo" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
               </Campo>
+
+              <div className="sm:col-span-2">
+                <Campo rotulo="Endereço">
+                  <input
+                    className="vc-campo"
+                    value={form.endereco}
+                    onChange={(e) => setForm({ ...form, endereco: e.target.value })}
+                  />
+                </Campo>
+              </div>
             </div>
           )}
 
-          {form.perfil === 'Apoio' && !emEdicao && (
-            <Campo rotulo="Setor">
+          {form.perfil === 'Apoio' && (
+            <Campo rotulo="Setor" dica={emEdicao ? 'Deixe em branco para manter o setor atual.' : undefined}>
               <input
                 className="vc-campo"
                 value={form.setor}
@@ -441,7 +470,7 @@ export function Usuarios() {
       <Modal
         aberto={!!senhaGerada}
         titulo="Senha provisória gerada"
-        descricao="Repasse a senha ao usuário; ele poderá trocá-la depois de entrar."
+        descricao="A senha foi enviada por e-mail ao usuário. Se preferir, repasse-a pessoalmente; ele poderá trocá-la depois de entrar."
         aoFechar={() => setSenhaGerada(null)}
       >
         {senhaGerada && (
@@ -455,7 +484,7 @@ export function Usuarios() {
             </div>
 
             <Alerta tipo="aviso">
-              Esta senha é exibida uma única vez. Anote-a antes de fechar esta janela.
+              Esta senha é exibida uma única vez nesta tela. O usuário também a recebeu no e-mail cadastrado.
             </Alerta>
 
             <div className="flex justify-end">

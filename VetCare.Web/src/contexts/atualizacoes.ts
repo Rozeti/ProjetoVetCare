@@ -6,8 +6,6 @@ export type OuvinteDeAtualizacao = (eventos: EventoAtualizacao[]) => void;
 export interface DadosAtualizacoes {
   /** Falso enquanto a conexão com o mural está caída; o Layout mostra isso ao usuário. */
   conectado: boolean;
-  /** Último evento recebido, usado para o aviso discreto no topo da tela. */
-  ultimoEvento: EventoAtualizacao | null;
   /** Registra um ouvinte e devolve a função que o remove. */
   assinar: (ouvinte: OuvinteDeAtualizacao) => () => void;
 }
@@ -18,7 +16,6 @@ export interface DadosAtualizacoes {
  */
 export const AtualizacoesContext = createContext<DadosAtualizacoes>({
   conectado: false,
-  ultimoEvento: null,
   assinar: () => () => {},
 });
 

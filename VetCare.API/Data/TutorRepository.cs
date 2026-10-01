@@ -27,6 +27,21 @@ namespace VetCare.API.Data
                 .FirstOrDefaultAsync(t => t.UsuarioId == usuarioId);
         }
 
+        public async Task<List<Tutor>> ObterPorUsuarios(IEnumerable<Guid> usuariosIds)
+        {
+            var ids = usuariosIds.Distinct().ToList();
+
+            if (ids.Count == 0)
+            {
+                return new List<Tutor>();
+            }
+
+            return await _context.Tutores
+                .AsNoTracking()
+                .Where(t => ids.Contains(t.UsuarioId))
+                .ToListAsync();
+        }
+
         public async Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros)
         {
             return await Filtrar(clinicaId, busca).OrderBy(t => t.Usuario!.Nome).Paginar(parametros);

@@ -9,15 +9,18 @@ namespace VetCare.API.Common
     /// </summary>
     public class ParametrosPagina
     {
-        private const int TamanhoMaximo = 100;
-        private int _tamanho = 20;
+        public const int TamanhoMaximo = 100;
+        public const int TamanhoPadrao = 20;
+
+        private int _tamanho = TamanhoPadrao;
 
         public int Pagina { get; set; } = 1;
 
         public int Tamanho
         {
             get => _tamanho;
-            set => _tamanho = value is < 1 or > TamanhoMaximo ? TamanhoMaximo : value;
+            // Valor inválido volta ao padrão; acima do teto fica no teto.
+            set => _tamanho = value < 1 ? TamanhoPadrao : Math.Min(value, TamanhoMaximo);
         }
 
         public int PaginaSegura => Pagina < 1 ? 1 : Pagina;

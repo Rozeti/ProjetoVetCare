@@ -1,23 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import { api } from './services/api';
+import { dadosDaResposta } from './services/notificacoesPush';
 import { useAuth } from './contextos/AuthContext';
 import { useAtualizacao } from './contextos/AtualizacoesContext';
+import { abrirDestinoDaNotificacao, type RotasDaPilha, type RotasDasAbas } from './navegacao/rotas';
 import { Icone } from './componentes/Icone';
 import { cores } from './tema';
 
 import { Login } from './telas/Login';
+import { RecuperarSenha } from './telas/RecuperarSenha';
 import { MeusPets } from './telas/MeusPets';
-import { Agenda } from './telas/Agenda';
+import { MinhaAgenda } from './telas/MinhaAgenda';
 import { Prontuario } from './telas/Prontuario';
 import { Mensagens } from './telas/Mensagens';
 import { Notificacoes } from './telas/Notificacoes';
 import { Perfil } from './telas/Perfil';
 
-const Pilha = createNativeStackNavigator();
-const Abas = createBottomTabNavigator();
+const Pilha = createNativeStackNavigator<RotasDaPilha>();
+const Abas = createBottomTabNavigator<RotasDasAbas>();
 
 /** Contador exibido sobre o ícone da aba (mensagens e notificações). */
 function IconeDaAba({ nome, cor, contador }: { nome: string; cor: string; contador?: number }) {
@@ -34,6 +39,7 @@ function IconeDaAba({ nome, cor, contador }: { nome: string; cor: string; contad
 }
 
 function AbasDoTutor() {
+  const insets = useSafeAreaInsets();
   const [naoLidas, setNaoLidas] = useState(0);
   const [notificacoes, setNotificacoes] = useState(0);
 
@@ -69,7 +75,9 @@ function AbasDoTutor() {
         headerShown: false,
         tabBarActiveTintColor: cores.marca,
         tabBarInactiveTintColor: cores.textoSuave,
-        tabBarStyle: estilos.barra,
+        // A barra respeita a área segura: em aparelhos com gestos ou "home indicator" os
+        // rótulos não ficam escondidos atrás da barra do sistema.
+        tabBarStyle: [estilos.barra, { height: 62 + insets.bottom, paddingBottom: 8 + insets.bottom }],
         tabBarLabelStyle: estilos.rotulo,
       }}
     >
@@ -83,8 +91,8 @@ function AbasDoTutor() {
       />
 
       <Abas.Screen
-        name="Agenda"
-        component={Agenda}
+        name="MinhaAgenda"
+        component={MinhaAgenda}
         options={{
           title: 'Agenda',
           tabBarIcon: ({ color }) => <IconeDaAba nome="agenda" cor={color} />,
@@ -124,11 +132,49 @@ function AbasDoTutor() {
 }
 
 /**
+ * Abre a tela certa quando o tutor toca numa notificação — tanto com o aplicativo
+ * aberto quanto quando é a notificação que o abre. Cada resposta é tratada uma vez.
+ */
+function useAberturaPorNotificacao(autenticado: boolean) {
+  const ultimaResposta = Notifications.useLastNotificationResponse();
+  const tratada = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!autenticado || !ultimaResposta) {
+      return;
+    }
+
+    const identificador = ultimaResposta.notification.request.identifier;
+
+    if (tratada.current === identificador) {
+      return;
+    }
+
+    const { link } = dadosDaResposta(ultimaResposta);
+    let tentativas = 0;
+
+    // Numa abertura a frio o navegador pode ainda não estar pronto; insistimos por alguns segundos.
+    const temporizador = setInterval(() => {
+      tentativas += 1;
+
+      if (abrirDestinoDaNotificacao(link) || tentativas > 20) {
+        tratada.current = identificador;
+        clearInterval(temporizador);
+      }
+    }, 150);
+
+    return () => clearInterval(temporizador);
+  }, [autenticado, ultimaResposta]);
+}
+
+/**
  * A pilha alterna entre Login e a área autenticada conforme o estado do
  * AuthContext — assim não é preciso navegar manualmente após entrar ou sair.
  */
 export function Navegacao() {
   const { usuario } = useAuth();
+
+  useAberturaPorNotificacao(!!usuario);
 
   return (
     <Pilha.Navigator screenOptions={{ headerShown: false }}>
@@ -138,7 +184,10 @@ export function Navegacao() {
           <Pilha.Screen name="Prontuario" component={Prontuario} />
         </>
       ) : (
-        <Pilha.Screen name="Login" component={Login} />
+        <>
+          <Pilha.Screen name="Login" component={Login} />
+          <Pilha.Screen name="RecuperarSenha" component={RecuperarSenha} />
+        </>
       )}
     </Pilha.Navigator>
   );
@@ -148,8 +197,6 @@ const estilos = StyleSheet.create({
   barra: {
     backgroundColor: cores.superficie,
     borderTopColor: cores.borda,
-    height: 62,
-    paddingBottom: 8,
     paddingTop: 6,
   },
   rotulo: {

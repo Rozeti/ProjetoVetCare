@@ -30,7 +30,7 @@ namespace VetCare.API.Data
             // Sessões canceladas liberam o horário (HU-006, CA-2).
             return await _context.Sessoes.AnyAsync(s =>
                 s.VeterinarioId == veterinarioId &&
-                s.Status != "Cancelada" &&
+                s.Status != StatusSessao.Cancelada &&
                 (ignorarSessaoId == null || s.Id != ignorarSessaoId) &&
                 s.DataHora < fimNovo &&
                 inicioNovo < s.DataHora.AddMinutes(duracaoMinutos));
@@ -61,12 +61,6 @@ namespace VetCare.API.Data
         public void Atualizar(Sessao sessao)
         {
             _context.Sessoes.Update(sessao);
-        }
-
-        public Task<List<Sessao>> ObterSessoesDoDia(Guid veterinarioId, DateTime data)
-        {
-            var inicioDoDia = DateTime.SpecifyKind(data.Date, DateTimeKind.Utc);
-            return ObterPorPeriodo(veterinarioId, inicioDoDia, inicioDoDia.AddDays(1));
         }
 
         public async Task<List<Sessao>> ObterPorPeriodo(Guid veterinarioId, DateTime inicio, DateTime fim)
@@ -133,7 +127,7 @@ namespace VetCare.API.Data
 
             if (apenasFuturas)
             {
-                consulta = consulta.Where(s => s.DataHora >= agora && s.Status != "Cancelada");
+                consulta = consulta.Where(s => s.DataHora >= agora && s.Status != StatusSessao.Cancelada);
             }
 
             return await consulta.OrderBy(s => s.DataHora).ToListAsync();
@@ -150,19 +144,45 @@ namespace VetCare.API.Data
                 .ToListAsync();
         }
 
+        public async Task<Dictionary<Guid, ContagemDeSessoes>> ContarPorTratamentos(IEnumerable<Guid> tratamentosIds)
+        {
+            var ids = tratamentosIds.Distinct().ToList();
+
+            if (ids.Count == 0)
+            {
+                return new Dictionary<Guid, ContagemDeSessoes>();
+            }
+
+            var sessoes = await _context.Sessoes
+                .AsNoTracking()
+                .Where(s => ids.Contains(s.TratamentoId))
+                .Select(s => new { s.TratamentoId, s.Status })
+                .ToListAsync();
+
+            return sessoes
+                .GroupBy(s => s.TratamentoId)
+                .ToDictionary(
+                    grupo => grupo.Key,
+                    grupo => new ContagemDeSessoes(grupo.Count(), grupo.Count(s => s.Status == StatusSessao.Concluida)));
+        }
+
         public async Task<List<Sessao>> ObterPendentesDeLembrete(DateTime limite)
         {
             var agora = DateTime.UtcNow;
             var limiteUtc = DateTime.SpecifyKind(limite, DateTimeKind.Utc);
 
+            // Paciente inativo ou falecido não recebe mais lembrete, mesmo que a sessão
+            // antiga ainda esteja na agenda.
             return await _context.Sessoes
                 .Include(s => s.Tratamento)
                     .ThenInclude(t => t!.Paciente)
                         .ThenInclude(p => p!.Tutor)
                 .Where(s => !s.LembreteEnviado &&
-                            s.Status == "Aguardando confirmação" &&
+                            s.Status == StatusSessao.AguardandoConfirmacao &&
                             s.DataHora > agora &&
-                            s.DataHora <= limiteUtc)
+                            s.DataHora <= limiteUtc &&
+                            s.Tratamento!.Paciente!.Ativo &&
+                            s.Tratamento!.Paciente!.DataObito == null)
                 .ToListAsync();
         }
     }

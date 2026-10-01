@@ -20,6 +20,7 @@ namespace VetCare.API.UseCases
         private readonly IObservacaoInternaRepository _observacoes;
         private readonly IVersaoRegistroRepository _versoes;
         private readonly NotificacaoService _notificacoes;
+        private readonly AssinadorDeArquivos _assinador;
         private readonly UsuarioAtual _usuarioAtual;
 
         public RegistrarAtendimentoUseCase(
@@ -31,6 +32,7 @@ namespace VetCare.API.UseCases
             IObservacaoInternaRepository observacoes,
             IVersaoRegistroRepository versoes,
             NotificacaoService notificacoes,
+            AssinadorDeArquivos assinador,
             UsuarioAtual usuarioAtual)
         {
             _atendimentos = atendimentos;
@@ -41,6 +43,7 @@ namespace VetCare.API.UseCases
             _observacoes = observacoes;
             _versoes = versoes;
             _notificacoes = notificacoes;
+            _assinador = assinador;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -60,17 +63,12 @@ namespace VetCare.API.UseCases
 
             var sessao = await _sessoes.ObterPorIdComRelacionamentos(dto.SessaoId);
 
-            if (sessao == null)
+            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
             }
 
-            if (sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<AtendimentoDTO>.NaoAutorizado("Esta sessão pertence a outra clínica.");
-            }
-
-            if (sessao.Status == "Cancelada")
+            if (sessao.Status == StatusSessao.Cancelada)
             {
                 return Resultado<AtendimentoDTO>.Invalido(
                     "Não é possível registrar atendimento em uma sessão cancelada.");
@@ -131,17 +129,21 @@ namespace VetCare.API.UseCases
                 await AtualizarPesoDoPaciente(pacienteId, dto.PesoKg.Value);
             }
 
-            if (dto.ConcluirSessao && sessao.Status != "Concluída")
+            var sessaoConcluidaAgora = false;
+
+            if (dto.ConcluirSessao && sessao.Status != StatusSessao.Concluida)
             {
-                sessao.Status = "Concluída";
+                sessao.Status = StatusSessao.Concluida;
                 _sessoes.Atualizar(sessao);
                 await _sessoes.SalvarAlteracoes();
+                sessaoConcluidaAgora = true;
             }
 
             prontuario.UltimaAtualizacao = DateTime.UtcNow;
             _prontuarios.Atualizar(prontuario);
             await _prontuarios.SalvarAlteracoes();
 
+            // HU-015, CA-3: um único aviso cobre o registro e, quando for o caso, a conclusão da sessão.
             var usuarioTutor = sessao.Tratamento?.Paciente?.Tutor?.UsuarioId;
 
             if (usuarioTutor.HasValue)
@@ -149,7 +151,7 @@ namespace VetCare.API.UseCases
                 await _notificacoes.NotificarNovoRegistroProntuario(
                     usuarioTutor.Value,
                     sessao.Tratamento?.Paciente?.Nome ?? "seu pet",
-                    "Novo atendimento",
+                    sessaoConcluidaAgora ? "Novo atendimento (sessão concluída)" : "Novo atendimento",
                     pacienteId);
             }
 
@@ -166,7 +168,7 @@ namespace VetCare.API.UseCases
                 return Resultado<AtendimentoDTO>.Invalido("A escala de dor deve ser um valor entre 0 e 10.");
             }
 
-            var atendimento = await _atendimentos.ObterPorId(id);
+            var atendimento = await ObterDaClinica(id);
 
             if (atendimento == null)
             {
@@ -215,7 +217,7 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<AtendimentoDTO>> ObterPorId(Guid id)
         {
-            var atendimento = await _atendimentos.ObterPorId(id);
+            var atendimento = await ObterDaClinica(id);
 
             return atendimento == null
                 ? Resultado<AtendimentoDTO>.NaoEncontrado("Atendimento não encontrado.")
@@ -224,6 +226,13 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<AtendimentoDTO?>> ObterPorSessao(Guid sessaoId)
         {
+            var sessao = await _sessoes.ObterPorIdComRelacionamentos(sessaoId);
+
+            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<AtendimentoDTO?>.NaoEncontrado("Sessão não encontrada.");
+            }
+
             var atendimento = await _atendimentos.ObterPorSessao(sessaoId);
 
             if (atendimento == null)
@@ -237,19 +246,24 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<List<HistoricoVersaoDTO>>> ObterHistorico(Guid id)
         {
+            if (await ObterDaClinica(id) == null)
+            {
+                return Resultado<List<HistoricoVersaoDTO>>.NaoEncontrado("Atendimento não encontrado.");
+            }
+
             var versoes = await _versoes.ObterHistorico(TipoRegistro, id);
 
-            var dtos = versoes.Select(v => new HistoricoVersaoDTO
-            {
-                Id = v.Id,
-                TipoRegistro = v.TipoRegistro,
-                RegistroId = v.RegistroId,
-                ConteudoAnterior = v.ConteudoAnterior,
-                AlteradoPor = v.AlteradoPor?.Nome ?? string.Empty,
-                DataAlteracao = v.DataAlteracao
-            }).ToList();
+            return Resultado<List<HistoricoVersaoDTO>>.Ok(HistoricoVersaoDTO.MapearLista(versoes));
+        }
 
-            return Resultado<List<HistoricoVersaoDTO>>.Ok(dtos);
+        /// <summary>Qualquer leitura ou edição passa por aqui: registro de outra clínica não existe para quem pede.</summary>
+        private async Task<AtendimentoFisioterapeutico?> ObterDaClinica(Guid id)
+        {
+            var atendimento = await _atendimentos.ObterPorId(id);
+
+            return atendimento?.Sessao?.Tratamento?.Paciente?.ClinicaId == _usuarioAtual.ClinicaId
+                ? atendimento
+                : null;
         }
 
         private async Task AtualizarPesoDoPaciente(Guid pacienteId, decimal peso)
@@ -288,7 +302,7 @@ namespace VetCare.API.UseCases
                 TemperaturaCelsius = atendimento.TemperaturaCelsius,
                 FrequenciaCardiaca = atendimento.FrequenciaCardiaca,
                 FrequenciaRespiratoria = atendimento.FrequenciaRespiratoria,
-                Midias = midias.Select(AnexarMidiaUseCase.MapearParaDTO).ToList()
+                Midias = midias.Select(m => AnexarMidiaUseCase.MapearParaDTO(m, _assinador)).ToList()
             };
         }
     }

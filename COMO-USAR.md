@@ -198,6 +198,11 @@ Salve e feche. O `.env` nunca vai para o Git: ele guarda as senhas desta máquin
 `.env.example` é o modelo que vai para o repositório — por isso ele não pode ter senha de
 verdade dentro.
 
+O mesmo arquivo tem uma parte sobre **e-mail** (`SMTP_HOST` e companhia). Pode deixar em
+branco por enquanto: sem servidor de e-mail, o sistema grava cada mensagem como um arquivo
+na pasta `emails-enviados` da API, e a Parte 5½ mostra como abri-las. Quando quiser enviar
+e-mails de verdade, é só preencher ali os dados do seu provedor.
+
 > **Não use o caractere `$` nas senhas.** O Docker entende o cifrão como início de uma
 > variável e apaga o trecho seguinte: uma chave `7xX$mK9!bP2` chega à aplicação como `7xX!bP2`,
 > fica curta demais e a API não sobe, reiniciando em laço. Se você vir a API em
@@ -247,6 +252,11 @@ Abra o navegador em **http://localhost:8080**
 
 **Troque essa senha agora.** Clique no seu nome, no rodapé da barra lateral esquerda, e depois
 em "Alterar senha". Essa senha inicial existe só para destravar o primeiro acesso.
+
+Quando cadastrar a equipe e os tutores, **não precisa inventar senha para eles**: deixe o campo
+em branco e cada pessoa recebe por e-mail um convite para criar a própria senha. E quem
+esquecer a senha usa o "Esqueci minha senha" da tela de login, que envia um link e um código
+de 6 dígitos para o e-mail cadastrado.
 
 ### Para desligar tudo
 
@@ -430,6 +440,73 @@ afetados: só os contêineres do portal e da API são trocados, o banco fica int
 
 ---
 
+## Parte 5½ — E-mails e notificações no celular
+
+### Onde foram parar os e-mails?
+
+Enquanto o `.env` não tem um servidor de e-mail, nada é enviado para fora: cada mensagem vira
+um arquivo `.html` dentro da API. Para ver os que já foram "enviados":
+
+```
+docker compose exec api ls /app/emails-enviados
+```
+
+E para copiá-los para a pasta do projeto e abrir no navegador:
+
+```
+docker compose cp api:/app/emails-enviados ./emails-enviados
+```
+
+Cada arquivo é um e-mail completo, com o link e o código de recuperação dentro. No modo
+desenvolvimento (Parte 4) a pasta fica direto em `VetCare.API/emails-enviados`, e a tela
+"Esqueci minha senha" já preenche o código sozinha, para você testar o fluxo sem abrir nada.
+
+### Enviar e-mails de verdade
+
+Abra o `.env` e preencha a parte de e-mail com os dados do seu provedor. Com o Gmail, por
+exemplo: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORTA=587`, `SMTP_USUARIO=` seu e-mail,
+`SMTP_SENHA=` uma "senha de app" (gerada em Conta Google → Segurança → Senhas de app) e
+`EMAIL_REMETENTE=` o mesmo e-mail. Depois:
+
+```
+docker compose up -d api
+```
+
+Se a API não conseguir falar com o servidor de e-mail, ela guarda a mensagem e tenta de
+novo sozinha, algumas vezes, antes de desistir — e registra o motivo em `docker compose logs api`.
+
+### Notificações no celular do tutor
+
+Com o aplicativo aberto, o tutor já vê os avisos na aba "Avisos" — isso funciona em qualquer
+situação, inclusive no Expo Go. O que exige um passo a mais é a **notificação no celular com o
+aplicativo fechado** (push):
+
+1. Crie o projeto na Expo, uma única vez, dentro da pasta `VetCare.Mobile`:
+
+   ```
+   npx eas init
+   ```
+
+   Isso grava o identificador em `extra.eas.projectId` no `app.json`. Sem ele a tela de perfil
+   do aplicativo mostra "O aplicativo ainda não tem o identificador do projeto Expo".
+
+2. Instale o aplicativo no celular como um build de desenvolvimento, em vez do Expo Go:
+
+   ```
+   npx expo run:android
+   ```
+
+   (ou `npx expo run:ios` num Mac). O Expo Go, no Android, não recebe notificações remotas
+   desde a versão 53 do Expo — é uma limitação dele, não do VetCare.
+
+3. Entre no aplicativo e aceite o pedido de permissão. A tela "Perfil" mostra "Este celular
+   está registrado para receber os avisos" quando deu certo, e explica o motivo quando não.
+
+Do lado da API não há nada a configurar: o serviço de push da Expo é gratuito e não exige
+credencial. Para desligar o canal, use `PUSH_HABILITADO=false` no `.env`.
+
+---
+
 ## Parte 6 — Testar se está tudo funcionando
 
 ### Teste 1 — A API está viva?
@@ -504,7 +581,7 @@ O mesmo cadastro existe no aplicativo: em **Meus pets**, botão **+ Cadastrar**.
 
 ### Teste 4 — Os roteiros automáticos
 
-Estes são 154 verificações que o sistema faz em si mesmo. Elas criam dados de demonstração,
+Estes são 165 verificações que o sistema faz em si mesmo. Elas criam dados de demonstração,
 então **rode num banco de teste, não no que você já começou a usar de verdade.**
 
 Precisa do Git Bash (vem junto com o Git). Clique com o botão direito na pasta do projeto →
@@ -523,7 +600,7 @@ Cada um termina com um resumo. O esperado é:
 ```
  OK: 46   FALHAS: 0
  OK: 26   FALHAS: 0
- OK: 35   FALHAS: 0
+ OK: 46   FALHAS: 0
  OK: 27   FALHAS: 0
 ```
 
@@ -542,7 +619,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Aprovado: 91`.
+Esperado: `Aprovado: 131`.
 
 ---
 
@@ -634,6 +711,9 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 | "Muitas tentativas" no login | Proteção contra ataque de senha | Espere 1 minuto |
 | "Conta bloqueada" no login | 5 senhas erradas seguidas (RN-006) | Espere 15 minutos, ou peça a um administrador para redefinir |
 | O celular não acha a API | Celular em outra rede | Conecte no mesmo Wi-Fi do computador |
+| "Esqueci minha senha" não manda e-mail | `SMTP_HOST` vazio no `.env` | O e-mail está em `emails-enviados` (Parte 5½); ou configure o servidor de e-mail |
+| O celular não recebe notificações com o app fechado | Expo Go no Android, ou `projectId` ausente | Veja "Notificações no celular do tutor" na Parte 5½ |
+| Foto ou documento não abre e a API responde 403 | O link assinado expirou (dura 4 horas) | Recarregue a página do prontuário: os links são gerados de novo |
 | Tudo travou e você quer recomeçar | — | `docker compose down` e depois `docker compose up -d` (**sem** `-v`, senão apaga os dados) |
 
 ---
@@ -728,6 +808,7 @@ taskkill /PID 1234 /F
 | Saúde da API e do banco | http://localhost:5265/health/pronto |
 | Banco de dados | localhost:5432 — banco `vetcare_db`, usuário `postgres` |
 | Aplicativo (Expo/Metro) | http://localhost:8081 — no celular, use o QR Code |
+| E-mails gravados localmente | `docker compose exec api ls /app/emails-enviados` (ou `VetCare.API/emails-enviados` no modo desenvolvimento) |
 
 Para alcançar pelo celular, troque `localhost` pelo IP do computador na rede, que você
 descobre com `ipconfig`. O aplicativo faz essa troca sozinho; o portal web exige o ajuste

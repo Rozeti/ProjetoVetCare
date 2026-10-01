@@ -14,20 +14,20 @@ import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Sessao } from '../tipos';
-import { Aviso, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
+import { Alerta, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
-import { cores, espacos, estiloStatus, raios } from '../tema';
+import { cores, espacos, estiloStatusSessao, raios } from '../tema';
 import { formatarDataExtensa, formatarHora } from '../utils/formato';
 
 /** HU-006 e HU-013, CA-3: agenda dos pets do tutor, com confirmação e cancelamento. */
-export function Agenda() {
+export function MinhaAgenda() {
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [apenasFuturas, setApenasFuturas] = useState(true);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [processando, setProcessando] = useState<string | null>(null);
   const [erro, setErro] = useState('');
-  const [aviso, setAviso] = useState('');
+  const [sucesso, setSucesso] = useState('');
 
   const carregar = useCallback(async () => {
     setErro('');
@@ -73,13 +73,13 @@ export function Agenda() {
 
   async function alterarStatus(sessao: Sessao, status: 'Confirmada' | 'Cancelada') {
     setErro('');
-    setAviso('');
+    setSucesso('');
     setProcessando(sessao.id);
 
     try {
       await api.patch(`/api/sessoes/${sessao.id}/status`, { status });
 
-      setAviso(
+      setSucesso(
         status === 'Confirmada'
           ? `Presença confirmada para a sessão de ${sessao.nomePaciente}.`
           : `Sessão de ${sessao.nomePaciente} cancelada. A clínica foi avisada.`,
@@ -128,13 +128,13 @@ export function Agenda() {
 
         {erro ? (
           <View style={estilos.mensagem}>
-            <Aviso tipo="erro">{erro}</Aviso>
+            <Alerta tipo="erro">{erro}</Alerta>
           </View>
         ) : null}
 
-        {aviso ? (
+        {sucesso ? (
           <View style={estilos.mensagem}>
-            <Aviso tipo="sucesso">{aviso}</Aviso>
+            <Alerta tipo="sucesso">{sucesso}</Alerta>
           </View>
         ) : null}
 
@@ -150,7 +150,7 @@ export function Agenda() {
           </Cartao>
         ) : (
           sessoes.map((sessao) => {
-            const estilo = estiloStatus[sessao.status] ?? { fundo: cores.fundo, texto: cores.textoSecundario };
+            const estilo = estiloStatusSessao[sessao.status] ?? { fundo: cores.fundo, texto: cores.textoSecundario };
             const emAndamento = processando === sessao.id;
             const encerrada = sessao.status === 'Cancelada' || sessao.status === 'Concluída';
 

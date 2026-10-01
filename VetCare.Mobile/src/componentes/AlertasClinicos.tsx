@@ -8,6 +8,8 @@ const PALETA: Record<Gravidade, { fundo: string; borda: string; texto: string }>
   Leve: { fundo: cores.fundo, borda: cores.borda, texto: cores.textoSecundario },
 };
 
+const ORDEM: Gravidade[] = ['Grave', 'Moderada', 'Leve'];
+
 const ROTULO_TIPO: Record<string, string> = {
   Alergia: 'Alergia',
   Comorbidade: 'Comorbidade',
@@ -18,29 +20,34 @@ const ROTULO_TIPO: Record<string, string> = {
 /**
  * Alergias e comorbidades do pet. O tutor vê estes alertas — diferente das
  * observações internas, é informação de segurança que ele precisa conhecer.
+ * A caixa segue a cor do alerta mais grave; cada item mostra a própria gravidade.
  */
 export function AlertasClinicos({ alertas }: { alertas: AlergiaCondicao[] }) {
   if (alertas.length === 0) {
     return null;
   }
 
-  const maisGrave = alertas.some((a) => a.gravidade === 'Grave') ? 'Grave' : 'Moderada';
-  const paleta = PALETA[maisGrave as Gravidade];
+  const maisGrave = ORDEM.find((gravidade) => alertas.some((a) => a.gravidade === gravidade)) ?? 'Leve';
+  const paletaDaCaixa = PALETA[maisGrave];
 
   return (
-    <View style={[estilos.caixa, { backgroundColor: paleta.fundo, borderColor: paleta.borda }]}>
-      <Text style={[estilos.titulo, { color: paleta.texto }]}>
+    <View style={[estilos.caixa, { backgroundColor: paletaDaCaixa.fundo, borderColor: paletaDaCaixa.borda }]}>
+      <Text style={[estilos.titulo, { color: paletaDaCaixa.texto }]}>
         ⚠ {alertas.length === 1 ? 'Alerta clínico' : `${alertas.length} alertas clínicos`}
       </Text>
 
-      {alertas.map((alerta) => (
-        <View key={alerta.id} style={estilos.item}>
-          <Text style={[estilos.gravidade, { color: paleta.texto }]}>
-            {alerta.gravidade} · {ROTULO_TIPO[alerta.tipo] ?? alerta.tipo}
-          </Text>
-          <Text style={estilos.descricao}>{alerta.descricao}</Text>
-        </View>
-      ))}
+      {alertas.map((alerta) => {
+        const paleta = PALETA[alerta.gravidade] ?? PALETA.Leve;
+
+        return (
+          <View key={alerta.id} style={estilos.item}>
+            <Text style={[estilos.gravidade, { color: paleta.texto }]}>
+              {alerta.gravidade} · {ROTULO_TIPO[alerta.tipo] ?? alerta.tipo}
+            </Text>
+            <Text style={estilos.descricao}>{alerta.descricao}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }

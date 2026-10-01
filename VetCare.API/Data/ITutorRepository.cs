@@ -8,6 +8,10 @@ namespace VetCare.API.Data
         Task Adicionar(Tutor tutor);
         Task<Tutor?> ObterPorId(Guid id);
         Task<Tutor?> ObterPorUsuarioId(Guid usuarioId);
+
+        /// <summary>Vínculos de vários usuários numa só consulta, para as listagens paginadas.</summary>
+        Task<List<Tutor>> ObterPorUsuarios(IEnumerable<Guid> usuariosIds);
+
         Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros);
         Task<List<Tutor>> ListarTodos(Guid clinicaId);
         void Atualizar(Tutor tutor);

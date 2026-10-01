@@ -1,45 +1,41 @@
-using System.Security.Cryptography;
-using System.Text;
 using VetCare.API.Common;
 using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
+using VetCare.API.Security;
 using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// Redefinição de senha solicitada pelo próprio usuário, sem depender do
-    /// Administrador. O token vale por tempo limitado e só pode ser usado uma vez.
+    /// "Esqueci minha senha": o usuário informa o e-mail cadastrado e recebe um link (para o
+    /// portal) e um código de seis dígitos (para o aplicativo). Qualquer um dos dois define a
+    /// nova senha, uma única vez e dentro do prazo. O mesmo caminho conclui o primeiro acesso
+    /// de uma conta criada pela clínica.
     /// </summary>
     public class RecuperarSenhaUseCase
     {
-        private static readonly TimeSpan ValidadeDoToken = TimeSpan.FromMinutes(30);
-
         private const string MensagemNeutra =
             "Se houver uma conta ativa com este e-mail, enviaremos as instruções de redefinição.";
 
         private readonly IUsuarioRepository _usuarios;
         private readonly ITokenRedefinicaoRepository _tokens;
-        private readonly Security.PasswordHasher _hasher;
+        private readonly PasswordHasher _hasher;
         private readonly AuditoriaService _auditoria;
-        private readonly IWebHostEnvironment _ambiente;
-        private readonly ILogger<RecuperarSenhaUseCase> _logger;
+        private readonly ContasService _contas;
 
         public RecuperarSenhaUseCase(
             IUsuarioRepository usuarios,
             ITokenRedefinicaoRepository tokens,
-            Security.PasswordHasher hasher,
+            PasswordHasher hasher,
             AuditoriaService auditoria,
-            IWebHostEnvironment ambiente,
-            ILogger<RecuperarSenhaUseCase> logger)
+            ContasService contas)
         {
             _usuarios = usuarios;
             _tokens = tokens;
             _hasher = hasher;
             _auditoria = auditoria;
-            _ambiente = ambiente;
-            _logger = logger;
+            _contas = contas;
         }
 
         /// <summary>
@@ -56,79 +52,110 @@ namespace VetCare.API.UseCases
                 return Resultado<RespostaRecuperacaoDTO>.Ok(resposta);
             }
 
-            var token = GerarToken();
+            var credenciais = await _contas.EnviarRecuperacaoDeSenha(usuario);
 
-            await _tokens.InvalidarAnteriores(usuario.Id);
+            await _auditoria.RegistrarDe(
+                usuario,
+                AuditoriaService.Acoes.SolicitacaoDeSenha,
+                "Usuario",
+                usuario.Id,
+                "Pedido de redefinição de senha enviado para o e-mail cadastrado");
 
-            await _tokens.Adicionar(new TokenRedefinicaoSenha
+            if (_contas.ExporCredenciaisNaResposta)
             {
-                UsuarioId = usuario.Id,
-                TokenHash = CalcularHash(token),
-                ExpiraEm = DateTime.UtcNow.Add(ValidadeDoToken)
-            });
-
-            await _tokens.SalvarAlteracoes();
-
-            // O envio por SMTP previsto no DAS ainda não está conectado. Enquanto isso,
-            // o token fica no log do servidor e, em desenvolvimento, na própria resposta.
-            _logger.LogInformation(
-                "Token de redefinição gerado para {Email}. Validade: {Minutos} minutos.",
-                usuario.Email, ValidadeDoToken.TotalMinutes);
-
-            if (_ambiente.IsDevelopment())
-            {
-                resposta.TokenDesenvolvimento = token;
+                resposta.TokenDesenvolvimento = credenciais.Token;
+                resposta.CodigoDesenvolvimento = credenciais.Codigo;
             }
 
             return Resultado<RespostaRecuperacaoDTO>.Ok(resposta);
         }
 
-        public async Task<Resultado> Redefinir(RedefinirComTokenDTO dto)
+        public async Task<Resultado> Redefinir(RedefinirSenhaDTO dto)
         {
-            var registro = await _tokens.ObterPorHash(CalcularHash(dto.Token));
+            var (pedido, falha) = await LocalizarPedido(dto);
 
-            if (registro == null || !registro.Valido || registro.Usuario == null)
+            if (falha != null || pedido?.Usuario == null)
             {
-                return Resultado.Invalido("Link de redefinição inválido ou expirado. Solicite um novo.");
+                return falha ?? Resultado.Invalido("Link ou código inválido ou expirado. Solicite um novo.");
             }
 
-            if (!registro.Usuario.Ativo)
+            var usuario = pedido.Usuario;
+
+            if (!usuario.Ativo)
             {
                 return Resultado.Invalido("Esta conta está inativa. Procure o administrador da clínica.");
             }
 
-            registro.Usuario.SenhaHash = _hasher.Gerar(dto.NovaSenha);
+            usuario.SenhaHash = _hasher.Gerar(dto.NovaSenha);
 
             // RN-006: a redefinição libera a conta de um bloqueio por tentativas.
-            registro.Usuario.TentativasFalhas = 0;
-            registro.Usuario.BloqueadoAte = null;
+            usuario.TentativasFalhas = 0;
+            usuario.BloqueadoAte = null;
 
-            registro.UtilizadoEm = DateTime.UtcNow;
+            pedido.UtilizadoEm = DateTime.UtcNow;
 
-            _usuarios.Atualizar(registro.Usuario);
+            _usuarios.Atualizar(usuario);
+            _tokens.Atualizar(pedido);
             await _tokens.SalvarAlteracoes();
 
+            var primeiroAcesso = pedido.Finalidade == FinalidadesDoToken.PrimeiroAcesso;
+
             await _auditoria.RegistrarDe(
-                registro.Usuario,
+                usuario,
                 AuditoriaService.Acoes.RedefinicaoSenha,
                 "Usuario",
-                registro.Usuario.Id,
-                "Senha redefinida pelo próprio usuário");
+                usuario.Id,
+                primeiroAcesso ? "Senha criada no primeiro acesso" : "Senha redefinida pelo próprio usuário");
 
-            return Resultado.Ok("Senha redefinida com sucesso. Use a nova senha para entrar.");
+            _contas.EnviarAvisoDeSenhaAlterada(usuario);
+
+            return Resultado.Ok(primeiroAcesso
+                ? "Senha criada com sucesso. Use-a para entrar."
+                : "Senha redefinida com sucesso. Use a nova senha para entrar.");
         }
 
-        private static string GerarToken() =>
-            Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-                .Replace("+", "-")
-                .Replace("/", "_")
-                .TrimEnd('=');
-
         /// <summary>
-        /// O banco guarda apenas o hash: quem obtiver acesso à tabela não consegue
-        /// reconstruir os links de redefinição em aberto.
+        /// Encontra o pedido pelo token do link ou pelo par e-mail + código. As mensagens de
+        /// erro são genéricas de propósito: não dizem se o e-mail existe nem se há pedido aberto.
         /// </summary>
-        private static string CalcularHash(string token) =>
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+        private async Task<(TokenRedefinicaoSenha? Pedido, Resultado? Falha)> LocalizarPedido(RedefinirSenhaDTO dto)
+        {
+            if (!string.IsNullOrWhiteSpace(dto.Token))
+            {
+                var pedido = await _tokens.ObterPorHash(CredenciaisTemporarias.HashDoToken(dto.Token.Trim()));
+
+                return pedido == null || !pedido.Valido
+                    ? (null, Resultado.Invalido("Link de redefinição inválido ou expirado. Solicite um novo."))
+                    : (pedido, null);
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.Codigo))
+            {
+                return (null, Resultado.Invalido("Informe o link recebido por e-mail, ou o e-mail da conta e o código."));
+            }
+
+            var usuario = await _usuarios.ObterPorEmail(dto.Email);
+            var aberto = usuario == null ? null : await _tokens.ObterAbertoDoUsuario(usuario.Id);
+
+            if (aberto == null || !aberto.Valido)
+            {
+                return (null, Resultado.Invalido("Código inválido ou expirado. Solicite um novo."));
+            }
+
+            if (!CredenciaisTemporarias.CodigoConfere(aberto.Id, dto.Codigo, aberto.CodigoHash))
+            {
+                aberto.TentativasDeCodigo++;
+                _tokens.Atualizar(aberto);
+                await _tokens.SalvarAlteracoes();
+
+                var restantes = TokenRedefinicaoSenha.MaximoTentativasDeCodigo - aberto.TentativasDeCodigo;
+
+                return (null, Resultado.Invalido(restantes > 0
+                    ? $"Código incorreto. Você ainda tem {restantes} tentativa(s)."
+                    : "Código incorreto. O número de tentativas se esgotou; solicite um novo código."));
+            }
+
+            return (aberto, null);
+        }
     }
 }

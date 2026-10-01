@@ -50,6 +50,37 @@ repetir_se_limitado() {
   return 1
 }
 
+# Garante que o tutor de demonstração tenha uma sessão aguardando confirmação e imprime o
+# id dela. Os roteiros confirmam e cancelam sessões, então repeti-los no mesmo banco
+# esgotaria as duas que os dados de demonstração criam. Tenta vários dias porque a agenda
+# pode ter conflitos, bloqueios ou dias fora do expediente.
+# Uso: SESSAO=$(garantir_sessao_em_aberto "$TOKEN_ADMIN")
+garantir_sessao_em_aberto() {
+  local admin="$1" pet trat vet dia corpo resposta id
+
+  pet=$(extrair "$(curl -s "$API/api/pets?busca=Thor" -H "Authorization: Bearer $admin")" id)
+  trat=$(extrair "$(curl -s "$API/api/tratamentos/paciente/$pet" -H "Authorization: Bearer $admin")" id)
+  vet=$(extrair "$(curl -s "$API/api/veterinarios" -H "Authorization: Bearer $admin")" id)
+  corpo=$(mktemp)
+
+  for dia in $(seq 20 40); do
+    printf '{"tratamentoId":"%s","veterinarioId":"%s","dataHora":"%s"}' \
+      "$trat" "$vet" "$(date -u -d "+$dia days 15:00" +%Y-%m-%dT%H:%M:%S)" > "$corpo"
+    resposta=$(curl -s -X POST "$API/api/sessoes" -H 'Content-Type: application/json' \
+      -H "Authorization: Bearer $admin" --data-binary @"$corpo")
+    id=$(extrair "$resposta" id)
+
+    if [ -n "$id" ]; then
+      rm -f "$corpo"
+      printf '%s' "$id"
+      return 0
+    fi
+  done
+
+  rm -f "$corpo"
+  return 1
+}
+
 # Espera a janela do limitador liberar antes de o roteiro começar.
 aguardar_limitador() {
   local tentativa codigo

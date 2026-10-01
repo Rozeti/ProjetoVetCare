@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Download, ScrollText, Search } from 'lucide-react';
 import { api } from '../services/api';
-import type { PaginaDe, RegistroAuditoria } from '../types';
+import type { PaginaDe, RegistroAuditoria, Usuario } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
 import { baixarCsv } from '../utils/impressao';
@@ -9,6 +9,7 @@ import { formatarDataHora, paraValorInputData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { paginaVazia } from '../utils/paginacao';
 
+/** Mesma lista de AuditoriaService.Acoes, na API. */
 const ACOES = [
   'Login',
   'LoginNegado',
@@ -16,9 +17,13 @@ const ACOES = [
   'Criacao',
   'Alteracao',
   'Inativacao',
+  'Exclusao',
   'Download',
+  'SolicitacaoDeSenha',
   'RedefinicaoSenha',
 ];
+
+const ENTIDADES = ['Autenticacao', 'Usuario', 'Paciente', 'Prontuario', 'DocumentoClinico'];
 
 const ESTILO_ACAO: Record<string, string> = {
   Login: 'bg-sucesso-claro text-emerald-800',
@@ -27,7 +32,9 @@ const ESTILO_ACAO: Record<string, string> = {
   Criacao: 'bg-info-claro text-purple-800',
   Alteracao: 'bg-alerta-claro text-amber-800',
   Inativacao: 'bg-slate-200 text-slate-700',
+  Exclusao: 'bg-perigo-claro text-red-800',
   Download: 'bg-slate-100 text-slate-600',
+  SolicitacaoDeSenha: 'bg-alerta-claro text-amber-800',
   RedefinicaoSenha: 'bg-alerta-claro text-amber-800',
 };
 
@@ -45,13 +52,34 @@ function trintaDiasAtras(): string {
 export function Auditoria() {
   const [numeroPagina, setNumeroPagina] = useState(1);
   const [acao, setAcao] = useState('');
+  const [entidade, setEntidade] = useState('');
+  const [usuarioId, setUsuarioId] = useState('');
   const [inicio, setInicio] = useState(trintaDiasAtras);
   const [fim, setFim] = useState(paraValorInputData(new Date()));
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+
+  // A lista de usuários alimenta o filtro "quem fez"; falhar aqui só esconde o filtro.
+  useEffect(() => {
+    let ativo = true;
+
+    api
+      .get<PaginaDe<Usuario>>('/api/usuarios', { params: { tamanho: 100 } })
+      .then(({ data }) => {
+        if (ativo) setUsuarios(data.itens);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const buscar = useCallback(async () => {
     const { data } = await api.get<PaginaDe<RegistroAuditoria>>('/api/auditoria', {
       params: {
         acao: acao || undefined,
+        entidade: entidade || undefined,
+        usuarioId: usuarioId || undefined,
         inicio,
         fim,
         pagina: numeroPagina,
@@ -60,7 +88,7 @@ export function Auditoria() {
     });
 
     return data;
-  }, [acao, inicio, fim, numeroPagina]);
+  }, [acao, entidade, usuarioId, inicio, fim, numeroPagina]);
 
   const { dados, carregando, erro, setErro, recarregar } = useCarregamento(
     buscar,
@@ -130,6 +158,46 @@ export function Auditoria() {
               ))}
             </select>
           </div>
+
+          <div>
+            <label htmlFor="entidade" className="vc-rotulo">
+              Entidade
+            </label>
+            <select
+              id="entidade"
+              className="vc-campo w-auto"
+              value={entidade}
+              onChange={(e) => filtrar(() => setEntidade(e.target.value))}
+            >
+              <option value="">Todas</option>
+              {ENTIDADES.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {usuarios.length > 0 && (
+            <div>
+              <label htmlFor="usuario" className="vc-rotulo">
+                Usuário
+              </label>
+              <select
+                id="usuario"
+                className="vc-campo w-auto max-w-56"
+                value={usuarioId}
+                onChange={(e) => filtrar(() => setUsuarioId(e.target.value))}
+              >
+                <option value="">Todos</option>
+                {usuarios.map((usuario) => (
+                  <option key={usuario.id} value={usuario.id}>
+                    {usuario.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label htmlFor="inicio" className="vc-rotulo">

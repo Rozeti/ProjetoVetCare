@@ -6,6 +6,6 @@
 **/.vs
 **/.expo
 **/*.log
-**/wwwroot/uploads
-**/wwwroot/documentos
+**/arquivos
+**/emails-enviados
 testes/e2e

@@ -32,7 +32,7 @@ namespace VetCare.API.Controllers
 
         [HttpPatch("{id:guid}/status")]
         [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
-        public async Task<IActionResult> AlterarStatus(Guid id, [FromBody] AlterarStatusUsuarioDTO dto)
+        public async Task<IActionResult> AlterarStatus(Guid id, [FromBody] AlterarStatusDTO dto)
         {
             return this.Responder(await _useCase.AlterarStatus(id, dto.Ativo));
         }

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Loader2, Plus, Syringe, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Syringe, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
 import type { SituacaoDose, Vacina } from '../../types';
@@ -46,6 +46,7 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
   const podeRemover = temPerfil('Administrador');
 
   const [modalAberto, setModalAberto] = useState(false);
+  const [emEdicao, setEmEdicao] = useState<Vacina | null>(null);
   const [form, setForm] = useState(FORM_VAZIO);
   // Quem aplicou a dose fica registrado na carteira; o veterinário logado assina sozinho.
   const [veterinarioId, setVeterinarioId] = useState('');
@@ -53,8 +54,25 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
   const [salvando, setSalvando] = useState(false);
 
   function abrirNovo() {
+    setEmEdicao(null);
     setForm(FORM_VAZIO);
     setVeterinarioId('');
+    setErro('');
+    setModalAberto(true);
+  }
+
+  /** Lote ou data digitados errado são corrigidos no próprio registro, sem apagar e recriar. */
+  function abrirEdicao(vacina: Vacina) {
+    setEmEdicao(vacina);
+    setForm({
+      tipo: vacina.tipo,
+      nome: vacina.nome,
+      fabricante: vacina.fabricante,
+      lote: vacina.lote,
+      dataAplicacao: paraValorInputData(vacina.dataAplicacao),
+      proximaDose: vacina.proximaDose ? paraValorInputData(vacina.proximaDose) : '',
+      observacoes: vacina.observacoes,
+    });
     setErro('');
     setModalAberto(true);
   }
@@ -70,23 +88,27 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
 
     setSalvando(true);
 
+    const campos = {
+      tipo: form.tipo,
+      nome: form.nome,
+      fabricante: form.fabricante,
+      lote: form.lote,
+      dataAplicacao: form.dataAplicacao,
+      proximaDose: form.proximaDose || null,
+      observacoes: form.observacoes,
+    };
+
     try {
-      await api.post('/api/vacinas', {
-        pacienteId,
-        veterinarioId: veterinarioId || null,
-        tipo: form.tipo,
-        nome: form.nome,
-        fabricante: form.fabricante,
-        lote: form.lote,
-        dataAplicacao: form.dataAplicacao,
-        proximaDose: form.proximaDose || null,
-        observacoes: form.observacoes,
-      });
+      if (emEdicao) {
+        await api.put(`/api/vacinas/${emEdicao.id}`, campos);
+      } else {
+        await api.post('/api/vacinas', { pacienteId, veterinarioId: veterinarioId || null, ...campos });
+      }
 
       setModalAberto(false);
       aoAtualizar();
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível registrar a aplicação.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível salvar a aplicação.'));
     } finally {
       setSalvando(false);
     }
@@ -107,6 +129,7 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
 
   // O que exige ação aparece primeiro: vencidas, depois as que estão por vencer.
   const pendentes = vacinas.filter((v) => v.situacaoDose === 'Vencida' || v.situacaoDose === 'A vencer');
+  const mostraAcoes = podeEditar || podeRemover;
 
   return (
     <>
@@ -162,7 +185,7 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
                   <th>Próxima dose</th>
                   <th>Situação</th>
                   <th>Aplicada por</th>
-                  {podeRemover && <th className="text-right">Ações</th>}
+                  {mostraAcoes && <th className="text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -194,17 +217,30 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
                       <Etiqueta className={ESTILO_SITUACAO[vacina.situacaoDose]}>{vacina.situacaoDose}</Etiqueta>
                     </td>
                     <td className="text-xs text-slate-500">{vacina.aplicadaPor || '—'}</td>
-                    {podeRemover && (
+                    {mostraAcoes && (
                       <td>
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => remover(vacina)}
-                            className="rounded-lg p-2 text-slate-400 transition hover:bg-perigo-claro hover:text-perigo"
-                            title="Remover registro"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                        <div className="flex justify-end gap-1">
+                          {podeEditar && (
+                            <button
+                              type="button"
+                              onClick={() => abrirEdicao(vacina)}
+                              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                              title="Corrigir registro"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                          )}
+
+                          {podeRemover && (
+                            <button
+                              type="button"
+                              onClick={() => remover(vacina)}
+                              className="rounded-lg p-2 text-slate-400 transition hover:bg-perigo-claro hover:text-perigo"
+                              title="Remover registro"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}
@@ -218,7 +254,7 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
 
       <Modal
         aberto={modalAberto}
-        titulo="Registrar aplicação"
+        titulo={emEdicao ? 'Corrigir aplicação' : 'Registrar aplicação'}
         descricao="A data da próxima dose gera um lembrete automático para o tutor."
         aoFechar={() => setModalAberto(false)}
       >
@@ -280,12 +316,14 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
             </Campo>
           </div>
 
-          <SeletorVeterinario
-            valor={veterinarioId}
-            aoMudar={setVeterinarioId}
-            rotulo="Aplicado por"
-            dica="Opcional. Fica registrado na carteira de vacinação."
-          />
+          {!emEdicao && (
+            <SeletorVeterinario
+              valor={veterinarioId}
+              aoMudar={setVeterinarioId}
+              rotulo="Aplicado por"
+              dica="Opcional. Fica registrado na carteira de vacinação."
+            />
+          )}
 
           <Campo rotulo="Observações">
             <textarea
@@ -304,7 +342,7 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
             </button>
             <button type="submit" className="vc-botao-primario" disabled={salvando}>
               {salvando && <Loader2 className="animate-spin" size={16} />}
-              Registrar
+              {emEdicao ? 'Salvar correção' : 'Registrar'}
             </button>
           </div>
         </form>

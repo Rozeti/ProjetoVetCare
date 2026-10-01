@@ -10,6 +10,10 @@ namespace VetCare.API.DTOs
         public DateTime DataCadastro { get; set; }
         public DateTime? UltimoAcesso { get; set; }
 
+        /// <summary>HU-015: canais pelos quais o usuário aceita ser avisado além do sistema.</summary>
+        public bool NotificarPorEmail { get; set; } = true;
+        public bool NotificarPorPush { get; set; } = true;
+
         /// <summary>Preenchido quando o usuário é Veterinário.</summary>
         public Guid? VeterinarioId { get; set; }
         public string? Crmv { get; set; }
@@ -19,5 +23,6 @@ namespace VetCare.API.DTOs
         public Guid? TutorId { get; set; }
         public string? Telefone { get; set; }
         public string? Endereco { get; set; }
+        public string? Cpf { get; set; }
     }
 }

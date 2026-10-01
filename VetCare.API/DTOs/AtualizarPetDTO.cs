@@ -11,7 +11,10 @@ namespace VetCare.API.DTOs
         public string Especie { get; set; } = string.Empty;
 
         public string Raca { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "A data de nascimento é obrigatória.")]
         public DateTime DataNascimento { get; set; }
+
         public string Sexo { get; set; } = string.Empty;
         public string Pelagem { get; set; } = string.Empty;
         public string Microchip { get; set; } = string.Empty;
@@ -20,7 +23,7 @@ namespace VetCare.API.DTOs
         [Range(0.1, 200, ErrorMessage = "Informe um peso entre 0,1 e 200 kg.")]
         public decimal? PesoAtualKg { get; set; }
 
-        /// <summary>Registrado quando o paciente vem a óbito; encerra os tratamentos em aberto.</summary>
+        /// <summary>Registrado quando o paciente vem a óbito; encerra os tratamentos em aberto. Nulo desfaz o registro.</summary>
         public DateTime? DataObito { get; set; }
 
         /// <summary>RN-001: a reatribuição de tutor preserva todo o histórico clínico.</summary>

@@ -16,12 +16,18 @@ namespace VetCare.API.UseCases
 
         private readonly IVacinaRepository _vacinas;
         private readonly IPetRepository _pets;
+        private readonly IVeterinarioRepository _veterinarios;
         private readonly UsuarioAtual _usuarioAtual;
 
-        public GerenciarVacinasUseCase(IVacinaRepository vacinas, IPetRepository pets, UsuarioAtual usuarioAtual)
+        public GerenciarVacinasUseCase(
+            IVacinaRepository vacinas,
+            IPetRepository pets,
+            IVeterinarioRepository veterinarios,
+            UsuarioAtual usuarioAtual)
         {
             _vacinas = vacinas;
             _pets = pets;
+            _veterinarios = veterinarios;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -68,9 +74,23 @@ namespace VetCare.API.UseCases
                 return Resultado<VacinaDTO>.NaoEncontrado("Paciente não encontrado.");
             }
 
+            // O aplicador, quando informado, precisa ser um veterinário desta clínica.
+            Veterinario? veterinario = null;
+            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId;
+
+            if (veterinarioId.HasValue)
+            {
+                veterinario = await _veterinarios.ObterPorId(veterinarioId.Value);
+
+                if (veterinario == null || veterinario.Usuario?.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return Resultado<VacinaDTO>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
+                }
+            }
+
             var aplicacao = DateTime.SpecifyKind(dto.DataAplicacao.Date, DateTimeKind.Utc);
 
-            if (aplicacao > DateTime.UtcNow.Date)
+            if (aplicacao.Date > RelogioDaClinica.Padrao.Hoje)
             {
                 return Resultado<VacinaDTO>.Invalido("A data de aplicação não pode ser futura.");
             }
@@ -90,7 +110,7 @@ namespace VetCare.API.UseCases
             var vacina = new Vacina
             {
                 PacienteId = dto.PacienteId,
-                VeterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId,
+                VeterinarioId = veterinario?.Id,
                 Tipo = Normalizar(dto.Tipo),
                 Nome = dto.Nome.Trim(),
                 Fabricante = dto.Fabricante.Trim(),
@@ -104,6 +124,7 @@ namespace VetCare.API.UseCases
             await _vacinas.SalvarAlteracoes();
 
             vacina.Paciente = pet;
+            vacina.Veterinario = veterinario;
 
             return Resultado<VacinaDTO>.Ok(MapearParaDTO(vacina), "Registro adicionado à carteira do paciente.");
         }
@@ -124,6 +145,12 @@ namespace VetCare.API.UseCases
             }
 
             var aplicacao = DateTime.SpecifyKind(dto.DataAplicacao.Date, DateTimeKind.Utc);
+
+            if (aplicacao.Date > RelogioDaClinica.Padrao.Hoje)
+            {
+                return Resultado<VacinaDTO>.Invalido("A data de aplicação não pode ser futura.");
+            }
+
             var proxima = dto.ProximaDose.HasValue
                 ? DateTime.SpecifyKind(dto.ProximaDose.Value.Date, DateTimeKind.Utc)
                 : (DateTime?)null;
@@ -174,7 +201,7 @@ namespace VetCare.API.UseCases
         public static VacinaDTO MapearParaDTO(Vacina vacina)
         {
             var dias = vacina.ProximaDose.HasValue
-                ? (int)(vacina.ProximaDose.Value.Date - DateTime.UtcNow.Date).TotalDays
+                ? (int)(vacina.ProximaDose.Value.Date - RelogioDaClinica.Padrao.Hoje).TotalDays
                 : (int?)null;
 
             return new VacinaDTO

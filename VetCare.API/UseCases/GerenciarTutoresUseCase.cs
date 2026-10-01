@@ -3,6 +3,7 @@ using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
 using VetCare.API.Security;
+using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
@@ -11,17 +12,20 @@ namespace VetCare.API.UseCases
         private readonly ITutorRepository _tutores;
         private readonly IUsuarioRepository _usuarios;
         private readonly PasswordHasher _hasher;
+        private readonly ContasService _contas;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarTutoresUseCase(
             ITutorRepository tutores,
             IUsuarioRepository usuarios,
             PasswordHasher hasher,
+            ContasService contas,
             UsuarioAtual usuarioAtual)
         {
             _tutores = tutores;
             _usuarios = usuarios;
             _hasher = hasher;
+            _contas = contas;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -47,16 +51,25 @@ namespace VetCare.API.UseCases
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
             }
 
+            // HU-013, CA-1: o tutor enxerga apenas o próprio cadastro.
+            if (_usuarioAtual.EhTutor && tutor.Id != _usuarioAtual.TutorId)
+            {
+                return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
+            }
+
             return Resultado<TutorDTO>.Ok(MapearParaDTO(tutor));
         }
 
         /// <summary>
         /// Cadastra o tutor. Quando UsuarioId não é informado, cria também o usuário de
-        /// acesso — é o caminho usado pela recepção ao registrar um tutor novo.
+        /// acesso — é o caminho usado pela recepção ao registrar um tutor novo. O tutor
+        /// recebe um e-mail de boas-vindas; sem senha informada, ele mesmo cria a sua.
         /// </summary>
         public async Task<Resultado<TutorDTO>> Cadastrar(CriarTutorDTO dto)
         {
             Usuario usuario;
+            var usuarioNovo = false;
+            var senhaDefinidaPelaClinica = !string.IsNullOrWhiteSpace(dto.Senha);
 
             if (dto.UsuarioId.HasValue && dto.UsuarioId.Value != Guid.Empty)
             {
@@ -88,20 +101,24 @@ namespace VetCare.API.UseCases
                     return Resultado<TutorDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
                 }
 
-                var senha = string.IsNullOrWhiteSpace(dto.Senha) ? _hasher.GerarSenhaProvisoria() : dto.Senha;
+                if (senhaDefinidaPelaClinica && PasswordHasher.ValidarForca(dto.Senha) is { } erroDeSenha)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeSenha);
+                }
 
                 usuario = new Usuario
                 {
                     ClinicaId = _usuarioAtual.ClinicaId,
                     Nome = dto.Nome.Trim(),
                     Email = dto.Email.Trim().ToLowerInvariant(),
-                    SenhaHash = _hasher.Gerar(senha),
+                    SenhaHash = _hasher.Gerar(senhaDefinidaPelaClinica ? dto.Senha! : _hasher.GerarSenhaProvisoria()),
                     Perfil = Perfis.Tutor
                 };
 
                 // Gravado junto com o tutor, mais abaixo, para que um usuário nunca
                 // fique sem o cadastro correspondente.
                 await _usuarios.Adicionar(usuario);
+                usuarioNovo = true;
             }
 
             var tutor = new Tutor
@@ -117,9 +134,19 @@ namespace VetCare.API.UseCases
 
             tutor.Usuario = usuario;
 
-            return Resultado<TutorDTO>.Ok(MapearParaDTO(tutor), "Tutor cadastrado com sucesso.");
+            if (usuarioNovo)
+            {
+                await _contas.EnviarBoasVindas(usuario, senhaDefinidaPelaClinica);
+            }
+
+            return Resultado<TutorDTO>.Ok(
+                MapearParaDTO(tutor),
+                usuarioNovo && !senhaDefinidaPelaClinica
+                    ? "Tutor cadastrado. Ele recebeu por e-mail o link para criar a própria senha."
+                    : "Tutor cadastrado com sucesso.");
         }
 
+        /// <summary>Campos omitidos (nulos) mantêm o valor atual; o próprio tutor pode manter o contato em dia.</summary>
         public async Task<Resultado<TutorDTO>> Atualizar(Guid id, AtualizarTutorDTO dto)
         {
             var tutor = await _tutores.ObterPorId(id);
@@ -129,15 +156,14 @@ namespace VetCare.API.UseCases
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
             }
 
-            // O próprio tutor pode manter os dados de contato atualizados.
             if (_usuarioAtual.EhTutor && tutor.Id != _usuarioAtual.TutorId)
             {
                 return Resultado<TutorDTO>.NaoAutorizado("Você só pode alterar o seu próprio cadastro.");
             }
 
-            tutor.Telefone = dto.Telefone.Trim();
-            tutor.Endereco = dto.Endereco.Trim();
-            tutor.Cpf = dto.Cpf.Trim();
+            tutor.Telefone = dto.Telefone?.Trim() ?? tutor.Telefone;
+            tutor.Endereco = dto.Endereco?.Trim() ?? tutor.Endereco;
+            tutor.Cpf = dto.Cpf?.Trim() ?? tutor.Cpf;
 
             _tutores.Atualizar(tutor);
             await _tutores.SalvarAlteracoes();

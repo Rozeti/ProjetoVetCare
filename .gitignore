@@ -16,9 +16,9 @@ dist/
 .env
 appsettings.Production.json
 
-# Arquivos enviados pelos usuários
-VetCare.API/wwwroot/uploads/
-VetCare.API/wwwroot/documentos/
+# Arquivos enviados pelos usuários e e-mails gravados localmente
+VetCare.API/arquivos/
+VetCare.API/emails-enviados/
 
 # Saídas de teste
 capturas/

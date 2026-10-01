@@ -166,12 +166,12 @@ namespace VetCare.API.UseCases
                 return Resultado.NaoAutorizado("Você só pode cancelar receitas emitidas por você.");
             }
 
-            if (prescricao.Status == "Cancelada")
+            if (prescricao.Status == StatusPrescricao.Cancelada)
             {
-                return Resultado.Invalido("Esta receita já está cancelada.");
+                return Resultado.Conflito("Esta receita já está cancelada.");
             }
 
-            prescricao.Status = "Cancelada";
+            prescricao.Status = StatusPrescricao.Cancelada;
 
             if (!string.IsNullOrWhiteSpace(motivo))
             {

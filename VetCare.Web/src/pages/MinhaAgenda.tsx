@@ -95,8 +95,8 @@ export function MinhaAgenda() {
       ) : (
         <ul className="space-y-4">
           {sessoes.map((sessao) => (
-            <Card key={sessao.id} className="p-5">
-              <li>
+            <li key={sessao.id}>
+              <Card className="p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -162,8 +162,8 @@ export function MinhaAgenda() {
                     O prazo para cancelar esta sessão pelo aplicativo já passou. Fale com a clínica se precisar remarcar.
                   </p>
                 )}
-              </li>
-            </Card>
+              </Card>
+            </li>
           ))}
         </ul>
       )}

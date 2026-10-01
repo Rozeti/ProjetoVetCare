@@ -1,3 +1,5 @@
+using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -5,13 +7,14 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using VetCare.API.Common;
 using VetCare.API.Data;
 using VetCare.API.Security;
 using VetCare.API.Services;
+using VetCare.API.Services.Email;
+using VetCare.API.Services.Push;
 using VetCare.API.UseCases;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,6 +26,7 @@ builder.Services.AddControllers(opcoes =>
     opcoes.Filters.Add<FiltroDeAtualizacoes>();
 });
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<TratamentoDeErros>();
 
@@ -41,6 +45,16 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
         return new BadRequestObjectResult(new { mensagem });
     };
 });
+
+// Seções de configuração: endereço do portal e fuso da clínica, e-mail e push.
+builder.Services.Configure<OpcoesDaAplicacao>(builder.Configuration.GetSection(OpcoesDaAplicacao.Secao));
+builder.Services.Configure<OpcoesDeEmail>(builder.Configuration.GetSection(OpcoesDeEmail.Secao));
+builder.Services.Configure<OpcoesDePush>(builder.Configuration.GetSection(OpcoesDePush.Secao));
+
+// Horários de expediente, "dia de hoje" e datas nos e-mails seguem o fuso da clínica,
+// não o do servidor — um contêiner roda em UTC.
+RelogioDaClinica.Configurar(builder.Configuration["Aplicacao:FusoHorario"]);
+builder.Services.AddSingleton(RelogioDaClinica.Padrao);
 
 // Cada entrada pode trazer vários endereços separados por vírgula. Isso permite liberar, por
 // exemplo, o portal em localhost e no IP da rede local numa única variável de ambiente, que é
@@ -74,11 +88,13 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("banco-de-dados", tags: new[] { "pronto" });
 
 AdicionarRepositorios(builder.Services);
-AdicionarServicos(builder.Services);
+AdicionarServicos(builder.Services, builder.Configuration);
 AdicionarCasosDeUso(builder.Services);
 
 builder.Services.AddHostedService<LembreteConfirmacaoService>();
 builder.Services.AddHostedService<LembreteVacinacaoService>();
+builder.Services.AddHostedService<ProcessadorDeEmails>();
+builder.Services.AddHostedService<EntregadorDeNotificacoes>();
 
 var chaveJwt = builder.Configuration["Jwt:Chave"];
 
@@ -87,6 +103,9 @@ if (string.IsNullOrWhiteSpace(chaveJwt) || Encoding.UTF8.GetByteCount(chaveJwt) 
     throw new InvalidOperationException(
         "Configure Jwt:Chave com pelo menos 32 bytes em appsettings.json ou na variável de ambiente Jwt__Chave.");
 }
+
+var emissorJwt = builder.Configuration["Jwt:Emissor"] is { Length: > 0 } emissor ? emissor : TokenService.EmissorPadrao;
+var publicoJwt = builder.Configuration["Jwt:Publico"] is { Length: > 0 } publico ? publico : TokenService.EmissorPadrao;
 
 builder.Services.AddAuthentication(x =>
 {
@@ -101,10 +120,42 @@ builder.Services.AddAuthentication(x =>
     {
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(chaveJwt)),
-        ValidateIssuer = false,
-        ValidateAudience = false,
+        ValidateIssuer = true,
+        ValidIssuer = emissorJwt,
+        ValidateAudience = true,
+        ValidAudience = publicoJwt,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromMinutes(1)
+    };
+
+    x.Events = new JwtBearerEvents
+    {
+        // HU-002, CA-4: a conta desativada perde o acesso na hora, mesmo com um token ainda
+        // dentro do prazo. A consulta ao banco fica em cache por um minuto.
+        OnTokenValidated = async contexto =>
+        {
+            var valor = contexto.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (!Guid.TryParse(valor, out var usuarioId))
+            {
+                contexto.Fail("Token sem identificação do usuário.");
+                return;
+            }
+
+            var contas = contexto.HttpContext.RequestServices.GetRequiredService<ContasAtivas>();
+
+            var ativa = await contas.EstaAtiva(usuarioId, async () =>
+            {
+                var usuarios = contexto.HttpContext.RequestServices.GetRequiredService<IUsuarioRepository>();
+                var usuario = await usuarios.ObterPorId(usuarioId);
+                return usuario is { Ativo: true };
+            });
+
+            if (!ativa)
+            {
+                contexto.Fail("Esta conta está inativa.");
+            }
+        }
     };
 });
 
@@ -118,6 +169,13 @@ builder.Services.AddRateLimiter(options =>
 
     options.OnRejected = async (contexto, _) =>
     {
+        contexto.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        if (contexto.Lease.TryGetMetadata(MetadataName.RetryAfter, out var esperar))
+        {
+            contexto.HttpContext.Response.Headers.RetryAfter = ((int)esperar.TotalSeconds).ToString();
+        }
+
         await contexto.HttpContext.Response.WriteAsJsonAsync(new
         {
             mensagem = "Muitas tentativas em pouco tempo. Aguarde um instante e tente novamente."
@@ -151,24 +209,29 @@ await PrepararBancoDeDados(app);
 
 app.UseExceptionHandler();
 
-if (app.Environment.IsDevelopment())
+// A documentação interativa fica ligada em desenvolvimento e, fora dele, só quando
+// Documentacao:Habilitada for true — sem precisar mudar o ambiente inteiro para isso.
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Documentacao:Habilitada"))
 {
     app.MapOpenApi();
 
-    // Documentação navegável da API, útil para quem integra e para a avaliação do projeto.
     app.MapScalarApiReference(options =>
     {
         options.Title = "VetCare — API";
         options.Theme = ScalarTheme.BluePlanet;
     });
 }
-else
+
+// O redirecionamento para HTTPS só faz sentido quando a própria API escuta em HTTPS. Atrás
+// de um proxy reverso com certificado (o cenário do docker-compose) ele fica desligado.
+if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Seguranca:RedirecionarParaHttps"))
 {
     app.UseHttpsRedirection();
     app.UseHsts();
 }
 
-app.UseStaticFiles();
+// Mídias e documentos não são servidos como arquivos estáticos: saem pelo ArquivosController,
+// com URL assinada (RN-003, RNF-002).
 app.UseCors(app.Environment.IsDevelopment() ? "PermitirMobile" : "PermitirFrontend");
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -204,6 +267,8 @@ app.MapHealthChecks("/health/pronto", new HealthCheckOptions
     }
 }).AllowAnonymous();
 
+RegistrarResumoDaInicializacao(app);
+
 app.Run();
 
 static void AdicionarRepositorios(IServiceCollection servicos)
@@ -231,19 +296,52 @@ static void AdicionarRepositorios(IServiceCollection servicos)
     servicos.AddScoped<IVersaoRegistroRepository, VersaoRegistroRepository>();
     servicos.AddScoped<IAuditoriaRepository, AuditoriaRepository>();
     servicos.AddScoped<ITokenRedefinicaoRepository, TokenRedefinicaoRepository>();
+    servicos.AddScoped<IDispositivoRepository, DispositivoRepository>();
 }
 
-static void AdicionarServicos(IServiceCollection servicos)
+static void AdicionarServicos(IServiceCollection servicos, IConfiguration configuracao)
 {
     servicos.AddScoped<TokenService>();
     servicos.AddSingleton<PasswordHasher>();
+    servicos.AddSingleton<ContasAtivas>();
+    servicos.AddSingleton<AssinadorDeArquivos>();
     servicos.AddScoped<UsuarioAtual>();
     servicos.AddScoped<ArmazenamentoArquivos>();
     servicos.AddScoped<NotificacaoService>();
     servicos.AddScoped<AuditoriaService>();
+    servicos.AddScoped<ContasService>();
 
     // Singleton: o mural precisa ser o mesmo para todas as requisições da aplicação.
     servicos.AddSingleton<CentralDeAtualizacoes>();
+
+    // E-mail: SMTP quando configurado; caso contrário os e-mails vão para uma pasta local,
+    // o que basta para desenvolver e demonstrar o fluxo sem conta de e-mail.
+    var email = configuracao.GetSection(OpcoesDeEmail.Secao).Get<OpcoesDeEmail>() ?? new OpcoesDeEmail();
+
+    if (email.SmtpConfigurado)
+    {
+        servicos.AddSingleton<IServicoDeEmail, ServicoDeEmailSmtp>();
+    }
+    else
+    {
+        servicos.AddSingleton<IServicoDeEmail, CaixaDeSaidaLocal>();
+    }
+
+    servicos.AddSingleton<ModelosDeEmail>();
+    servicos.AddSingleton<FilaDeEmails>();
+
+    // Push: o serviço da Expo entrega no celular do tutor; o sinal acorda o entregador.
+    servicos.AddSingleton<SinalDeNotificacoes>();
+    servicos.AddSingleton<IServicoDePush, ServicoDePushExpo>();
+
+    servicos.AddHttpClient(ServicoDePushExpo.NomeDoCliente, cliente =>
+    {
+        cliente.Timeout = TimeSpan.FromSeconds(15);
+        cliente.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.All
+    });
 }
 
 static void AdicionarCasosDeUso(IServiceCollection servicos)
@@ -253,6 +351,7 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<GerenciarUsuariosUseCase>();
     servicos.AddScoped<GerenciarTutoresUseCase>();
     servicos.AddScoped<GerenciarVeterinariosUseCase>();
+    servicos.AddScoped<GerenciarClinicaUseCase>();
     servicos.AddScoped<GerenciarPacientesUseCase>();
     servicos.AddScoped<GerenciarAlergiasUseCase>();
     servicos.AddScoped<GerenciarVacinasUseCase>();
@@ -270,6 +369,7 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<ConsultarProntuarioUseCase>();
     servicos.AddScoped<MensagensUseCase>();
     servicos.AddScoped<NotificacoesUseCase>();
+    servicos.AddScoped<DispositivosUseCase>();
     servicos.AddScoped<ConsultarIndicadoresUseCase>();
     servicos.AddScoped<GerarRelatorioProdutividadeUseCase>();
     servicos.AddScoped<ConsultarAuditoriaUseCase>();
@@ -311,6 +411,20 @@ static async Task PrepararBancoDeDados(WebApplication aplicacao)
         tentativasMaximas);
 
     throw new InvalidOperationException("Banco de dados indisponível na inicialização da API.");
+}
+
+// Deixa claro no log, logo na subida, como e-mail, push e fuso estão configurados.
+static void RegistrarResumoDaInicializacao(WebApplication aplicacao)
+{
+    var logger = aplicacao.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Inicializacao");
+    var email = aplicacao.Services.GetRequiredService<IServicoDeEmail>();
+    var push = aplicacao.Services.GetRequiredService<IServicoDePush>();
+    var relogio = aplicacao.Services.GetRequiredService<RelogioDaClinica>();
+    var portal = aplicacao.Configuration["Aplicacao:UrlPortal"] ?? "http://localhost:5173";
+
+    logger.LogInformation("E-mails: {Canal}.", email.Descricao);
+    logger.LogInformation("Notificações no celular: {Estado}.", push.Habilitado ? "ativas (Expo Push)" : "desligadas");
+    logger.LogInformation("Fuso da clínica: {Fuso}. Portal: {Portal}.", relogio.Fuso.Id, portal);
 }
 
 /// <summary>Exposto para que o projeto de testes possa instanciar a aplicação.</summary>

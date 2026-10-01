@@ -56,14 +56,6 @@ namespace VetCare.API.Data
                 .ToListAsync();
         }
 
-        public async Task<Tratamento?> ObterAtivoDoPaciente(Guid pacienteId)
-        {
-            return await _context.Tratamentos
-                .Where(t => t.PacienteId == pacienteId && t.Status == "Em Andamento")
-                .OrderByDescending(t => t.DataInicio)
-                .FirstOrDefaultAsync();
-        }
-
         public void Atualizar(Tratamento tratamento)
         {
             _context.Tratamentos.Update(tratamento);

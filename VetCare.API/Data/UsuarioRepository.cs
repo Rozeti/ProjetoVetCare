@@ -71,6 +71,23 @@ namespace VetCare.API.Data
 
         public void Atualizar(Usuario usuario) => _context.Usuarios.Update(usuario);
 
+        public async Task RegistrarAtividade(Guid usuarioId, TimeSpan intervaloMinimo)
+        {
+            var agora = DateTime.UtcNow;
+            var limite = agora - intervaloMinimo;
+
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u => u.Id == usuarioId && (u.UltimoAcesso == null || u.UltimoAcesso < limite));
+
+            if (usuario == null)
+            {
+                return;
+            }
+
+            usuario.UltimoAcesso = agora;
+            await _context.SaveChangesAsync();
+        }
+
         public async Task SalvarAlteracoes() => await _context.SaveChangesAsync();
     }
 }

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from './src/contextos/AuthContext';
 import { AtualizacoesProvider } from './src/contextos/AtualizacoesContext';
 import { Navegacao } from './src/Navegacao';
+import { navegacaoRef } from './src/navegacao/rotas';
 import { cores } from './src/tema';
 
 /** Segura a interface enquanto a sessão guardada no aparelho é restaurada. */
@@ -28,7 +29,8 @@ export default function App() {
       <AuthProvider>
         {/* Uma única conexão com o mural de alterações serve todas as telas. */}
         <AtualizacoesProvider>
-          <NavigationContainer>
+          {/* A referência permite abrir a tela certa ao tocar numa notificação. */}
+          <NavigationContainer ref={navegacaoRef}>
             <StatusBar style="dark" />
             <Raiz />
           </NavigationContainer>

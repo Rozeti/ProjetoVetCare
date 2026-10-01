@@ -1,6 +1,7 @@
 using VetCare.API.Common;
 using VetCare.API.Data;
 using VetCare.API.DTOs;
+using VetCare.API.Models;
 using VetCare.API.Security;
 using VetCare.API.Services;
 
@@ -13,8 +14,6 @@ namespace VetCare.API.UseCases
     /// </summary>
     public class AtualizarStatusSessaoUseCase
     {
-        private static readonly string[] StatusPermitidos = { "Confirmada", "Cancelada", "Concluída" };
-
         private readonly ISessaoRepository _sessoes;
         private readonly IClinicaRepository _clinicas;
         private readonly NotificacaoService _notificacoes;
@@ -34,30 +33,29 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado> Executar(Guid sessaoId, AtualizarStatusSessaoDTO dto)
         {
-            var novoStatus = StatusPermitidos.FirstOrDefault(
-                s => string.Equals(s, dto.Status, StringComparison.OrdinalIgnoreCase));
+            var novoStatus = StatusSessao.Normalizar(dto.Status);
 
             if (novoStatus == null)
             {
                 return Resultado.Invalido(
-                    $"Status inválido. Use um destes: {string.Join(", ", StatusPermitidos)}.");
+                    $"Status inválido. Use um destes: {string.Join(", ", StatusSessao.Alteraveis)}.");
             }
 
             var sessao = await _sessoes.ObterPorIdComRelacionamentos(sessaoId);
 
-            if (sessao == null)
+            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado.NaoEncontrado("Sessão não encontrada.");
             }
 
-            if (sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+            if (sessao.Status == StatusSessao.Concluida)
             {
-                return Resultado.NaoAutorizado("Esta sessão pertence a outra clínica.");
+                return Resultado.Conflito("Esta sessão já foi concluída e não pode mais ser alterada.");
             }
 
-            if (sessao.Status == "Concluída")
+            if (sessao.Status == novoStatus)
             {
-                return Resultado.Invalido("Esta sessão já foi concluída e não pode mais ser alterada.");
+                return Resultado.Conflito($"A sessão já está {novoStatus.ToLowerInvariant()}.");
             }
 
             var clinica = await _clinicas.ObterPorId(_usuarioAtual.ClinicaId);
@@ -88,7 +86,7 @@ namespace VetCare.API.UseCases
             _sessoes.Atualizar(sessao);
             await _sessoes.SalvarAlteracoes();
 
-            await NotificarInteressados(sessao.Id, novoStatus);
+            await NotificarInteressados(sessao, novoStatus);
 
             return Resultado.Ok($"Status da sessão atualizado para '{novoStatus}' com sucesso.");
         }
@@ -100,13 +98,13 @@ namespace VetCare.API.UseCases
                 return Resultado.NaoAutorizado("Esta sessão não pertence a um pet sob sua responsabilidade.");
             }
 
-            if (novoStatus == "Concluída")
+            if (novoStatus == StatusSessao.Concluida)
             {
                 return Resultado.NaoAutorizado("Somente a equipe da clínica pode concluir uma sessão.");
             }
 
             // HU-006, CA-3 e RN-009: cancelamento fora do prazo mínimo é sinalizado.
-            if (novoStatus == "Cancelada")
+            if (novoStatus == StatusSessao.Cancelada)
             {
                 var antecedencia = dataHora - DateTime.UtcNow;
 
@@ -121,15 +119,8 @@ namespace VetCare.API.UseCases
             return Resultado.Ok();
         }
 
-        private async Task NotificarInteressados(Guid sessaoId, string novoStatus)
+        private async Task NotificarInteressados(Sessao sessao, string novoStatus)
         {
-            var sessao = await _sessoes.ObterPorIdComRelacionamentos(sessaoId);
-
-            if (sessao == null)
-            {
-                return;
-            }
-
             var nomePaciente = sessao.Tratamento?.Paciente?.Nome ?? "paciente";
 
             // Quando o tutor age, o veterinário é avisado (HU-006, CA-1 e CA-2).
@@ -140,7 +131,7 @@ namespace VetCare.API.UseCases
                 if (usuarioVeterinario.HasValue)
                 {
                     await _notificacoes.NotificarMudancaStatusSessao(
-                        usuarioVeterinario.Value, nomePaciente, novoStatus, sessao.DataHora);
+                        usuarioVeterinario.Value, nomePaciente, novoStatus, sessao.DataHora, destinatarioEhTutor: false);
                 }
 
                 return;
@@ -152,7 +143,7 @@ namespace VetCare.API.UseCases
             if (usuarioTutor.HasValue)
             {
                 await _notificacoes.NotificarMudancaStatusSessao(
-                    usuarioTutor.Value, nomePaciente, novoStatus, sessao.DataHora);
+                    usuarioTutor.Value, nomePaciente, novoStatus, sessao.DataHora, destinatarioEhTutor: true);
             }
         }
     }

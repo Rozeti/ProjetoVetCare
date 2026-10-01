@@ -38,16 +38,17 @@ namespace VetCare.API.Controllers
         }
 
         /// <summary>
-        /// HU-004, CA-3: agenda do veterinário nas visões Dia, Semana e Mês.
-        /// A visão padrão é o dia, mantendo compatibilidade com chamadas antigas.
+        /// HU-004, CA-3: agenda do veterinário nas visões Dia, Semana e Mês. A agenda de um
+        /// profissional lista pacientes e tutores de toda a clínica, por isso é reservada à equipe.
         /// </summary>
         [HttpGet("agenda/{veterinarioId:guid}")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
         public async Task<IActionResult> ConsultarAgenda(
             Guid veterinarioId,
             [FromQuery] DateTime? data,
             [FromQuery] string visao = "dia")
         {
-            var referencia = data ?? DateTime.Now;
+            var referencia = data ?? RelogioDaClinica.Padrao.Agora;
             return this.Responder(await _consultarAgenda.ConsultarPorVisao(veterinarioId, referencia, visao));
         }
 
@@ -63,7 +64,7 @@ namespace VetCare.API.Controllers
                 return NotFound(new { mensagem = "Cadastro de veterinário não encontrado para este usuário." });
             }
 
-            var referencia = data ?? DateTime.Now;
+            var referencia = data ?? RelogioDaClinica.Padrao.Agora;
 
             return this.Responder(
                 await _consultarAgenda.ConsultarPorVisao(_usuarioAtual.VeterinarioId.Value, referencia, visao));
@@ -77,7 +78,7 @@ namespace VetCare.API.Controllers
             [FromQuery] string visao = "dia",
             [FromQuery] string? veterinarios = null)
         {
-            var referencia = data ?? DateTime.Now;
+            var referencia = data ?? RelogioDaClinica.Padrao.Agora;
             var filtrados = ConverterListaDeIds(veterinarios);
 
             return this.Responder(await _consultarAgenda.ConsultarAgendaGeral(referencia, visao, filtrados));
@@ -91,6 +92,7 @@ namespace VetCare.API.Controllers
             return this.Responder(await _consultarAgenda.ConsultarAgendaDoTutor(apenasFuturas));
         }
 
+        /// <summary>Sessões de um tratamento; o tutor só alcança os tratamentos dos próprios pets.</summary>
         [HttpGet("tratamento/{tratamentoId:guid}")]
         public async Task<IActionResult> ListarPorTratamento(Guid tratamentoId)
         {

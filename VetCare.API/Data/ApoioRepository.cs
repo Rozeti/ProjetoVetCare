@@ -24,6 +24,11 @@ namespace VetCare.API.Data
                 .FirstOrDefaultAsync(a => a.UsuarioId == usuarioId);
         }
 
+        public void Atualizar(ApoioAdministrativo apoio)
+        {
+            _context.ApoiosAdministrativos.Update(apoio);
+        }
+
         public async Task SalvarAlteracoes()
         {
             await _context.SaveChangesAsync();

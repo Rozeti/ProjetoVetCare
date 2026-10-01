@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verifica as funcionalidades acrescentadas ao núcleo do sistema: carteira de
 # vacinação, receituário, alertas clínicos, bloqueios de agenda, auditoria,
-# paginação, recuperação de senha e limitação de requisições.
+# paginação, notificações por e-mail e push, recuperação de senha e limitação de requisições.
 set -u
 
 source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
@@ -117,6 +117,30 @@ checa "consulta ao prontuário foi registrada" "Prontuario" "$r"
 r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/auditoria" -H "Authorization: Bearer $VETTK")
 checa "auditoria fechada ao veterinário" "403" "$r"
 
+echo "== Notificações por e-mail e push =="
+# HU-015: além do mural do sistema, o usuário escolhe se quer os avisos por e-mail e no celular.
+r=$(envia PUT /api/usuarios/me/preferencias-de-notificacao "$TUTOR" '{"notificarPorEmail":false,"notificarPorPush":true}')
+checa "preferência de e-mail desligada" '"notificarPorEmail":false' "$r"
+checa "preferência de push mantida" '"notificarPorPush":true' "$r"
+
+r=$(envia PUT /api/usuarios/me/preferencias-de-notificacao "$TUTOR" '{"notificarPorEmail":true,"notificarPorPush":true}')
+checa "preferência de e-mail religada" '"notificarPorEmail":true' "$r"
+
+# O aplicativo registra o token de push do aparelho; a API o usa para entregar os avisos.
+r=$(envia POST /api/dispositivos "$TUTOR" '{"tokenPush":"ExponentPushToken[roteiro-e2e]","plataforma":"android","nomeDoAparelho":"Celular do roteiro"}')
+checa "aparelho registrado para push (o token não volta na resposta)" '"nomeDoAparelho":"Celular do roteiro"' "$r"
+
+r=$(get /api/dispositivos "$TUTOR")
+checa "aparelho aparece na lista do usuário" '"plataforma":"android"' "$r"
+
+r=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/dispositivos?token=ExponentPushToken%5Broteiro-e2e%5D" -H "Authorization: Bearer $TUTOR")
+checa "aparelho removido ao sair da conta" "20[04]" "$r"
+
+# Conta criada sem senha: o próprio usuário a define pelo e-mail de boas-vindas (primeiro acesso).
+NOVO_EMAIL="primeiro-acesso-$RANDOM@vetcare.com"
+r=$(envia POST /api/usuarios "$ADMIN" "{\"nome\":\"Primeiro Acesso\",\"email\":\"$NOVO_EMAIL\",\"perfil\":\"Apoio\",\"setor\":\"Recepção\"}")
+checa "usuário criado sem senha recebe convite por e-mail" "$NOVO_EMAIL" "$r"
+
 echo "== Recuperação de senha =="
 # Estes endpoints dividem a política de limite com o login: as autenticações
 # feitas acima podem ter consumido a janela.
@@ -125,38 +149,57 @@ aguardar_limitador
 r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"nao-existe@vetcare.com"}')
 checa "e-mail inexistente recebe resposta neutra" "Se houver uma conta" "$r"
 
-r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"apoio@vetcare.com"}')
-
 if [ "$AMBIENTE" = "Development" ]; then
-  # Fora de produção o token vem na própria resposta, o que permite percorrer o fluxo
-  # inteiro sem servidor de e-mail.
+  # Fora de produção, e sem servidor de e-mail, o link e o código vêm na própria resposta,
+  # o que permite percorrer os dois caminhos (portal e aplicativo) sem caixa de entrada.
+  r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" "{\"email\":\"$NOVO_EMAIL\"}")
+  CODIGO=$(val "$r" codigoDesenvolvimento)
+  checa "solicitação gera código de 6 dígitos (aplicativo)" '^[0-9]\{6\}$' "$CODIGO"
+  checa "solicitação gera link (portal)" '"tokenDesenvolvimento":"' "$r"
+
+  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"email\":\"$NOVO_EMAIL\",\"codigo\":\"000000\",\"novaSenha\":\"NovaSenha2026\"}")
+  checa "código errado é recusado e conta a tentativa" "Código incorreto" "$r"
+
+  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"email\":\"$NOVO_EMAIL\",\"codigo\":\"$CODIGO\",\"novaSenha\":\"NovaSenha2026\"}")
+  checa "senha definida com o código recebido" "sucesso" "$r"
+
+  NOVO=$(entrar "$NOVO_EMAIL" NovaSenha2026)
+  checa "usuário sem senha inicial consegue entrar" "." "$NOVO"
+
+  r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"apoio@vetcare.com"}')
   TOKEN=$(val "$r" tokenDesenvolvimento)
-  checa "solicitação gera token em desenvolvimento" "." "$TOKEN"
 
   r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"token\":\"$TOKEN\",\"novaSenha\":\"NovaSenha2026\"}")
-  checa "senha redefinida com o token" "sucesso" "$r"
+  checa "senha redefinida pelo link do e-mail" "sucesso" "$r"
 
   NOVO=$(entrar apoio@vetcare.com NovaSenha2026)
   checa "login com a nova senha funciona" "." "$NOVO"
 
   r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"token\":\"$TOKEN\",\"novaSenha\":\"OutraSenha2026\"}")
-  checa "token de uso único não é reaproveitado" "inválido ou expirado" "$r"
+  checa "link de uso único não é reaproveitado" "inválido ou expirado" "$r"
 
   r=$(envia PUT /api/usuarios/me/senha "$NOVO" '{"senhaAtual":"NovaSenha2026","novaSenha":"vetcare123"}')
   checa "senha restaurada para o padrão de demonstração" "sucesso" "$r"
 else
-  # Em produção o token só sai por e-mail: a resposta não pode entregá-lo a quem pediu.
-  checa "solicitação aceita sem expor o token" "Se houver uma conta" "$r"
+  # Em produção o link e o código só saem por e-mail: a resposta não pode entregá-los a quem pediu.
+  r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"apoio@vetcare.com"}')
+  checa "solicitação aceita sem expor as credenciais" "Se houver uma conta" "$r"
 
   # Procura um valor de verdade, e não só o nome do campo.
   if grep -q '"tokenDesenvolvimento":"' <<<"$r"; then
-    echo "  FALHA token de recuperação vazou em produção"; falhou=$((falhou+1))
+    echo "  FALHA link de recuperação vazou em produção"; falhou=$((falhou+1))
   else
-    echo "  OK   token de recuperação não é exposto em produção"; ok=$((ok+1))
+    echo "  OK   link de recuperação não é exposto em produção"; ok=$((ok+1))
+  fi
+
+  if grep -q '"codigoDesenvolvimento":"' <<<"$r"; then
+    echo "  FALHA código de recuperação vazou em produção"; falhou=$((falhou+1))
+  else
+    echo "  OK   código de recuperação não é exposto em produção"; ok=$((ok+1))
   fi
 
   r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" '{"token":"token-invalido","novaSenha":"NovaSenha2026"}')
-  checa "token inválido é recusado" "inválido ou expirado" "$r"
+  checa "link inválido é recusado" "inválido ou expirado" "$r"
 fi
 
 echo "== Saúde e documentação =="

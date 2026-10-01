@@ -47,14 +47,11 @@ namespace VetCare.API.UseCases
         {
             var notificacao = await _notificacoes.ObterPorId(id);
 
-            if (notificacao == null)
+            // Notificação de outra pessoa "não existe" para quem pede: a resposta não deve
+            // confirmar que o identificador é válido.
+            if (notificacao == null || notificacao.UsuarioId != _usuarioAtual.Id)
             {
                 return Resultado.NaoEncontrado("Notificação não encontrada.");
-            }
-
-            if (notificacao.UsuarioId != _usuarioAtual.Id)
-            {
-                return Resultado.NaoAutorizado("Esta notificação pertence a outro usuário.");
             }
 
             notificacao.Visualizada = true;

@@ -14,18 +14,19 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 # curl é instalado para que o HEALTHCHECK consulte o endpoint da própria
-# aplicação; a imagem base do runtime não traz cliente HTTP.
+# aplicação; tzdata traz os fusos horários que o relógio da clínica usa.
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y curl \
+    && apt-get install --no-install-recommends -y curl tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .
 
 # As imagens .NET já trazem o usuário sem privilégios "app" (uid 1654). A
 # aplicação roda com ele para que um comprometimento não alcance o root.
-# Mídias e documentos ficam em volume e precisam pertencer a esse usuário.
-RUN mkdir -p /app/wwwroot/uploads /app/wwwroot/documentos \
-    && chown -R app:app /app/wwwroot
+# Mídias, documentos e a caixa de saída de e-mails ficam em volume e precisam
+# pertencer a esse usuário.
+RUN mkdir -p /app/arquivos/uploads /app/arquivos/documentos /app/emails-enviados \
+    && chown -R app:app /app/arquivos /app/emails-enviados
 
 USER app
 

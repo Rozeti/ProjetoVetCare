@@ -66,23 +66,28 @@ export function SemDados({
   );
 }
 
-export function Aviso({
+/** Mensagem de contexto; os mesmos quatro tipos do portal web (erro, sucesso, aviso, info). */
+export function Alerta({
   tipo = 'info',
   children,
 }: {
-  tipo?: 'info' | 'erro' | 'sucesso' | 'alerta';
+  tipo?: 'info' | 'erro' | 'sucesso' | 'aviso';
   children: ReactNode;
 }) {
   const paleta = {
     info: { fundo: cores.marcaClara, texto: cores.marcaEscura },
     erro: { fundo: cores.perigoClaro, texto: '#991b1b' },
     sucesso: { fundo: cores.sucessoClaro, texto: '#065f46' },
-    alerta: { fundo: cores.alertaClaro, texto: '#92400e' },
+    aviso: { fundo: cores.alertaClaro, texto: '#92400e' },
   }[tipo];
 
   return (
-    <View style={[estilos.aviso, { backgroundColor: paleta.fundo }]}>
-      <Text style={[estilos.avisoTexto, { color: paleta.texto }]}>{children}</Text>
+    <View
+      style={[estilos.alerta, { backgroundColor: paleta.fundo }]}
+      accessibilityRole={tipo === 'erro' ? 'alert' : undefined}
+      accessibilityLiveRegion={tipo === 'erro' ? 'assertive' : 'polite'}
+    >
+      <Text style={[estilos.alertaTexto, { color: paleta.texto }]}>{children}</Text>
     </View>
   );
 }
@@ -94,6 +99,8 @@ export function Avatar({ nome, tamanho = 40 }: { nome: string; tamanho?: number 
         estilos.avatar,
         { width: tamanho, height: tamanho, borderRadius: tamanho / 2 },
       ]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
     >
       <Text style={[estilos.avatarTexto, { fontSize: tamanho * 0.36 }]}>{iniciais(nome)}</Text>
     </View>
@@ -313,11 +320,11 @@ const estilos = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  aviso: {
+  alerta: {
     borderRadius: raios.md,
     padding: espacos.md,
   },
-  avisoTexto: {
+  alertaTexto: {
     fontSize: 14,
     lineHeight: 20,
   },

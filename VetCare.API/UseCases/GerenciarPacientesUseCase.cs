@@ -7,7 +7,7 @@ using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
-    /// <summary>HU-003: cadastro, edição e inativação de pacientes vinculados a um tutor.</summary>
+    /// <summary>HU-003: cadastro, edição, inativação e exclusão de pacientes vinculados a um tutor.</summary>
     public class GerenciarPacientesUseCase
     {
         private readonly IPetRepository _pets;
@@ -81,8 +81,9 @@ namespace VetCare.API.UseCases
             var alertas = await _alergias.ObterPorPaciente(id, apenasAtivas: true);
             dto.AlertasClinicos = alertas.Select(GerenciarAlergiasUseCase.MapearParaDTO).ToList();
 
+            var hoje = RelogioDaClinica.Padrao.Hoje;
             var vacinas = await _vacinas.ObterPorPaciente(id);
-            dto.VacinasVencidas = vacinas.Count(v => v.ProximaDose.HasValue && v.ProximaDose < DateTime.UtcNow.Date);
+            dto.VacinasVencidas = vacinas.Count(v => v.ProximaDose.HasValue && v.ProximaDose.Value.Date < hoje);
 
             return Resultado<PetDTO>.Ok(dto);
         }
@@ -138,7 +139,7 @@ namespace VetCare.API.UseCases
                 return Resultado<PetDTO>.Invalido("O tutor informado não foi encontrado nesta clínica.");
             }
 
-            if (dto.DataNascimento.Date > DateTime.UtcNow.Date)
+            if (dto.DataNascimento.Date > RelogioDaClinica.Padrao.Hoje)
             {
                 return Resultado<PetDTO>.Invalido("A data de nascimento não pode ser futura.");
             }
@@ -192,7 +193,7 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<PetDTO>> Atualizar(Guid id, AtualizarPetDTO dto)
         {
-            var pet = await _pets.ObterPorId(id);
+            var pet = await _pets.ObterPorIdComTutor(id);
 
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
@@ -206,7 +207,12 @@ namespace VetCare.API.UseCases
                 return Resultado<PetDTO>.Invalido("O tutor informado não foi encontrado nesta clínica.");
             }
 
-            if (dto.DataNascimento.Date > DateTime.UtcNow.Date)
+            if (dto.DataNascimento == default)
+            {
+                return Resultado<PetDTO>.Invalido("Informe a data de nascimento do paciente.");
+            }
+
+            if (dto.DataNascimento.Date > RelogioDaClinica.Padrao.Hoje)
             {
                 return Resultado<PetDTO>.Invalido("A data de nascimento não pode ser futura.");
             }
@@ -235,8 +241,10 @@ namespace VetCare.API.UseCases
             pet.PesoAtualKg = dto.PesoAtualKg;
             pet.DataNascimento = DateTime.SpecifyKind(dto.DataNascimento.Date, DateTimeKind.Utc);
             pet.TutorId = dto.TutorId;
+            pet.Tutor = tutor;
 
-            var registrouObito = dto.DataObito.HasValue && pet.DataObito != dto.DataObito;
+            var registrouObito = dto.DataObito.HasValue && pet.DataObito?.Date != dto.DataObito.Value.Date;
+            var desfezObito = !dto.DataObito.HasValue && pet.DataObito.HasValue;
 
             pet.DataObito = dto.DataObito.HasValue
                 ? DateTime.SpecifyKind(dto.DataObito.Value.Date, DateTimeKind.Utc)
@@ -250,13 +258,19 @@ namespace VetCare.API.UseCases
                 await EncerrarTratamentosEmAberto(pet.Id);
             }
 
+            // Um óbito registrado por engano pode ser desfeito: o paciente volta a ficar ativo
+            // (os tratamentos interrompidos são retomados manualmente, se for o caso).
+            if (desfezObito)
+            {
+                pet.Ativo = true;
+            }
+
             _pets.Atualizar(pet);
             await _pets.SalvarAlteracoes();
 
-            pet.Tutor = tutor;
-
             await _auditoria.RegistrarDoUsuarioAtual(
-                AuditoriaService.Acoes.Alteracao, "Paciente", pet.Id, $"Edição de {pet.Nome}");
+                AuditoriaService.Acoes.Alteracao, "Paciente", pet.Id,
+                registrouObito ? $"Edição de {pet.Nome} com registro de óbito" : $"Edição de {pet.Nome}");
 
             return Resultado<PetDTO>.Ok(MapearParaDTO(pet), "Paciente atualizado com sucesso.");
         }
@@ -283,8 +297,9 @@ namespace VetCare.API.UseCases
         }
 
         /// <summary>
-        /// HU-003, CA-4: a exclusão é bloqueada quando existe histórico clínico; nesse caso
-        /// o sistema oferece apenas a inativação, preservando a integridade do prontuário (RN-004).
+        /// HU-003, CA-4: a exclusão é bloqueada quando existe histórico clínico; nesse caso o
+        /// sistema oferece apenas a inativação, preservando a integridade do prontuário (RN-004).
+        /// Sem histórico, o cadastro é removido de fato.
         /// </summary>
         public async Task<Resultado> Excluir(Guid id)
         {
@@ -301,18 +316,19 @@ namespace VetCare.API.UseCases
                     "Este paciente possui prontuário com registros e não pode ser excluído. Utilize a inativação.");
             }
 
-            pet.Ativo = false;
-
-            _pets.Atualizar(pet);
+            await _pets.Remover(pet);
             await _pets.SalvarAlteracoes();
 
-            return Resultado.Ok("Paciente inativado com sucesso.");
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Exclusao, "Paciente", pet.Id, $"Exclusão de {pet.Nome} (sem histórico clínico)");
+
+            return Resultado.Ok("Paciente excluído com sucesso.");
         }
 
         private async Task EncerrarTratamentosEmAberto(Guid pacienteId)
         {
             var emAberto = (await _tratamentos.ObterPorPaciente(pacienteId))
-                .Where(t => t.Status == "Em Andamento")
+                .Where(t => t.Status == StatusTratamento.EmAndamento)
                 .ToList();
 
             foreach (var tratamento in emAberto)
@@ -324,7 +340,7 @@ namespace VetCare.API.UseCases
                     continue;
                 }
 
-                atual.Status = "Interrompido";
+                atual.Status = StatusTratamento.Interrompido;
                 atual.DataFim ??= DateTime.UtcNow;
 
                 _tratamentos.Atualizar(atual);
@@ -366,7 +382,7 @@ namespace VetCare.API.UseCases
 
         public static int CalcularIdade(DateTime dataNascimento)
         {
-            var hoje = DateTime.UtcNow.Date;
+            var hoje = RelogioDaClinica.Padrao.Hoje;
             var idade = hoje.Year - dataNascimento.Year;
 
             if (dataNascimento.Date > hoje.AddYears(-idade))
@@ -383,7 +399,7 @@ namespace VetCare.API.UseCases
         /// </summary>
         public static string DescreverIdade(DateTime dataNascimento)
         {
-            var hoje = DateTime.UtcNow.Date;
+            var hoje = RelogioDaClinica.Padrao.Hoje;
             var anos = CalcularIdade(dataNascimento);
 
             if (anos >= 1)

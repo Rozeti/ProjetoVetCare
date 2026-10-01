@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Loader2, Lock, Paperclip, Trash2 } from 'lucide-react';
+import { Loader2, Lock, Paperclip, Pencil, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro, urlDoArquivo } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
 import type { Atendimento, ItemAgenda, Midia } from '../../types';
@@ -7,7 +7,12 @@ import { Alerta, Campo, Etiqueta, Modal } from '../../components/ui';
 import { estiloEscalaDor } from '../../utils/formato';
 
 interface Props {
-  sessao: ItemAgenda | null;
+  /** Sessão da agenda: registra um atendimento novo (ou abre o existente para anexos). */
+  sessao?: ItemAgenda | null;
+  /** Atendimento já registrado, aberto a partir do prontuário para correção (RN-004). */
+  atendimento?: Atendimento | null;
+  /** Descrição exibida no cabeçalho quando não há sessão da agenda em mãos. */
+  descricao?: string;
   aoFechar: () => void;
   aoSalvar: () => void;
 }
@@ -24,41 +29,72 @@ const ESTADO_INICIAL = {
   observacaoInterna: '',
 };
 
+type Estado = typeof ESTADO_INICIAL;
+
 /**
- * HU-008: formulário rápido de registro do atendimento fisioterapêutico.
+ * HU-008: formulário rápido de registro do atendimento fisioterapêutico, com correção
+ * posterior preservando a versão anterior (RN-004).
  * HU-009: permite anexar uma observação interna, restrita à equipe clínica.
  * HU-010: anexa fotos e vídeos à sessão.
  */
-export function ModalRegistrarAtendimento({ sessao, aoFechar, aoSalvar }: Props) {
-  // O modal só existe quando há sessão escolhida: cada abertura monta um formulário
+export function ModalRegistrarAtendimento({ sessao, atendimento, ...props }: Props) {
+  // O modal só existe quando há algo a mostrar: cada abertura monta um formulário
   // novo, o que dispensa um efeito para limpá-lo.
-  if (!sessao) {
+  if (!sessao && !atendimento) {
     return null;
   }
 
-  return <Formulario sessao={sessao} aoFechar={aoFechar} aoSalvar={aoSalvar} />;
+  return <Formulario sessao={sessao ?? null} atendimento={atendimento ?? null} {...props} />;
 }
 
-function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda }) {
+function estadoAPartirDe(atendimento: Atendimento): Estado {
+  return {
+    tecnicasAplicadas: atendimento.tecnicasAplicadas,
+    escalaDor: atendimento.escalaDor,
+    evolucaoClinica: atendimento.evolucaoClinica,
+    proximosPassos: atendimento.proximosPassos,
+    pesoKg: atendimento.pesoKg?.toString() ?? '',
+    temperaturaCelsius: atendimento.temperaturaCelsius?.toString() ?? '',
+    frequenciaCardiaca: atendimento.frequenciaCardiaca?.toString() ?? '',
+    frequenciaRespiratoria: atendimento.frequenciaRespiratoria?.toString() ?? '',
+    observacaoInterna: '',
+  };
+}
+
+function Formulario({
+  sessao,
+  atendimento,
+  descricao,
+  aoFechar,
+  aoSalvar,
+}: Omit<Props, 'sessao' | 'atendimento'> & { sessao: ItemAgenda | null; atendimento: Atendimento | null }) {
   const { podeVerObservacoesInternas } = useAuth();
 
-  const [form, setForm] = useState(ESTADO_INICIAL);
-  const [atendimentoSalvo, setAtendimentoSalvo] = useState<Atendimento | null>(null);
-  const [midias, setMidias] = useState<Midia[]>([]);
+  const sessaoId = sessao?.sessaoId ?? atendimento?.sessaoId ?? '';
+
+  const [form, setForm] = useState<Estado>(atendimento ? estadoAPartirDe(atendimento) : ESTADO_INICIAL);
+  const [atendimentoSalvo, setAtendimentoSalvo] = useState<Atendimento | null>(atendimento);
+  const [editando, setEditando] = useState(!!atendimento);
+  const [midias, setMidias] = useState<Midia[]>(atendimento?.midias ?? []);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [enviandoMidia, setEnviandoMidia] = useState(false);
+  const [houveAlteracao, setHouveAlteracao] = useState(false);
 
   const campoArquivo = useRef<HTMLInputElement>(null);
 
-  // A sessão pode já ter atendimento: nesse caso o modal abre em modo anexos.
+  // Aberto pela agenda, a sessão pode já ter atendimento: nesse caso o modal abre em modo resumo.
   useEffect(() => {
+    if (!sessao) {
+      return;
+    }
+
     let ativo = true;
 
-    async function carregarExistente() {
+    async function carregarExistente(id: string) {
       try {
-        const { data } = await api.get<Atendimento | null>(`/api/atendimentos/sessao/${sessao.sessaoId}`);
+        const { data } = await api.get<Atendimento | null>(`/api/atendimentos/sessao/${id}`);
 
         if (!ativo) return;
 
@@ -66,22 +102,22 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
           setAtendimentoSalvo(data);
           setMidias(data.midias);
         } else {
-          const { data: lista } = await api.get<Midia[]>(`/api/midias/sessao/${sessao.sessaoId}`);
+          const { data: lista } = await api.get<Midia[]>(`/api/midias/sessao/${id}`);
           if (ativo) setMidias(lista);
         }
-      } catch {
-        if (ativo) setMidias([]);
+      } catch (falha) {
+        if (ativo) setErro(mensagemDeErro(falha, 'Não foi possível carregar os dados da sessão.'));
       }
     }
 
-    carregarExistente();
+    carregarExistente(sessao.sessaoId);
 
     return () => {
       ativo = false;
     };
   }, [sessao]);
 
-  function atualizar<T extends keyof typeof ESTADO_INICIAL>(campo: T, valor: (typeof ESTADO_INICIAL)[T]) {
+  function atualizar<T extends keyof Estado>(campo: T, valor: Estado[T]) {
     setForm((atual) => ({ ...atual, [campo]: valor }));
   }
 
@@ -97,27 +133,42 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
 
     setSalvando(true);
 
-    try {
-      const { data } = await api.post<Atendimento>('/api/atendimentos', {
-        sessaoId: sessao.sessaoId,
-        tecnicasAplicadas: form.tecnicasAplicadas,
-        escalaDor: form.escalaDor,
-        evolucaoClinica: form.evolucaoClinica,
-        proximosPassos: form.proximosPassos,
-        // Os sinais vitais estruturados também viram um resumo em texto para a linha do tempo.
-        sinaisVitais: montarResumoSinaisVitais(form),
-        pesoKg: form.pesoKg ? Number(form.pesoKg) : null,
-        temperaturaCelsius: form.temperaturaCelsius ? Number(form.temperaturaCelsius) : null,
-        frequenciaCardiaca: form.frequenciaCardiaca ? Number(form.frequenciaCardiaca) : null,
-        frequenciaRespiratoria: form.frequenciaRespiratoria ? Number(form.frequenciaRespiratoria) : null,
-        observacaoInterna: form.observacaoInterna || null,
-        concluirSessao: true,
-      });
+    const campos = {
+      tecnicasAplicadas: form.tecnicasAplicadas,
+      escalaDor: form.escalaDor,
+      evolucaoClinica: form.evolucaoClinica,
+      proximosPassos: form.proximosPassos,
+      // Os sinais vitais estruturados também viram um resumo em texto para a linha do tempo.
+      sinaisVitais: montarResumoSinaisVitais(form),
+      pesoKg: form.pesoKg ? Number(form.pesoKg) : null,
+      temperaturaCelsius: form.temperaturaCelsius ? Number(form.temperaturaCelsius) : null,
+      frequenciaCardiaca: form.frequenciaCardiaca ? Number(form.frequenciaCardiaca) : null,
+      frequenciaRespiratoria: form.frequenciaRespiratoria ? Number(form.frequenciaRespiratoria) : null,
+    };
 
-      setAtendimentoSalvo(data);
-      setAviso('Atendimento registrado. Você ainda pode anexar fotos e vídeos desta sessão.');
+    try {
+      if (atendimentoSalvo && editando) {
+        // RN-004: a API arquiva a versão anterior antes de aplicar a correção.
+        const { data } = await api.put<Atendimento>(`/api/atendimentos/${atendimentoSalvo.id}`, campos);
+
+        setAtendimentoSalvo({ ...data, midias });
+        setEditando(false);
+        setHouveAlteracao(true);
+        setAviso('Atendimento corrigido. A versão anterior foi preservada no histórico.');
+      } else {
+        const { data } = await api.post<Atendimento>('/api/atendimentos', {
+          sessaoId,
+          ...campos,
+          observacaoInterna: form.observacaoInterna || null,
+          concluirSessao: true,
+        });
+
+        setAtendimentoSalvo(data);
+        setHouveAlteracao(true);
+        setAviso('Atendimento registrado e sessão concluída. Você ainda pode anexar fotos e vídeos desta sessão.');
+      }
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível registrar o atendimento.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível salvar o atendimento.'));
     } finally {
       setSalvando(false);
     }
@@ -125,12 +176,11 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
 
   /** HU-010: upload de mídia vinculada à sessão. */
   async function enviarMidia(arquivo: File) {
-
     setErro('');
     setEnviandoMidia(true);
 
     const corpo = new FormData();
-    corpo.append('sessaoId', sessao.sessaoId);
+    corpo.append('sessaoId', sessaoId);
     corpo.append('arquivo', arquivo);
 
     if (atendimentoSalvo) {
@@ -140,6 +190,7 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
     try {
       const { data } = await api.post<Midia>('/api/midias', corpo);
       setMidias((atual) => [data, ...atual]);
+      setHouveAlteracao(true);
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível anexar o arquivo.'));
     } finally {
@@ -152,19 +203,23 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
     try {
       await api.delete(`/api/midias/${id}`);
       setMidias((atual) => atual.filter((m) => m.id !== id));
+      setHouveAlteracao(true);
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível remover o arquivo.'));
     }
   }
 
+  const cabecalho = sessao ? `${sessao.nomePaciente} · ${sessao.nomeTutor}` : descricao ?? '';
+  const mostrarFormulario = !atendimentoSalvo || editando;
+
   return (
     <Modal
       aberto
-      titulo={atendimentoSalvo ? 'Atendimento da sessão' : 'Registrar atendimento'}
-      descricao={`${sessao.nomePaciente} · ${sessao.nomeTutor}`}
+      titulo={editando && atendimentoSalvo ? 'Corrigir atendimento' : atendimentoSalvo ? 'Atendimento da sessão' : 'Registrar atendimento'}
+      descricao={cabecalho}
       aoFechar={() => {
-        // Se algo foi registrado, a agenda precisa se atualizar ao fechar.
-        if (atendimentoSalvo) aoSalvar();
+        // Se algo foi registrado ou alterado, a tela de origem precisa se atualizar ao fechar.
+        if (houveAlteracao) aoSalvar();
         else aoFechar();
       }}
       largura="max-w-3xl"
@@ -175,7 +230,7 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
         </div>
       )}
 
-      {atendimentoSalvo ? (
+      {!mostrarFormulario && atendimentoSalvo ? (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <ResumoCampo rotulo="Técnicas aplicadas" valor={atendimentoSalvo.tecnicasAplicadas} />
@@ -188,6 +243,21 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
             <ResumoCampo rotulo="Evolução clínica" valor={atendimentoSalvo.evolucaoClinica} />
             <ResumoCampo rotulo="Próximos passos" valor={atendimentoSalvo.proximosPassos} />
             <ResumoCampo rotulo="Sinais vitais" valor={atendimentoSalvo.sinaisVitais} />
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="vc-botao-secundario"
+              onClick={() => {
+                setForm(estadoAPartirDe(atendimentoSalvo));
+                setAviso('');
+                setEditando(true);
+              }}
+            >
+              <Pencil size={15} />
+              Corrigir registro
+            </button>
           </div>
         </div>
       ) : (
@@ -282,8 +352,8 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
             </div>
           </fieldset>
 
-          {/* HU-009 / RN-003: observação restrita, nunca visível ao tutor. */}
-          {podeVerObservacoesInternas && (
+          {/* HU-009 / RN-003: observação restrita, nunca visível ao tutor; só no registro inicial. */}
+          {!editando && podeVerObservacoesInternas && (
             <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
                 <Lock size={15} />
@@ -305,12 +375,21 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
           {erro && <Alerta tipo="erro">{erro}</Alerta>}
 
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="vc-botao-secundario" onClick={aoFechar} disabled={salvando}>
+            <button
+              type="button"
+              className="vc-botao-secundario"
+              onClick={() => {
+                if (editando && atendimentoSalvo) setEditando(false);
+                else if (houveAlteracao) aoSalvar();
+                else aoFechar();
+              }}
+              disabled={salvando}
+            >
               Cancelar
             </button>
             <button type="submit" className="vc-botao-primario" disabled={salvando}>
               {salvando && <Loader2 className="animate-spin" size={16} />}
-              Salvar atendimento
+              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar atendimento'}
             </button>
           </div>
         </form>
@@ -335,7 +414,7 @@ function Formulario({ sessao, aoFechar, aoSalvar }: Props & { sessao: ItemAgenda
           </label>
         </div>
 
-        {erro && atendimentoSalvo && (
+        {erro && !mostrarFormulario && (
           <div className="mb-3">
             <Alerta tipo="erro" aoFechar={() => setErro('')}>
               {erro}
@@ -395,7 +474,7 @@ function ResumoCampo({ rotulo, valor }: { rotulo: string; valor: string }) {
   );
 }
 
-function montarResumoSinaisVitais(form: typeof ESTADO_INICIAL): string {
+function montarResumoSinaisVitais(form: Estado): string {
   const partes: string[] = [];
 
   if (form.frequenciaCardiaca) partes.push(`FC ${form.frequenciaCardiaca} bpm`);

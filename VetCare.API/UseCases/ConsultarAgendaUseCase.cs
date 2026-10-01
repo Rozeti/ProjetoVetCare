@@ -15,6 +15,7 @@ namespace VetCare.API.UseCases
         private readonly ISessaoRepository _sessoes;
         private readonly IVeterinarioRepository _veterinarios;
         private readonly IAtendimentoRepository _atendimentos;
+        private readonly ITratamentoRepository _tratamentos;
         private readonly IClinicaRepository _clinicas;
         private readonly UsuarioAtual _usuarioAtual;
 
@@ -22,12 +23,14 @@ namespace VetCare.API.UseCases
             ISessaoRepository sessoes,
             IVeterinarioRepository veterinarios,
             IAtendimentoRepository atendimentos,
+            ITratamentoRepository tratamentos,
             IClinicaRepository clinicas,
             UsuarioAtual usuarioAtual)
         {
             _sessoes = sessoes;
             _veterinarios = veterinarios;
             _atendimentos = atendimentos;
+            _tratamentos = tratamentos;
             _clinicas = clinicas;
             _usuarioAtual = usuarioAtual;
         }
@@ -44,9 +47,9 @@ namespace VetCare.API.UseCases
 
             var (inicio, fim) = CalcularIntervalo(data, visao);
             var sessoes = await _sessoes.ObterPorPeriodo(veterinarioId, inicio, fim);
-            var indiceCor = await ObterIndiceCor(veterinarioId);
+            var cor = GerenciarVeterinariosUseCase.ObterCor(veterinarioId);
 
-            return Resultado<List<ItemAgendaDTO>>.Ok(await MapearItens(sessoes, indiceCor));
+            return Resultado<List<ItemAgendaDTO>>.Ok(await MapearItens(sessoes, _ => cor));
         }
 
         /// <summary>HU-005: agenda consolidada com todos os veterinários e o toggle de profissionais.</summary>
@@ -59,22 +62,12 @@ namespace VetCare.API.UseCases
 
             var sessoes = await _sessoes.ObterAgendaGeral(_usuarioAtual.ClinicaId, inicio, fim, veterinariosFiltrados);
 
-            var cores = veterinariosDto.ToDictionary(v => v.Id, v => v.Cor);
-            var itens = new List<ItemAgendaDTO>(sessoes.Count);
-
-            foreach (var sessao in sessoes)
-            {
-                var item = await MapearItem(sessao);
-                item.CorVeterinario = cores.TryGetValue(sessao.VeterinarioId, out var cor) ? cor : "#64748b";
-                itens.Add(item);
-            }
-
             var agenda = new AgendaGeralDTO
             {
                 Inicio = inicio,
                 Fim = fim,
                 Veterinarios = veterinariosDto,
-                Sessoes = itens
+                Sessoes = await MapearItens(sessoes, GerenciarVeterinariosUseCase.ObterCor)
             };
 
             return Resultado<AgendaGeralDTO>.Ok(agenda);
@@ -88,45 +81,46 @@ namespace VetCare.API.UseCases
                 return Resultado<List<SessaoDTO>>.NaoEncontrado("Cadastro de tutor não encontrado para este usuário.");
             }
 
-            var clinica = await _clinicas.ObterPorId(_usuarioAtual.ClinicaId);
-            var horasMinimas = clinica?.HorasMinimasCancelamento ?? 12;
-
             var sessoes = await _sessoes.ObterPorTutor(_usuarioAtual.TutorId.Value, apenasFuturas);
-            var lista = new List<SessaoDTO>(sessoes.Count);
 
-            foreach (var sessao in sessoes)
-            {
-                var possuiAtendimento = await _atendimentos.ObterPorSessao(sessao.Id) != null;
-                lista.Add(AgendarSessaoUseCase.MapearParaDTO(sessao, horasMinimas, possuiAtendimento));
-            }
-
-            return Resultado<List<SessaoDTO>>.Ok(lista);
+            return Resultado<List<SessaoDTO>>.Ok(await MapearSessoes(sessoes));
         }
 
+        /// <summary>Sessões de um tratamento, para a equipe e para o tutor do paciente.</summary>
         public async Task<Resultado<List<SessaoDTO>>> ConsultarPorTratamento(Guid tratamentoId)
         {
-            var clinica = await _clinicas.ObterPorId(_usuarioAtual.ClinicaId);
-            var horasMinimas = clinica?.HorasMinimasCancelamento ?? 12;
+            var tratamento = await _tratamentos.ObterPorIdComRelacionamentos(tratamentoId);
 
-            var sessoes = await _sessoes.ObterPorTratamento(tratamentoId);
-            var lista = new List<SessaoDTO>(sessoes.Count);
-
-            foreach (var sessao in sessoes)
+            if (tratamento == null || tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
-                var possuiAtendimento = await _atendimentos.ObterPorSessao(sessao.Id) != null;
-                lista.Add(AgendarSessaoUseCase.MapearParaDTO(sessao, horasMinimas, possuiAtendimento));
+                return Resultado<List<SessaoDTO>>.NaoEncontrado("Tratamento não encontrado.");
             }
 
-            return Resultado<List<SessaoDTO>>.Ok(lista);
+            // HU-013, CA-1: o tutor só vê as sessões dos próprios pets.
+            if (_usuarioAtual.EhTutor && tratamento.Paciente?.TutorId != _usuarioAtual.TutorId)
+            {
+                return Resultado<List<SessaoDTO>>.NaoAutorizado("Você não tem acesso a este tratamento.");
+            }
+
+            var sessoes = await _sessoes.ObterPorTratamento(tratamentoId);
+
+            // A consulta por tratamento não carrega o paciente; ele já está em mãos.
+            foreach (var sessao in sessoes)
+            {
+                sessao.Tratamento = tratamento;
+            }
+
+            return Resultado<List<SessaoDTO>>.Ok(await MapearSessoes(sessoes));
         }
 
         /// <summary>
-        /// Converte a visão escolhida em um intervalo [início, fim). O cálculo é feito em
-        /// horário local e convertido para UTC, que é como as sessões são persistidas.
+        /// Converte a visão escolhida em um intervalo [início, fim). O cálculo é feito no
+        /// horário da clínica e convertido para UTC, que é como as sessões são persistidas.
         /// </summary>
         public static (DateTime Inicio, DateTime Fim) CalcularIntervalo(DateTime data, string visao)
         {
-            var referencia = DateTime.SpecifyKind(data.Date, DateTimeKind.Local);
+            var relogio = RelogioDaClinica.Padrao;
+            var referencia = relogio.DiaDaClinica(data);
 
             DateTime inicioLocal;
             DateTime fimLocal;
@@ -141,7 +135,7 @@ namespace VetCare.API.UseCases
 
                 case "mes":
                 case "mês":
-                    inicioLocal = new DateTime(referencia.Year, referencia.Month, 1, 0, 0, 0, DateTimeKind.Local);
+                    inicioLocal = new DateTime(referencia.Year, referencia.Month, 1);
                     fimLocal = inicioLocal.AddMonths(1);
                     break;
 
@@ -151,27 +145,27 @@ namespace VetCare.API.UseCases
                     break;
             }
 
-            return (inicioLocal.ToUniversalTime(), fimLocal.ToUniversalTime());
+            return (relogio.ParaUtc(inicioLocal), relogio.ParaUtc(fimLocal));
         }
 
-        private async Task<List<ItemAgendaDTO>> MapearItens(List<Sessao> sessoes, int indiceCor)
+        private async Task<List<SessaoDTO>> MapearSessoes(List<Sessao> sessoes)
         {
-            var cor = GerenciarVeterinariosUseCase.ObterCor(indiceCor);
-            var itens = new List<ItemAgendaDTO>(sessoes.Count);
+            var clinica = await _clinicas.ObterPorId(_usuarioAtual.ClinicaId);
+            var horasMinimas = clinica?.HorasMinimasCancelamento ?? 12;
 
-            foreach (var sessao in sessoes)
-            {
-                var item = await MapearItem(sessao);
-                item.CorVeterinario = cor;
-                itens.Add(item);
-            }
+            var comAtendimento = await _atendimentos.ObterSessoesComAtendimento(sessoes.Select(s => s.Id));
 
-            return itens;
+            return sessoes
+                .Select(sessao => AgendarSessaoUseCase.MapearParaDTO(sessao, horasMinimas, comAtendimento.Contains(sessao.Id)))
+                .ToList();
         }
 
-        private async Task<ItemAgendaDTO> MapearItem(Sessao sessao)
+        /// <summary>Uma única consulta descobre quais sessões já têm atendimento, qualquer que seja o tamanho da agenda.</summary>
+        private async Task<List<ItemAgendaDTO>> MapearItens(List<Sessao> sessoes, Func<Guid, string> corDoVeterinario)
         {
-            return new ItemAgendaDTO
+            var comAtendimento = await _atendimentos.ObterSessoesComAtendimento(sessoes.Select(s => s.Id));
+
+            return sessoes.Select(sessao => new ItemAgendaDTO
             {
                 SessaoId = sessao.Id,
                 PacienteId = sessao.Tratamento?.PacienteId ?? Guid.Empty,
@@ -181,18 +175,11 @@ namespace VetCare.API.UseCases
                 NomePaciente = sessao.Tratamento?.Paciente?.Nome ?? "Paciente não informado",
                 NomeTutor = sessao.Tratamento?.Paciente?.Tutor?.Usuario?.Nome ?? string.Empty,
                 NomeVeterinario = sessao.Veterinario?.Usuario?.Nome ?? string.Empty,
+                CorVeterinario = corDoVeterinario(sessao.VeterinarioId),
                 Status = sessao.Status,
                 Observacoes = sessao.Observacoes,
-                PossuiAtendimento = await _atendimentos.ObterPorSessao(sessao.Id) != null
-            };
-        }
-
-        private async Task<int> ObterIndiceCor(Guid veterinarioId)
-        {
-            var veterinarios = await _veterinarios.Listar(_usuarioAtual.ClinicaId);
-            var indice = veterinarios.FindIndex(v => v.Id == veterinarioId);
-
-            return indice < 0 ? 0 : indice;
+                PossuiAtendimento = comAtendimento.Contains(sessao.Id)
+            }).ToList();
         }
     }
 }

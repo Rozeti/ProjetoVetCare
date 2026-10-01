@@ -14,7 +14,6 @@ namespace VetCare.API.Security
         public const string AdministradorOuApoio = Administrador + "," + Apoio;
         public const string AdministradorOuVeterinario = Administrador + "," + Veterinario;
         public const string EquipeClinica = Administrador + "," + Veterinario + "," + Apoio;
-        public const string Todos = Administrador + "," + Veterinario + "," + Tutor + "," + Apoio;
 
         public static readonly string[] Validos =
         {

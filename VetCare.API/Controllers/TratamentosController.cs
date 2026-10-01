@@ -29,7 +29,7 @@ namespace VetCare.API.Controllers
         [Authorize(Roles = Perfis.Veterinario)]
         public async Task<IActionResult> ListarMeus()
         {
-            return this.Responder(await _useCase.ListarDoVeterinario(null));
+            return this.Responder(await _useCase.ListarDoVeterinario());
         }
 
         [HttpGet("{id:guid}")]

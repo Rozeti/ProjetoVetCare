@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
@@ -19,7 +19,14 @@ import { api, mensagemDeErro, urlDoArquivo } from '../services/api';
 import { useAuth } from '../contexts/auth';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
-import type { Documento, ItemLinhaTempo, Prontuario as ProntuarioDTO } from '../types';
+import type {
+  Atendimento,
+  Avaliacao,
+  Documento,
+  ItemLinhaTempo,
+  Prontuario as ProntuarioDTO,
+  TipoItemLinhaTempo,
+} from '../types';
 import {
   Alerta,
   CabecalhoPagina,
@@ -40,6 +47,7 @@ import {
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { imprimirProntuario } from '../utils/impressao';
 import { ModalAvaliacao } from './componentes/ModalAvaliacao';
+import { ModalRegistrarAtendimento } from './componentes/ModalRegistrarAtendimento';
 import { ModalTratamento } from './componentes/ModalTratamento';
 import { ModalAlertaClinico } from './componentes/ModalAlertaClinico';
 import { CarteiraVacinacao } from './componentes/CarteiraVacinacao';
@@ -47,9 +55,14 @@ import { Receituario } from './componentes/Receituario';
 
 type Aba = 'linha-do-tempo' | 'evolucao' | 'vacinas' | 'receitas' | 'tratamentos' | 'documentos';
 
+const ABAS: Aba[] = ['linha-do-tempo', 'evolucao', 'vacinas', 'receitas', 'tratamentos', 'documentos'];
+
+const TIPOS_DE_DOCUMENTO = ['Contrato', 'Exame', 'Laudo', 'Outro'];
+
 /** HU-011: prontuário com linha do tempo, mídias e indicadores de evolução. */
 export function Prontuario() {
   const { pacienteId = '' } = useParams();
+  const [parametros, setParametros] = useSearchParams();
   const { podeVerObservacoesInternas, temPerfil, ehTutor } = useAuth();
 
   const podeRegistrar = temPerfil('Administrador', 'Veterinario');
@@ -59,11 +72,23 @@ export function Prontuario() {
   const voltarPara = ehTutor ? '/meus-pets' : '/pacientes';
   const rotuloVoltar = ehTutor ? 'Voltar para meus pets' : 'Voltar para pacientes';
 
-  const [aba, setAba] = useState<Aba>('linha-do-tempo');
+  // A aba vem na URL (?aba=vacinas) para que atalhos de outras telas abram direto nela.
+  const abaDaUrl = parametros.get('aba');
+  const aba: Aba = ABAS.includes(abaDaUrl as Aba) ? (abaDaUrl as Aba) : 'linha-do-tempo';
+
+  function mudarAba(nova: Aba) {
+    if (nova === 'linha-do-tempo') parametros.delete('aba');
+    else parametros.set('aba', nova);
+    setParametros(parametros, { replace: true });
+  }
+
   const [aviso, setAviso] = useState('');
   const [modalAvaliacao, setModalAvaliacao] = useState(false);
+  const [avaliacaoEmCorrecao, setAvaliacaoEmCorrecao] = useState<Avaliacao | null>(null);
+  const [atendimentoEmCorrecao, setAtendimentoEmCorrecao] = useState<Atendimento | null>(null);
   const [modalTratamento, setModalTratamento] = useState(false);
   const [modalAlerta, setModalAlerta] = useState(false);
+  const [tipoDocumento, setTipoDocumento] = useState('Exame');
   const [enviandoDocumento, setEnviandoDocumento] = useState(false);
   const [nomeClinica, setNomeClinica] = useState('Clínica VetSPA');
 
@@ -109,13 +134,13 @@ export function Prontuario() {
   }, []);
 
   /** HU-012: anexo de contratos, exames externos e laudos. */
-  async function enviarDocumento(arquivo: File, tipo: string) {
+  async function enviarDocumento(arquivo: File) {
     setErro('');
     setEnviandoDocumento(true);
 
     const corpo = new FormData();
     corpo.append('pacienteId', pacienteId);
-    corpo.append('tipoDocumento', tipo);
+    corpo.append('tipoDocumento', tipoDocumento);
     corpo.append('arquivo', arquivo);
 
     try {
@@ -129,7 +154,7 @@ export function Prontuario() {
     }
   }
 
-  /** HU-012, CA-2: o download passa pela API, que valida a autorização do usuário. */
+  /** HU-012, CA-2: o download passa pela API, que valida a autorização e registra o acesso. */
   async function baixarDocumento(documento: Documento) {
     try {
       const { data } = await api.get<Blob>(`/api/documentos/${documento.id}/download`, { responseType: 'blob' });
@@ -138,10 +163,32 @@ export function Prontuario() {
       const link = document.createElement('a');
       link.href = url;
       link.download = documento.nomeArquivo;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
+
+      // Revogar na hora cancelaria o download em alguns navegadores.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível baixar o documento.'));
+    }
+  }
+
+  /** RN-004: a correção de um registro clínico abre o mesmo formulário já preenchido. */
+  async function corrigirRegistro(item: ItemLinhaTempo) {
+    setErro('');
+
+    try {
+      if (item.tipo === 'Avaliação Clínica') {
+        const { data } = await api.get<Avaliacao>(`/api/avaliacoes/${item.id}`);
+        setAvaliacaoEmCorrecao(data);
+        setModalAvaliacao(true);
+      } else if (item.tipo === 'Atendimento') {
+        const { data } = await api.get<Atendimento>(`/api/atendimentos/${item.id}`);
+        setAtendimentoEmCorrecao(data);
+      }
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível abrir o registro para correção.'));
     }
   }
 
@@ -215,7 +262,14 @@ export function Prontuario() {
                   <Plus size={16} />
                   Tratamento
                 </button>
-                <button type="button" className="vc-botao-primario" onClick={() => setModalAvaliacao(true)}>
+                <button
+                  type="button"
+                  className="vc-botao-primario"
+                  onClick={() => {
+                    setAvaliacaoEmCorrecao(null);
+                    setModalAvaliacao(true);
+                  }}
+                >
                   <ClipboardList size={16} />
                   Registrar avaliação
                 </button>
@@ -278,7 +332,7 @@ export function Prontuario() {
             type="button"
             role="tab"
             aria-selected={aba === item.valor}
-            onClick={() => setAba(item.valor)}
+            onClick={() => mudarAba(item.valor)}
             className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${
               aba === item.valor
                 ? 'border-brand text-brand'
@@ -300,7 +354,11 @@ export function Prontuario() {
       </div>
 
       {aba === 'linha-do-tempo' && (
-        <LinhaDoTempo itens={prontuario.historico} exibeObservacoes={podeVerObservacoesInternas} />
+        <LinhaDoTempo
+          itens={prontuario.historico}
+          exibeObservacoes={podeVerObservacoesInternas}
+          aoCorrigir={podeRegistrar ? corrigirRegistro : undefined}
+        />
       )}
 
       {aba === 'evolucao' && (
@@ -399,11 +457,15 @@ export function Prontuario() {
 
             {podeAnexarDocumento && (
               <div className="flex items-center gap-2">
-                <select id="tipo-documento" className="vc-campo w-auto py-2" defaultValue="Exame">
-                  <option>Contrato</option>
-                  <option>Exame</option>
-                  <option>Laudo</option>
-                  <option>Outro</option>
+                <select
+                  className="vc-campo w-auto py-2"
+                  value={tipoDocumento}
+                  onChange={(e) => setTipoDocumento(e.target.value)}
+                  aria-label="Tipo do documento"
+                >
+                  {TIPOS_DE_DOCUMENTO.map((tipo) => (
+                    <option key={tipo}>{tipo}</option>
+                  ))}
                 </select>
 
                 <label className="vc-botao-secundario cursor-pointer">
@@ -416,9 +478,8 @@ export function Prontuario() {
                     disabled={enviandoDocumento}
                     onChange={(e) => {
                       const arquivo = e.target.files?.[0];
-                      const tipo = (document.getElementById('tipo-documento') as HTMLSelectElement | null)?.value ?? 'Outro';
 
-                      if (arquivo) enviarDocumento(arquivo, tipo);
+                      if (arquivo) enviarDocumento(arquivo);
                       e.target.value = '';
                     }}
                   />
@@ -468,10 +529,30 @@ export function Prontuario() {
       <ModalAvaliacao
         aberto={modalAvaliacao}
         tratamentos={prontuario.tratamentos}
-        aoFechar={() => setModalAvaliacao(false)}
+        avaliacao={avaliacaoEmCorrecao}
+        aoFechar={() => {
+          setModalAvaliacao(false);
+          setAvaliacaoEmCorrecao(null);
+        }}
         aoSalvar={() => {
           setModalAvaliacao(false);
-          setAviso('Avaliação clínica registrada com sucesso.');
+          setAviso(
+            avaliacaoEmCorrecao
+              ? 'Avaliação corrigida. A versão anterior foi preservada no histórico.'
+              : 'Avaliação clínica registrada com sucesso.',
+          );
+          setAvaliacaoEmCorrecao(null);
+          recarregar();
+        }}
+      />
+
+      <ModalRegistrarAtendimento
+        atendimento={atendimentoEmCorrecao}
+        descricao={`${prontuario.nomePaciente} · ${prontuario.nomeTutor}`}
+        aoFechar={() => setAtendimentoEmCorrecao(null)}
+        aoSalvar={() => {
+          setAtendimentoEmCorrecao(null);
+          setAviso('Atendimento atualizado.');
           recarregar();
         }}
       />
@@ -503,7 +584,16 @@ export function Prontuario() {
 }
 
 /** HU-011, CA-1: avaliações e atendimentos em ordem cronológica, com mídias na posição correspondente. */
-function LinhaDoTempo({ itens, exibeObservacoes }: { itens: ItemLinhaTempo[]; exibeObservacoes: boolean }) {
+function LinhaDoTempo({
+  itens,
+  exibeObservacoes,
+  aoCorrigir,
+}: {
+  itens: ItemLinhaTempo[];
+  exibeObservacoes: boolean;
+  /** Presente apenas para quem pode corrigir registros clínicos (RN-004). */
+  aoCorrigir?: (item: ItemLinhaTempo) => void;
+}) {
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
 
   function alternar(id: string) {
@@ -527,7 +617,7 @@ function LinhaDoTempo({ itens, exibeObservacoes }: { itens: ItemLinhaTempo[]; ex
     );
   }
 
-  const icone: Record<string, typeof ClipboardList> = {
+  const icone: Record<TipoItemLinhaTempo, typeof ClipboardList> = {
     'Avaliação Clínica': ClipboardList,
     Atendimento: Stethoscope,
     'Observação Interna': Lock,
@@ -538,6 +628,7 @@ function LinhaDoTempo({ itens, exibeObservacoes }: { itens: ItemLinhaTempo[]; ex
       {itens.map((item) => {
         const Icone = icone[item.tipo] ?? ClipboardList;
         const aberto = expandidos.has(item.id);
+        const corrigivel = !!aoCorrigir && item.tipo !== 'Observação Interna';
 
         return (
           <li key={item.id} className="relative">
@@ -574,13 +665,27 @@ function LinhaDoTempo({ itens, exibeObservacoes }: { itens: ItemLinhaTempo[]; ex
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => alternar(item.id)}
-                  className="text-sm font-medium text-brand hover:underline"
-                >
-                  {aberto ? 'Recolher' : 'Ver detalhes'}
-                </button>
+                <div className="flex items-center gap-3">
+                  {corrigivel && (
+                    <button
+                      type="button"
+                      onClick={() => aoCorrigir?.(item)}
+                      className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-brand"
+                      title="Corrigir este registro; a versão anterior fica no histórico"
+                    >
+                      <Pencil size={14} />
+                      Corrigir
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => alternar(item.id)}
+                    className="text-sm font-medium text-brand hover:underline"
+                  >
+                    {aberto ? 'Recolher' : 'Ver detalhes'}
+                  </button>
+                </div>
               </div>
 
               <p className="text-sm font-medium text-slate-800">{item.descricao}</p>

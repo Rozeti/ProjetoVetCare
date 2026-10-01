@@ -298,6 +298,49 @@ namespace VetCare.API.Migrations
                     b.ToTable("Clinicas");
                 });
 
+            modelBuilder.Entity("VetCare.API.Models.DispositivoDoUsuario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NomeDoAparelho")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Plataforma")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("RegistradoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenPush")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UltimoUsoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenPush")
+                        .IsUnique();
+
+                    b.HasIndex("UsuarioId", "Ativo");
+
+                    b.ToTable("DispositivosDoUsuario");
+                });
+
             modelBuilder.Entity("VetCare.API.Models.DocumentoClinico", b =>
                 {
                     b.Property<Guid>("Id")
@@ -476,9 +519,30 @@ namespace VetCare.API.Migrations
                     b.Property<DateTime>("DataCriacao")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EmailEnviadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErroDeEntrega")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("LinkRelacionado")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("ProximaTentativaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PushEnviadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SituacaoEntrega")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TentativasDeEntrega")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Tipo")
                         .IsRequired()
@@ -497,6 +561,8 @@ namespace VetCare.API.Migrations
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("SituacaoEntrega", "ProximaTentativaEm");
 
                     b.HasIndex("UsuarioId", "Visualizada", "DataCriacao");
 
@@ -784,11 +850,24 @@ namespace VetCare.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CodigoHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<DateTime>("DataCriacao")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExpiraEm")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Finalidade")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TentativasDeCodigo")
+                        .HasColumnType("integer");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -912,6 +991,12 @@ namespace VetCare.API.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
+
+                    b.Property<bool>("NotificarPorEmail")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("NotificarPorPush")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Perfil")
                         .IsRequired()
@@ -1163,6 +1248,17 @@ namespace VetCare.API.Migrations
                         .IsRequired();
 
                     b.Navigation("Veterinario");
+                });
+
+            modelBuilder.Entity("VetCare.API.Models.DispositivoDoUsuario", b =>
+                {
+                    b.HasOne("VetCare.API.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Usuario");
                 });
 
             modelBuilder.Entity("VetCare.API.Models.DocumentoClinico", b =>

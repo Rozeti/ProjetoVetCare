@@ -9,6 +9,9 @@ namespace VetCare.API.Security
     /// </summary>
     public class PasswordHasher
     {
+        public const int TamanhoMinimoDaSenha = 6;
+        public const int TamanhoMaximoDaSenha = 64;
+
         private const int Iteracoes = 210_000;
         private const int TamanhoSalt = 16;
         private const int TamanhoHash = 32;
@@ -23,9 +26,9 @@ namespace VetCare.API.Security
         }
 
         /// <summary>
-        /// Valida a senha informada. Aceita também o formato legado (Base64 puro) usado
-        /// nas primeiras versões, para que contas antigas continuem conseguindo entrar —
-        /// nesse caso <paramref name="precisaRehash"/> volta true e o chamador regrava o hash.
+        /// Valida a senha informada. <paramref name="precisaRehash"/> volta true quando o
+        /// hash foi gerado com menos iterações do que o padrão atual, para que o chamador
+        /// o regrave com a senha que acabou de ser confirmada.
         /// </summary>
         public bool Verificar(string senha, string hashArmazenado, out bool precisaRehash)
         {
@@ -38,19 +41,7 @@ namespace VetCare.API.Security
 
             var partes = hashArmazenado.Split('.');
 
-            if (partes.Length != 4 || partes[0] != Prefixo)
-            {
-                // Formato legado: Convert.ToBase64String(Encoding.UTF8.GetBytes(senha)).
-                var legado = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(senha));
-                var confere = CryptographicOperations.FixedTimeEquals(
-                    System.Text.Encoding.UTF8.GetBytes(legado),
-                    System.Text.Encoding.UTF8.GetBytes(hashArmazenado));
-
-                precisaRehash = confere;
-                return confere;
-            }
-
-            if (!int.TryParse(partes[1], out var iteracoes))
+            if (partes.Length != 4 || partes[0] != Prefixo || !int.TryParse(partes[1], out var iteracoes) || iteracoes <= 0)
             {
                 return false;
             }
@@ -73,6 +64,22 @@ namespace VetCare.API.Security
 
             precisaRehash = valido && iteracoes < Iteracoes;
             return valido;
+        }
+
+        /// <summary>Mensagem de validação compartilhada por todos os pontos que recebem uma senha nova.</summary>
+        public static string? ValidarForca(string? senha)
+        {
+            if (string.IsNullOrWhiteSpace(senha) || senha.Length < TamanhoMinimoDaSenha)
+            {
+                return $"A senha deve ter no mínimo {TamanhoMinimoDaSenha} caracteres.";
+            }
+
+            if (senha.Length > TamanhoMaximoDaSenha)
+            {
+                return $"A senha deve ter no máximo {TamanhoMaximoDaSenha} caracteres.";
+            }
+
+            return null;
         }
 
         /// <summary>Senha provisória legível usada na redefinição pelo Administrador (HU-002, CA-5).</summary>

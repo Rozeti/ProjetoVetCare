@@ -33,7 +33,9 @@ r=$(get "/api/sessoes/minhas?apenasFuturas=true" "$TK")
 checa "GET /api/sessoes/minhas (tela Agenda)" "podeCancelar" "$r"
 # A agenda do tutor mistura sessões já concluídas, canceladas e em aberto; só as
 # que continuam em aberto aceitam confirmação de presença.
-SESSAO=$(val "$(grep -o '{[^{}]*}' <<<"$r" | grep -Ev '"status":"(Cancelada|Conclu)' | head -1)" id)
+SESSAO=$(val "$(grep -o '{[^{}]*}' <<<"$r" | grep '"status":"Aguardando' | head -1)" id)
+# Execuções anteriores podem ter confirmado todas; a clínica agenda outra nesse caso.
+[ -n "$SESSAO" ] || SESSAO=$(garantir_sessao_em_aberto "$(entrar admin@vetcare.com vetcare123)")
 
 r=$(get "/api/prontuarios/paciente/$PET" "$TK")
 checa "GET /api/prontuarios/paciente (tela Prontuário)" "historico" "$r"

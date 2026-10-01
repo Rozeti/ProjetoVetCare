@@ -6,6 +6,8 @@ export interface DadosAuth {
   carregando: boolean;
   entrar: (email: string, senha: string) => Promise<void>;
   sair: () => void;
+  /** Guarda a versão mais recente dos dados do próprio usuário (preferências, contato). */
+  atualizarUsuario: (usuario: Usuario) => void;
   /** RN-005: base de todas as decisões de navegação e de exibição por perfil. */
   temPerfil: (...perfis: Perfil[]) => boolean;
   ehTutor: boolean;

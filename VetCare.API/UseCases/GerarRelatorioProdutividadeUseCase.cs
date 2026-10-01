@@ -33,11 +33,20 @@ namespace VetCare.API.UseCases
                     "A data final do período deve ser igual ou posterior à data inicial.");
             }
 
-            // O intervalo é fechado no início e aberto no fim, incluindo o dia final por inteiro.
-            var inicioUtc = DateTime.SpecifyKind(inicio.Date, DateTimeKind.Local).ToUniversalTime();
-            var fimUtc = DateTime.SpecifyKind(fim.Date.AddDays(1), DateTimeKind.Local).ToUniversalTime();
+            // RN-008: o veterinário vê apenas a própria produtividade — e nunca a da clínica
+            // inteira por falta do vínculo no token.
+            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId == null)
+            {
+                return Resultado<RelatorioProdutividadeDTO>.NaoEncontrado(
+                    "Cadastro de veterinário não encontrado para este usuário.");
+            }
 
-            // RN-008: o veterinário vê apenas a própria produtividade.
+            // O intervalo é fechado no início e aberto no fim, incluindo o dia final por inteiro,
+            // em dias da clínica.
+            var relogio = RelogioDaClinica.Padrao;
+            var inicioUtc = relogio.ParaUtc(relogio.DiaDaClinica(inicio));
+            var fimUtc = relogio.ParaUtc(relogio.DiaDaClinica(fim).AddDays(1));
+
             var filtroVeterinario = _usuarioAtual.EhVeterinario ? _usuarioAtual.VeterinarioId : null;
 
             var atendimentos = await _atendimentos.ObterPorPeriodo(

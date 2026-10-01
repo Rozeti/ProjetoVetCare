@@ -1,49 +1,68 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, KeyRound, Loader2, Mail, Stethoscope } from 'lucide-react';
+import { ArrowLeft, KeyRound, Loader2, Mail, MailCheck, Stethoscope } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import type { RespostaRecuperacao } from '../types';
 import { Alerta } from '../components/ui';
 
+interface Props {
+  /** Conta recém-criada pela clínica: o texto fala em criar a senha, não em recuperá-la. */
+  primeiroAcesso?: boolean;
+}
+
+type Etapa = 'solicitar' | 'redefinir';
+
 /**
- * Redefinição de senha em duas etapas: o usuário pede o link e depois define a
- * nova senha com o token recebido. Chegando com ?token=… na URL, a tela já abre
- * na segunda etapa.
+ * "Esqueci minha senha" e primeiro acesso, em duas etapas. A pessoa informa o e-mail
+ * cadastrado e recebe um link (que abre esta tela já com o token) e um código de seis
+ * dígitos (para quem prefere digitar, ou está no aplicativo). Qualquer um dos dois
+ * define a nova senha, uma única vez e dentro do prazo.
  */
-export function RecuperarSenha() {
+export function RecuperarSenha({ primeiroAcesso = false }: Props) {
   const [parametros] = useSearchParams();
   const tokenDaUrl = parametros.get('token') ?? '';
 
-  const [etapa, setEtapa] = useState<'solicitar' | 'redefinir'>(tokenDaUrl ? 'redefinir' : 'solicitar');
+  const [etapa, setEtapa] = useState<Etapa>(tokenDaUrl ? 'redefinir' : 'solicitar');
   const [email, setEmail] = useState('');
-  const [token, setToken] = useState(tokenDaUrl);
+  const [codigo, setCodigo] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
 
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
-  const [concluido, setConcluido] = useState(false);
+  const [codigoPreenchidoEmDesenvolvimento, setCodigoPreenchidoEmDesenvolvimento] = useState(false);
+  const [mensagemFinal, setMensagemFinal] = useState('');
   const [enviando, setEnviando] = useState(false);
+
+  const usaToken = !!tokenDaUrl;
 
   async function solicitar(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
     setAviso('');
+
+    if (!email.trim()) {
+      setErro('Informe o e-mail da sua conta.');
+      return;
+    }
+
     setEnviando(true);
 
     try {
-      const { data } = await api.post<{ mensagem: string; tokenDesenvolvimento?: string | null }>(
-        '/api/usuarios/recuperar-senha',
-        { email: email.trim() },
-      );
+      const { data } = await api.post<RespostaRecuperacao>('/api/usuarios/recuperar-senha', {
+        email: email.trim(),
+      });
 
       setAviso(data.mensagem);
 
-      // Enquanto o envio por e-mail não está conectado, a API devolve o token em
-      // desenvolvimento para que o fluxo possa ser concluído.
-      if (data.tokenDesenvolvimento) {
-        setToken(data.tokenDesenvolvimento);
-        setEtapa('redefinir');
+      // Sem servidor de e-mail configurado, a API de desenvolvimento devolve o código
+      // na resposta para o fluxo poder ser percorrido de ponta a ponta.
+      if (data.codigoDesenvolvimento) {
+        setCodigo(data.codigoDesenvolvimento);
+        setCodigoPreenchidoEmDesenvolvimento(true);
       }
+
+      setEtapa('redefinir');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível processar a solicitação.'));
     } finally {
@@ -54,6 +73,11 @@ export function RecuperarSenha() {
   async function redefinir(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
+
+    if (!usaToken && codigo.replace(/\D/g, '').length !== 6) {
+      setErro('Digite o código de 6 dígitos recebido por e-mail.');
+      return;
+    }
 
     if (novaSenha.length < 6) {
       setErro('A nova senha deve ter no mínimo 6 caracteres.');
@@ -68,14 +92,30 @@ export function RecuperarSenha() {
     setEnviando(true);
 
     try {
-      await api.post('/api/usuarios/redefinir-senha', { token, novaSenha });
-      setConcluido(true);
+      const corpo = usaToken
+        ? { token: tokenDaUrl, novaSenha }
+        : { email: email.trim(), codigo: codigo.replace(/\D/g, ''), novaSenha };
+
+      const { data } = await api.post<{ mensagem: string }>('/api/usuarios/redefinir-senha', corpo);
+
+      setMensagemFinal(data.mensagem || 'Senha redefinida com sucesso.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível redefinir a senha.'));
     } finally {
       setEnviando(false);
     }
   }
+
+  function voltarParaSolicitar() {
+    setEtapa('solicitar');
+    setErro('');
+    setAviso('');
+    setCodigo('');
+    setCodigoPreenchidoEmDesenvolvimento(false);
+  }
+
+  const tituloDaEtapaInicial = primeiroAcesso ? 'Crie sua senha' : 'Esqueceu a senha?';
+  const tituloDaEtapaFinal = primeiroAcesso ? 'Crie sua senha' : 'Definir nova senha';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 via-slate-50 to-slate-100 px-4 py-10">
@@ -88,14 +128,14 @@ export function RecuperarSenha() {
         </div>
 
         <div className="vc-card p-6 sm:p-8">
-          {concluido ? (
+          {mensagemFinal ? (
             <div className="text-center">
               <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-sucesso-claro text-sucesso">
                 <KeyRound size={24} />
               </div>
 
-              <h2 className="text-lg font-bold text-slate-900">Senha redefinida</h2>
-              <p className="mt-1 text-sm text-slate-500">Use a nova senha para entrar no sistema.</p>
+              <h2 className="text-lg font-bold text-slate-900">{primeiroAcesso ? 'Senha criada' : 'Senha redefinida'}</h2>
+              <p className="mt-1 text-sm text-slate-500">{mensagemFinal}</p>
 
               <Link to="/login" className="vc-botao-primario mt-6 w-full">
                 Ir para o login
@@ -103,9 +143,10 @@ export function RecuperarSenha() {
             </div>
           ) : etapa === 'solicitar' ? (
             <>
-              <h2 className="mb-1 text-lg font-bold text-slate-900">Esqueceu a senha?</h2>
+              <h2 className="mb-1 text-lg font-bold text-slate-900">{tituloDaEtapaInicial}</h2>
               <p className="mb-6 text-sm text-slate-500">
-                Informe o e-mail da sua conta e enviaremos as instruções de redefinição.
+                Informe o e-mail da sua conta. Você receberá um link e um código de 6 dígitos para
+                {primeiroAcesso ? ' criar a sua senha.' : ' definir uma nova senha.'}
               </p>
 
               <form onSubmit={solicitar} className="space-y-4" noValidate>
@@ -125,13 +166,13 @@ export function RecuperarSenha() {
                       placeholder="seu@email.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="username"
                       disabled={enviando}
                     />
                   </div>
                 </div>
 
                 {erro && <Alerta tipo="erro">{erro}</Alerta>}
-                {aviso && <Alerta tipo="info">{aviso}</Alerta>}
 
                 <button type="submit" className="vc-botao-primario w-full" disabled={enviando}>
                   {enviando && <Loader2 className="animate-spin" size={18} />}
@@ -141,22 +182,44 @@ export function RecuperarSenha() {
             </>
           ) : (
             <>
-              <h2 className="mb-1 text-lg font-bold text-slate-900">Definir nova senha</h2>
-              <p className="mb-6 text-sm text-slate-500">O link de redefinição é válido por 30 minutos.</p>
+              <h2 className="mb-1 text-lg font-bold text-slate-900">{tituloDaEtapaFinal}</h2>
+
+              {usaToken ? (
+                <p className="mb-6 text-sm text-slate-500">
+                  Escolha a sua nova senha. Este link é de uso único e tem prazo de validade.
+                </p>
+              ) : (
+                <div className="mb-6 flex items-start gap-3 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-dark">
+                  <MailCheck size={18} className="mt-0.5 shrink-0" />
+                  <p>
+                    {aviso || 'Se houver uma conta com este e-mail, enviamos as instruções.'}{' '}
+                    Abra o e-mail e digite abaixo o código de 6 dígitos, ou clique no link da mensagem.
+                  </p>
+                </div>
+              )}
 
               <form onSubmit={redefinir} className="space-y-4" noValidate>
-                {!tokenDaUrl && (
+                {!usaToken && (
                   <div>
-                    <label htmlFor="token" className="vc-rotulo">
-                      Código de redefinição
+                    <label htmlFor="codigo" className="vc-rotulo">
+                      Código recebido por e-mail
                     </label>
                     <input
-                      id="token"
-                      className="vc-campo font-mono text-xs"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
+                      id="codigo"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={7}
+                      className="vc-campo text-center font-mono text-lg tracking-[0.4em]"
+                      placeholder="000000"
+                      value={codigo}
+                      onChange={(e) => setCodigo(e.target.value)}
                       disabled={enviando}
                     />
+                    {codigoPreenchidoEmDesenvolvimento && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Ambiente de desenvolvimento sem servidor de e-mail: o código foi preenchido automaticamente.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -173,6 +236,7 @@ export function RecuperarSenha() {
                     autoComplete="new-password"
                     disabled={enviando}
                   />
+                  <p className="mt-1 text-xs text-slate-500">Mínimo de 6 caracteres.</p>
                 </div>
 
                 <div>
@@ -194,13 +258,24 @@ export function RecuperarSenha() {
 
                 <button type="submit" className="vc-botao-primario w-full" disabled={enviando}>
                   {enviando && <Loader2 className="animate-spin" size={18} />}
-                  Redefinir senha
+                  {primeiroAcesso ? 'Criar senha' : 'Redefinir senha'}
                 </button>
               </form>
+
+              {!usaToken && (
+                <button
+                  type="button"
+                  onClick={voltarParaSolicitar}
+                  className="mt-4 block w-full text-center text-sm font-medium text-brand hover:underline"
+                  disabled={enviando}
+                >
+                  Não recebeu? Enviar novamente
+                </button>
+              )}
             </>
           )}
 
-          {!concluido && (
+          {!mensagemFinal && (
             <Link
               to="/login"
               className="mt-6 flex items-center justify-center gap-1 text-sm font-medium text-brand hover:underline"

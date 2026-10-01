@@ -11,13 +11,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, mensagemDeErro } from '../services/api';
-import type { Pet } from '../tipos';
-import { Aviso, Botao, CampoDeMarcacao, CampoTexto, SeletorDeOpcao } from './ui';
+import { ESPECIES, type Pet } from '../tipos';
+import { Alerta, Botao, CampoDeMarcacao, CampoTexto, SeletorDeOpcao } from './ui';
 import { Icone } from './Icone';
 import { cores, espacos } from '../tema';
 import { dataDigitadaParaIso, mascaraDeData } from '../utils/formato';
 
-const ESPECIES = ['Cachorro', 'Gato', 'Ave', 'Roedor', 'Outro'] as const;
 const SEXOS = ['Macho', 'Fêmea'] as const;
 
 const FORM_VAZIO = {
@@ -131,7 +130,7 @@ export function FormularioNovoPet({
 
         <KeyboardAvoidingView
           style={estilos.corpo}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <ScrollView contentContainerStyle={estilos.conteudo} keyboardShouldPersistTaps="handled">
             <CampoTexto
@@ -211,7 +210,7 @@ export function FormularioNovoPet({
 
             {erro ? (
               <View style={estilos.erro}>
-                <Aviso tipo="erro">{erro}</Aviso>
+                <Alerta tipo="erro">{erro}</Alerta>
               </View>
             ) : null}
           </ScrollView>

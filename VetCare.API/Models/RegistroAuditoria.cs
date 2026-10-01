@@ -12,7 +12,7 @@ namespace VetCare.API.Models
         public string NomeUsuario { get; set; } = string.Empty;
         public string Perfil { get; set; } = string.Empty;
 
-        /// <summary>Login, Consulta, Criacao, Alteracao, Inativacao ou Download.</summary>
+        /// <summary>Um dos valores de <c>AuditoriaService.Acoes</c>: Login, LoginNegado, Consulta, Criacao, Alteracao, Inativacao, Exclusao, Download, SolicitacaoDeSenha ou RedefinicaoSenha.</summary>
         public string Acao { get; set; } = string.Empty;
 
         public string Entidade { get; set; } = string.Empty;

@@ -10,10 +10,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { RotasDaPilha } from '../navegacao/rotas';
 import { api, mensagemDeErro, urlDoArquivo } from '../services/api';
 import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { ItemLinhaTempo, Prescricao, Prontuario as ProntuarioDTO, SituacaoDose, Vacina } from '../tipos';
-import { Aviso, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
+import { Alerta, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
 import { GraficoBarras } from '../componentes/GraficoBarras';
 import { AlertasClinicos } from '../componentes/AlertasClinicos';
@@ -39,7 +40,7 @@ const PALETA_DOSE: Record<SituacaoDose, { fundo: string; texto: string }> = {
   'Dose única': { fundo: cores.fundo, texto: cores.textoSecundario },
 };
 
-type Parametros = RouteProp<{ Prontuario: { pacienteId: string; nome?: string } }, 'Prontuario'>;
+type Parametros = RouteProp<RotasDaPilha, 'Prontuario'>;
 
 /**
  * HU-011 e HU-013, CA-2: prontuário do pet na visão do tutor.
@@ -113,7 +114,7 @@ export function Prontuario() {
         <Carregando texto="Carregando prontuário..." />
       ) : !prontuario ? (
         <View style={estilos.conteudo}>
-          <Aviso tipo="erro">{erro || 'Prontuário não encontrado.'}</Aviso>
+          <Alerta tipo="erro">{erro || 'Prontuário não encontrado.'}</Alerta>
         </View>
       ) : (
         <ScrollView contentContainerStyle={estilos.conteudo}>

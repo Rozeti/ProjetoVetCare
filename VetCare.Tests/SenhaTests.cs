@@ -49,13 +49,20 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public void Hash_no_formato_legado_e_aceito_e_marcado_para_regravacao()
+        public void Hash_em_formato_reversivel_nao_e_aceito()
         {
-            // Formato usado nas primeiras versões: Base64 puro da senha, reversível.
-            var legado = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("SenhaAntiga"));
+            // Base64 puro da senha não é hash: um valor assim no banco não pode abrir a conta.
+            var reversivel = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("SenhaAntiga"));
 
-            _hasher.Verificar("SenhaAntiga", legado, out var precisaRehash).Should().BeTrue();
-            precisaRehash.Should().BeTrue("a conta antiga precisa ser migrada para PBKDF2 no próximo login");
+            _hasher.Verificar("SenhaAntiga", reversivel, out _).Should().BeFalse();
+        }
+
+        [Fact]
+        public void Validacao_de_forca_exige_o_tamanho_minimo()
+        {
+            PasswordHasher.ValidarForca("12345").Should().NotBeNull();
+            PasswordHasher.ValidarForca(string.Empty).Should().NotBeNull();
+            PasswordHasher.ValidarForca("123456").Should().BeNull();
         }
 
         [Fact]

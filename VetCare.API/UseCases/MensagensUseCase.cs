@@ -139,7 +139,8 @@ namespace VetCare.API.UseCases
         {
             var todos = await _usuarios.ListarTodos(_usuarioAtual.ClinicaId, null, true);
 
-            // RN-005: o tutor conversa apenas com a equipe clínica, nunca com outros tutores.
+            // RN-005: o tutor conversa apenas com a equipe clínica, nunca com outros tutores —
+            // e não precisa conhecer o e-mail pessoal de cada membro da equipe.
             var contatos = todos
                 .Where(u => u.Id != _usuarioAtual.Id)
                 .Where(u => !_usuarioAtual.EhTutor || u.Perfil != Perfis.Tutor)
@@ -147,7 +148,7 @@ namespace VetCare.API.UseCases
                 {
                     Id = u.Id,
                     Nome = u.Nome,
-                    Email = u.Email,
+                    Email = _usuarioAtual.EhTutor ? string.Empty : u.Email,
                     Perfil = u.Perfil,
                     Ativo = u.Ativo,
                     UltimoAcesso = u.UltimoAcesso

@@ -12,8 +12,6 @@ namespace VetCare.API.UseCases
     /// </summary>
     public class GerenciarTratamentosUseCase
     {
-        private static readonly string[] StatusPermitidos = { "Em Andamento", "Concluído", "Interrompido" };
-
         private readonly ITratamentoRepository _tratamentos;
         private readonly IPetRepository _pets;
         private readonly IVeterinarioRepository _veterinarios;
@@ -77,7 +75,7 @@ namespace VetCare.API.UseCases
                 DataInicio = dataInicio,
                 ObjetivoTerapeutico = dto.ObjetivoTerapeutico.Trim(),
                 ObservacoesGerais = dto.ObservacoesGerais.Trim(),
-                Status = "Em Andamento"
+                Status = StatusTratamento.EmAndamento
             };
 
             await _tratamentos.Adicionar(tratamento);
@@ -90,7 +88,7 @@ namespace VetCare.API.UseCases
             tratamento.Veterinario = veterinario;
 
             return Resultado<TratamentoDTO>.Ok(
-                MapearParaDTO(tratamento, 0, 0),
+                MapearParaDTO(tratamento, new ContagemDeSessoes(0, 0)),
                 "Tratamento cadastrado com sucesso.");
         }
 
@@ -113,16 +111,16 @@ namespace VetCare.API.UseCases
             return Resultado<List<TratamentoDTO>>.Ok(await MapearLista(tratamentos));
         }
 
-        public async Task<Resultado<List<TratamentoDTO>>> ListarDoVeterinario(Guid? veterinarioId)
+        /// <summary>Tratamentos sob responsabilidade do veterinário autenticado.</summary>
+        public async Task<Resultado<List<TratamentoDTO>>> ListarDoVeterinario()
         {
-            var id = veterinarioId ?? _usuarioAtual.VeterinarioId;
-
-            if (id == null)
+            if (_usuarioAtual.VeterinarioId == null)
             {
-                return Resultado<List<TratamentoDTO>>.Invalido("Informe o veterinário.");
+                return Resultado<List<TratamentoDTO>>.NaoEncontrado(
+                    "Cadastro de veterinário não encontrado para este usuário.");
             }
 
-            var tratamentos = await _tratamentos.ObterPorVeterinario(id.Value);
+            var tratamentos = await _tratamentos.ObterPorVeterinario(_usuarioAtual.VeterinarioId.Value);
 
             return Resultado<List<TratamentoDTO>>.Ok(await MapearLista(tratamentos));
         }
@@ -141,12 +139,10 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoAutorizado("Você não tem acesso a este tratamento.");
             }
 
-            var sessoes = await _sessoes.ObterPorTratamento(id);
-
-            return Resultado<TratamentoDTO>.Ok(
-                MapearParaDTO(tratamento, sessoes.Count, sessoes.Count(s => s.Status == "Concluída")));
+            return Resultado<TratamentoDTO>.Ok(MapearParaDTO(tratamento, await ContarSessoes(id)));
         }
 
+        /// <summary>Campos omitidos (nulos) mantêm o valor atual; só o que veio preenchido é alterado.</summary>
         public async Task<Resultado<TratamentoDTO>> Atualizar(Guid id, AtualizarTratamentoDTO dto)
         {
             var tratamento = await _tratamentos.ObterPorIdComRelacionamentos(id);
@@ -161,10 +157,17 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoAutorizado("Você só pode alterar os seus próprios tratamentos.");
             }
 
-            if (!string.IsNullOrWhiteSpace(dto.Status) && !StatusPermitidos.Contains(dto.Status))
+            string? novoStatus = null;
+
+            if (!string.IsNullOrWhiteSpace(dto.Status))
             {
-                return Resultado<TratamentoDTO>.Invalido(
-                    $"Status inválido. Use um destes: {string.Join(", ", StatusPermitidos)}.");
+                novoStatus = StatusTratamento.Normalizar(dto.Status);
+
+                if (novoStatus == null)
+                {
+                    return Resultado<TratamentoDTO>.Invalido(
+                        $"Status inválido. Use um destes: {string.Join(", ", StatusTratamento.Todos)}.");
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(dto.ObjetivoTerapeutico))
@@ -172,21 +175,24 @@ namespace VetCare.API.UseCases
                 tratamento.ObjetivoTerapeutico = dto.ObjetivoTerapeutico.Trim();
             }
 
-            tratamento.ObservacoesGerais = dto.ObservacoesGerais?.Trim() ?? tratamento.ObservacoesGerais;
-
-            if (!string.IsNullOrWhiteSpace(dto.Status))
+            if (dto.ObservacoesGerais != null)
             {
-                tratamento.Status = dto.Status;
+                tratamento.ObservacoesGerais = dto.ObservacoesGerais.Trim();
+            }
+
+            if (novoStatus != null)
+            {
+                tratamento.Status = novoStatus;
 
                 // Encerrar o tratamento sem data explícita registra o encerramento agora.
-                if (dto.Status != "Em Andamento" && tratamento.DataFim == null)
+                if (novoStatus != StatusTratamento.EmAndamento && tratamento.DataFim == null)
                 {
                     tratamento.DataFim = dto.DataFim.HasValue
                         ? AgendarSessaoUseCase.NormalizarParaUtc(dto.DataFim.Value)
                         : DateTime.UtcNow;
                 }
 
-                if (dto.Status == "Em Andamento")
+                if (novoStatus == StatusTratamento.EmAndamento)
                 {
                     tratamento.DataFim = null;
                 }
@@ -199,27 +205,28 @@ namespace VetCare.API.UseCases
             _tratamentos.Atualizar(tratamento);
             await _tratamentos.SalvarAlteracoes();
 
-            var sessoes = await _sessoes.ObterPorTratamento(id);
-
             return Resultado<TratamentoDTO>.Ok(
-                MapearParaDTO(tratamento, sessoes.Count, sessoes.Count(s => s.Status == "Concluída")),
+                MapearParaDTO(tratamento, await ContarSessoes(id)),
                 "Tratamento atualizado com sucesso.");
         }
 
-        private async Task<List<TratamentoDTO>> MapearLista(List<Tratamento> tratamentos)
+        private async Task<ContagemDeSessoes> ContarSessoes(Guid tratamentoId)
         {
-            var lista = new List<TratamentoDTO>(tratamentos.Count);
-
-            foreach (var tratamento in tratamentos)
-            {
-                var sessoes = await _sessoes.ObterPorTratamento(tratamento.Id);
-                lista.Add(MapearParaDTO(tratamento, sessoes.Count, sessoes.Count(s => s.Status == "Concluída")));
-            }
-
-            return lista;
+            var contagens = await _sessoes.ContarPorTratamentos(new[] { tratamentoId });
+            return contagens.GetValueOrDefault(tratamentoId, new ContagemDeSessoes(0, 0));
         }
 
-        private static TratamentoDTO MapearParaDTO(Tratamento tratamento, int totalSessoes, int sessoesConcluidas)
+        /// <summary>Os totais de sessões de todos os tratamentos saem numa única consulta.</summary>
+        private async Task<List<TratamentoDTO>> MapearLista(List<Tratamento> tratamentos)
+        {
+            var contagens = await _sessoes.ContarPorTratamentos(tratamentos.Select(t => t.Id));
+
+            return tratamentos
+                .Select(t => MapearParaDTO(t, contagens.GetValueOrDefault(t.Id, new ContagemDeSessoes(0, 0))))
+                .ToList();
+        }
+
+        public static TratamentoDTO MapearParaDTO(Tratamento tratamento, ContagemDeSessoes sessoes)
         {
             return new TratamentoDTO
             {
@@ -233,8 +240,8 @@ namespace VetCare.API.UseCases
                 ObjetivoTerapeutico = tratamento.ObjetivoTerapeutico,
                 Status = tratamento.Status,
                 ObservacoesGerais = tratamento.ObservacoesGerais,
-                TotalSessoes = totalSessoes,
-                SessoesConcluidas = sessoesConcluidas
+                TotalSessoes = sessoes.Total,
+                SessoesConcluidas = sessoes.Concluidas
             };
         }
     }

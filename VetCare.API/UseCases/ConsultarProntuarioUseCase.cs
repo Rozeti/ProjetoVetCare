@@ -25,6 +25,7 @@ namespace VetCare.API.UseCases
         private readonly IPrescricaoRepository _prescricoes;
         private readonly IAlergiaRepository _alergias;
         private readonly AuditoriaService _auditoria;
+        private readonly AssinadorDeArquivos _assinador;
         private readonly UsuarioAtual _usuarioAtual;
 
         public ConsultarProntuarioUseCase(
@@ -36,6 +37,7 @@ namespace VetCare.API.UseCases
             IPrescricaoRepository prescricoes,
             IAlergiaRepository alergias,
             AuditoriaService auditoria,
+            AssinadorDeArquivos assinador,
             UsuarioAtual usuarioAtual)
         {
             _prontuarios = prontuarios;
@@ -46,6 +48,7 @@ namespace VetCare.API.UseCases
             _prescricoes = prescricoes;
             _alergias = alergias;
             _auditoria = auditoria;
+            _assinador = assinador;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -108,7 +111,7 @@ namespace VetCare.API.UseCases
                 EvolucaoDor = MontarSerieDeDor(atendimentos),
                 Vacinas = vacinas.Select(GerenciarVacinasUseCase.MapearParaDTO).ToList(),
                 Prescricoes = prescricoes.Select(p => GerenciarPrescricoesUseCase.MapearParaDTO(p, pet)).ToList(),
-                Documentos = documentos.Select(GerenciarDocumentosUseCase.MapearParaDTO).ToList(),
+                Documentos = documentos.Select(d => GerenciarDocumentosUseCase.MapearParaDTO(d, _assinador)).ToList(),
                 Tratamentos = await MapearTratamentos(tratamentos)
             };
 
@@ -119,13 +122,14 @@ namespace VetCare.API.UseCases
         }
 
         /// <summary>HU-011, CA-1: avaliações e atendimentos em ordem cronológica.</summary>
-        private static List<ItemLinhaTempoDTO> MontarLinhaDoTempo(
+        private List<ItemLinhaTempoDTO> MontarLinhaDoTempo(
             List<AvaliacaoClinica> avaliacoes,
             List<AtendimentoFisioterapeutico> atendimentos,
             List<MidiaSessao> midias,
             List<ObservacaoInterna> observacoes)
         {
-            var historico = new List<ItemLinhaTempoDTO>(avaliacoes.Count + atendimentos.Count);
+            var observacoesSoltas = observacoes.Where(o => o.AvaliacaoId == null && o.AtendimentoId == null).ToList();
+            var historico = new List<ItemLinhaTempoDTO>(avaliacoes.Count + atendimentos.Count + observacoesSoltas.Count);
 
             foreach (var avaliacao in avaliacoes)
             {
@@ -158,7 +162,7 @@ namespace VetCare.API.UseCases
                 // HU-011, CA-4: as mídias aparecem junto da sessão a que pertencem.
                 var midiasDoAtendimento = midias
                     .Where(m => m.SessaoId == atendimento.SessaoId)
-                    .Select(AnexarMidiaUseCase.MapearParaDTO)
+                    .Select(m => AnexarMidiaUseCase.MapearParaDTO(m, _assinador))
                     .ToList();
 
                 historico.Add(new ItemLinhaTempoDTO
@@ -182,7 +186,7 @@ namespace VetCare.API.UseCases
             }
 
             // Observações internas soltas entram como item próprio para não se perderem.
-            foreach (var observacao in observacoes.Where(o => o.AvaliacaoId == null && o.AtendimentoId == null))
+            foreach (var observacao in observacoesSoltas)
             {
                 historico.Add(new ItemLinhaTempoDTO
                 {
@@ -270,31 +274,15 @@ namespace VetCare.API.UseCases
                 .ToList();
         }
 
+        /// <summary>Os totais de sessões de todos os tratamentos saem numa única consulta.</summary>
         private async Task<List<TratamentoDTO>> MapearTratamentos(List<Tratamento> tratamentos)
         {
-            var lista = new List<TratamentoDTO>(tratamentos.Count);
+            var contagens = await _sessoes.ContarPorTratamentos(tratamentos.Select(t => t.Id));
 
-            foreach (var tratamento in tratamentos)
-            {
-                var sessoes = await _sessoes.ObterPorTratamento(tratamento.Id);
-
-                lista.Add(new TratamentoDTO
-                {
-                    Id = tratamento.Id,
-                    PacienteId = tratamento.PacienteId,
-                    VeterinarioId = tratamento.VeterinarioId,
-                    NomeVeterinario = tratamento.Veterinario?.Usuario?.Nome ?? string.Empty,
-                    DataInicio = tratamento.DataInicio,
-                    DataFim = tratamento.DataFim,
-                    ObjetivoTerapeutico = tratamento.ObjetivoTerapeutico,
-                    Status = tratamento.Status,
-                    ObservacoesGerais = tratamento.ObservacoesGerais,
-                    TotalSessoes = sessoes.Count,
-                    SessoesConcluidas = sessoes.Count(s => s.Status == "Concluída")
-                });
-            }
-
-            return lista;
+            return tratamentos
+                .Select(t => GerenciarTratamentosUseCase.MapearParaDTO(
+                    t, contagens.GetValueOrDefault(t.Id, new ContagemDeSessoes(0, 0))))
+                .ToList();
         }
     }
 }

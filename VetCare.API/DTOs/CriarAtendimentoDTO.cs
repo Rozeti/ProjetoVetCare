@@ -2,14 +2,13 @@ using System.ComponentModel.DataAnnotations;
 
 namespace VetCare.API.DTOs
 {
+    /// <summary>HU-008: o tratamento e o prontuário são deduzidos da própria sessão.</summary>
     public class CriarAtendimentoDTO
     {
         [Required(ErrorMessage = "A sessão é obrigatória.")]
         public Guid SessaoId { get; set; }
 
-        /// <summary>Opcionais: derivados da sessão quando não informados.</summary>
-        public Guid? TratamentoId { get; set; }
-        public Guid? ProntuarioId { get; set; }
+        /// <summary>Opcional: o veterinário autenticado, ou o da sessão, quando não informado.</summary>
         public Guid? VeterinarioId { get; set; }
 
         [Required(ErrorMessage = "Informe as técnicas aplicadas.")]
@@ -40,7 +39,7 @@ namespace VetCare.API.DTOs
         /// <summary>HU-009: observação restrita registrada junto com o atendimento.</summary>
         public string? ObservacaoInterna { get; set; }
 
-        /// <summary>Conclui a sessão automaticamente ao salvar o atendimento.</summary>
+        /// <summary>Conclui a sessão ao salvar o atendimento; o tutor é avisado no mesmo aviso do registro.</summary>
         public bool ConcluirSessao { get; set; } = true;
     }
 }

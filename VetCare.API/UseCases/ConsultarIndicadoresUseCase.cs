@@ -1,6 +1,7 @@
 using VetCare.API.Common;
 using VetCare.API.Data;
 using VetCare.API.DTOs;
+using VetCare.API.Models;
 using VetCare.API.Security;
 
 namespace VetCare.API.UseCases
@@ -15,7 +16,6 @@ namespace VetCare.API.UseCases
         private readonly IAtendimentoRepository _atendimentos;
         private readonly ISessaoRepository _sessoes;
         private readonly IPetRepository _pets;
-        private readonly IVeterinarioRepository _veterinarios;
         private readonly IMensagemRepository _mensagens;
         private readonly INotificacaoRepository _notificacoes;
         private readonly UsuarioAtual _usuarioAtual;
@@ -25,7 +25,6 @@ namespace VetCare.API.UseCases
             IAtendimentoRepository atendimentos,
             ISessaoRepository sessoes,
             IPetRepository pets,
-            IVeterinarioRepository veterinarios,
             IMensagemRepository mensagens,
             INotificacaoRepository notificacoes,
             UsuarioAtual usuarioAtual)
@@ -34,7 +33,6 @@ namespace VetCare.API.UseCases
             _atendimentos = atendimentos;
             _sessoes = sessoes;
             _pets = pets;
-            _veterinarios = veterinarios;
             _mensagens = mensagens;
             _notificacoes = notificacoes;
             _usuarioAtual = usuarioAtual;
@@ -42,15 +40,23 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<IndicadoresDTO>> Executar(DateTime? data)
         {
-            var referencia = data ?? DateTime.Now;
+            // RN-008: o veterinário enxerga somente o próprio recorte — e nunca a clínica
+            // inteira por falta do vínculo no token.
+            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId == null)
+            {
+                return Resultado<IndicadoresDTO>.NaoEncontrado(
+                    "Cadastro de veterinário não encontrado para este usuário.");
+            }
+
+            var relogio = RelogioDaClinica.Padrao;
+            var referencia = data ?? relogio.Agora;
             var (inicio, fim) = ConsultarAgendaUseCase.CalcularIntervalo(referencia, "dia");
 
-            // RN-008: veterinário enxerga somente o próprio recorte.
             var filtroVeterinario = _usuarioAtual.EhVeterinario ? _usuarioAtual.VeterinarioId : null;
 
             var indicadores = new IndicadoresDTO
             {
-                Data = referencia.Date,
+                Data = relogio.DiaDaClinica(referencia),
                 Escopo = filtroVeterinario.HasValue ? "Veterinario" : "Clinica",
                 AvaliacoesDoDia = await _avaliacoes.ContarPorPeriodo(_usuarioAtual.ClinicaId, filtroVeterinario, inicio, fim),
                 AtendimentosDoDia = await _atendimentos.ContarPorPeriodo(_usuarioAtual.ClinicaId, filtroVeterinario, inicio, fim),
@@ -64,10 +70,10 @@ namespace VetCare.API.UseCases
             indicadores.SessoesDoDia = sessoesDoDia.Count;
 
             // HU-016, CA-1: confirmações pendentes é um dos quatro indicadores exigidos.
-            indicadores.ConfirmacoesPendentes = sessoesDoDia.Count(s => s.Status == "Aguardando confirmação");
+            indicadores.ConfirmacoesPendentes = sessoesDoDia.Count(s => s.Status == StatusSessao.AguardandoConfirmacao);
 
             indicadores.ProximasSessoes = sessoesDoDia
-                .Where(s => s.Status != "Cancelada")
+                .Where(s => s.Status != StatusSessao.Cancelada)
                 .OrderBy(s => s.DataHora)
                 .Take(5)
                 .Select(s => new ItemAgendaDTO
@@ -80,6 +86,7 @@ namespace VetCare.API.UseCases
                     NomePaciente = s.Tratamento?.Paciente?.Nome ?? string.Empty,
                     NomeTutor = s.Tratamento?.Paciente?.Tutor?.Usuario?.Nome ?? string.Empty,
                     NomeVeterinario = s.Veterinario?.Usuario?.Nome ?? string.Empty,
+                    CorVeterinario = GerenciarVeterinariosUseCase.ObterCor(s.VeterinarioId),
                     Status = s.Status
                 })
                 .ToList();
@@ -88,7 +95,7 @@ namespace VetCare.API.UseCases
             return Resultado<IndicadoresDTO>.Ok(indicadores);
         }
 
-        private async Task<List<Models.Sessao>> ObterSessoesDoDia(Guid? filtroVeterinario, DateTime inicio, DateTime fim)
+        private async Task<List<Sessao>> ObterSessoesDoDia(Guid? filtroVeterinario, DateTime inicio, DateTime fim)
         {
             if (filtroVeterinario.HasValue)
             {

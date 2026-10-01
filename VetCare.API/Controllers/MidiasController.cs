@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using VetCare.API.Common;
 using VetCare.API.DTOs;
 using VetCare.API.Security;
@@ -23,6 +24,7 @@ namespace VetCare.API.Controllers
         [HttpPost]
         [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
         [RequestSizeLimit(30 * 1024 * 1024)]
+        [EnableRateLimiting(LimitesDeRequisicao.Upload)]
         public async Task<IActionResult> Anexar([FromForm] UploadMidiaDTO dto)
         {
             return this.ResponderCriado(await _useCase.Executar(dto));

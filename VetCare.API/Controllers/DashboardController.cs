@@ -38,7 +38,7 @@ namespace VetCare.API.Controllers
             [FromQuery] DateTime? fim)
         {
             // Sem período informado, o relatório cobre os últimos 30 dias.
-            var dataFim = fim ?? DateTime.Now.Date;
+            var dataFim = fim ?? RelogioDaClinica.Padrao.Hoje;
             var dataInicio = inicio ?? dataFim.AddDays(-29);
 
             return this.Responder(await _relatorio.Executar(dataInicio, dataFim));

@@ -22,6 +22,9 @@ namespace VetCare.API.Data
             return await _context.Atendimentos
                 .Include(a => a.Veterinario)
                     .ThenInclude(v => v!.Usuario)
+                .Include(a => a.Sessao)
+                    .ThenInclude(s => s!.Tratamento)
+                        .ThenInclude(t => t!.Paciente)
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
 
@@ -30,13 +33,22 @@ namespace VetCare.API.Data
             return await _context.Atendimentos.FirstOrDefaultAsync(a => a.SessaoId == sessaoId);
         }
 
-        public async Task<List<AtendimentoFisioterapeutico>> ObterPorTratamento(Guid tratamentoId)
+        public async Task<HashSet<Guid>> ObterSessoesComAtendimento(IEnumerable<Guid> sessoesIds)
         {
-            return await _context.Atendimentos
+            var ids = sessoesIds.Distinct().ToList();
+
+            if (ids.Count == 0)
+            {
+                return new HashSet<Guid>();
+            }
+
+            var encontradas = await _context.Atendimentos
                 .AsNoTracking()
-                .Where(a => a.TratamentoId == tratamentoId)
-                .OrderByDescending(a => a.DataRegistro)
+                .Where(a => ids.Contains(a.SessaoId))
+                .Select(a => a.SessaoId)
                 .ToListAsync();
+
+            return encontradas.ToHashSet();
         }
 
         public void Atualizar(AtendimentoFisioterapeutico atendimento)

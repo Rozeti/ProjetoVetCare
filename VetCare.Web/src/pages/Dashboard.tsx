@@ -18,7 +18,7 @@ import { estiloStatusSessao, formatarDataExtensa, formatarHora } from '../utils/
 
 /** HU-016: painel com os indicadores operacionais do dia. */
 export function Dashboard() {
-  const { usuario, ehVeterinario } = useAuth();
+  const { usuario, ehVeterinario, temPerfil } = useAuth();
 
   const buscar = useCallback(async () => {
     const { data } = await api.get<Indicadores>('/api/dashboard/indicadores');
@@ -184,10 +184,13 @@ export function Dashboard() {
                     <ClipboardList size={16} />
                     Tutores
                   </Link>
-                  <Link to="/relatorios" className="vc-botao-secundario w-full justify-start">
-                    <Activity size={16} />
-                    Relatórios de produtividade
-                  </Link>
+                  {/* RN-008: o apoio administrativo não tem acesso aos relatórios. */}
+                  {temPerfil('Administrador', 'Veterinario') && (
+                    <Link to="/relatorios" className="vc-botao-secundario w-full justify-start">
+                      <Activity size={16} />
+                      Relatórios de produtividade
+                    </Link>
+                  )}
                 </div>
               </Card>
             </div>

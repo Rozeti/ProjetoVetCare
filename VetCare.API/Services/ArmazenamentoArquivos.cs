@@ -1,31 +1,40 @@
 namespace VetCare.API.Services
 {
     /// <summary>
-    /// Abstrai a gravação de mídias e documentos. Hoje persiste em disco sob wwwroot;
-    /// o DAS prevê a troca por armazenamento externo (Amazon S3 ou MinIO) sem que os
-    /// casos de uso precisem mudar — o banco guarda apenas os metadados e a URL.
+    /// Grava mídias e documentos em disco, numa pasta fora de qualquer área pública da
+    /// API (<c>Arquivos:Pasta</c>, por padrão <c>arquivos/</c> na raiz da aplicação). O
+    /// banco guarda apenas o caminho relativo; a entrega acontece pelo
+    /// <c>ArquivosController</c>, com URL assinada. A troca pelo armazenamento externo
+    /// previsto no DAS (Amazon S3 ou MinIO) fica restrita a esta classe.
     /// </summary>
     public class ArmazenamentoArquivos
     {
-        private readonly IWebHostEnvironment _ambiente;
+        public const string PastaPadrao = "arquivos";
+
+        private readonly string _raiz;
         private readonly ILogger<ArmazenamentoArquivos> _logger;
 
-        public ArmazenamentoArquivos(IWebHostEnvironment ambiente, ILogger<ArmazenamentoArquivos> logger)
+        public ArmazenamentoArquivos(
+            IWebHostEnvironment ambiente,
+            IConfiguration configuracao,
+            ILogger<ArmazenamentoArquivos> logger)
         {
-            _ambiente = ambiente;
+            var pasta = configuracao["Arquivos:Pasta"];
+
+            _raiz = string.IsNullOrWhiteSpace(pasta)
+                ? Path.Combine(ambiente.ContentRootPath, PastaPadrao)
+                : Path.IsPathRooted(pasta) ? pasta : Path.Combine(ambiente.ContentRootPath, pasta);
+
             _logger = logger;
         }
 
-        /// <summary>Grava o arquivo e devolve a URL pública relativa.</summary>
+        public string Raiz => _raiz;
+
+        /// <summary>Grava o arquivo e devolve o caminho relativo que fica no banco ("/uploads/{guid}.jpg").</summary>
         public async Task<string> Salvar(IFormFile arquivo, string subpasta)
         {
-            var raiz = ObterRaiz();
-            var pasta = Path.Combine(raiz, subpasta);
-
-            if (!Directory.Exists(pasta))
-            {
-                Directory.CreateDirectory(pasta);
-            }
+            var pasta = Path.Combine(_raiz, subpasta);
+            Directory.CreateDirectory(pasta);
 
             var extensao = Path.GetExtension(arquivo.FileName).ToLowerInvariant();
             var nomeUnico = $"{Guid.NewGuid()}{extensao}";
@@ -40,50 +49,43 @@ namespace VetCare.API.Services
         }
 
         /// <summary>Remove o arquivo físico. Falhas são registradas, mas não interrompem o fluxo.</summary>
-        public void Remover(string urlRelativa)
+        public void Remover(string caminhoRelativo)
         {
-            if (string.IsNullOrWhiteSpace(urlRelativa))
+            var caminho = ResolverCaminhoFisico(caminhoRelativo);
+
+            if (caminho == null)
             {
                 return;
             }
 
             try
             {
-                var caminho = Path.Combine(ObterRaiz(), urlRelativa.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-
-                if (File.Exists(caminho))
-                {
-                    File.Delete(caminho);
-                }
+                File.Delete(caminho);
             }
             catch (IOException excecao)
             {
-                _logger.LogWarning(excecao, "Não foi possível remover o arquivo {Url}.", urlRelativa);
+                _logger.LogWarning(excecao, "Não foi possível remover o arquivo {Caminho}.", caminhoRelativo);
             }
         }
 
-        public string? ResolverCaminhoFisico(string urlRelativa)
+        /// <summary>Caminho absoluto do arquivo, ou nulo se não existir ou se o caminho tentar sair da pasta.</summary>
+        public string? ResolverCaminhoFisico(string caminhoRelativo)
         {
-            if (string.IsNullOrWhiteSpace(urlRelativa))
+            if (string.IsNullOrWhiteSpace(caminhoRelativo))
             {
                 return null;
             }
 
-            var caminho = Path.Combine(ObterRaiz(), urlRelativa.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-            return File.Exists(caminho) ? caminho : null;
-        }
+            var relativo = caminhoRelativo.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+            var caminho = Path.GetFullPath(Path.Combine(_raiz, relativo));
 
-        private string ObterRaiz()
-        {
-            var raiz = _ambiente.WebRootPath;
-
-            if (string.IsNullOrWhiteSpace(raiz))
+            // Defesa contra "../": o caminho resolvido precisa continuar dentro da raiz.
+            if (!caminho.StartsWith(Path.GetFullPath(_raiz) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             {
-                raiz = Path.Combine(_ambiente.ContentRootPath, "wwwroot");
-                Directory.CreateDirectory(raiz);
+                return null;
             }
 
-            return raiz;
+            return File.Exists(caminho) ? caminho : null;
         }
     }
 }

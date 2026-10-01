@@ -79,14 +79,14 @@ namespace VetCare.API.Controllers
 
         [HttpPatch("{id:guid}/status")]
         [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
-        public async Task<IActionResult> AlterarStatus(Guid id, [FromBody] AlterarStatusUsuarioDTO dto)
+        public async Task<IActionResult> AlterarStatus(Guid id, [FromBody] AlterarStatusDTO dto)
         {
             return this.Responder(await _useCase.AlterarStatus(id, dto.Ativo));
         }
 
         /// <summary>
-        /// HU-003, CA-4: pacientes com prontuário não são excluídos; a operação é recusada
-        /// e o sistema oferece apenas a inativação.
+        /// HU-003, CA-4: um paciente sem histórico clínico é excluído; com prontuário
+        /// preenchido a operação é recusada e o sistema oferece apenas a inativação.
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize(Roles = Perfis.Administrador)]

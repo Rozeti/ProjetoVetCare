@@ -6,6 +6,7 @@ namespace VetCare.API.Data
     {
         Task Adicionar(ApoioAdministrativo apoio);
         Task<ApoioAdministrativo?> ObterPorUsuarioId(Guid usuarioId);
+        void Atualizar(ApoioAdministrativo apoio);
         Task SalvarAlteracoes();
     }
 }

@@ -17,18 +17,27 @@ namespace VetCare.API.UseCases
 
         private readonly IDocumentoRepository _documentos;
         private readonly IProntuarioRepository _prontuarios;
+        private readonly IPetRepository _pets;
         private readonly ArmazenamentoArquivos _armazenamento;
+        private readonly AssinadorDeArquivos _assinador;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarDocumentosUseCase(
             IDocumentoRepository documentos,
             IProntuarioRepository prontuarios,
+            IPetRepository pets,
             ArmazenamentoArquivos armazenamento,
+            AssinadorDeArquivos assinador,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _documentos = documentos;
             _prontuarios = prontuarios;
+            _pets = pets;
             _armazenamento = armazenamento;
+            _assinador = assinador;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -54,20 +63,15 @@ namespace VetCare.API.UseCases
                     $"Formato não permitido. Formatos aceitos: {string.Join(", ", FormatosPermitidos)}.");
             }
 
-            var prontuario = await ResolverProntuario(dto.ProntuarioId, dto.PacienteId);
+            var prontuario = await ResolverProntuarioDaClinica(dto.ProntuarioId, dto.PacienteId);
 
             if (prontuario == null)
             {
                 return Resultado<DocumentoDTO>.NaoEncontrado(
-                    "Informe um prontuário ou um paciente válido para vincular o documento.");
+                    "Informe um prontuário ou um paciente válido desta clínica para vincular o documento.");
             }
 
-            if (prontuario.Paciente != null && prontuario.Paciente.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<DocumentoDTO>.NaoAutorizado("Este prontuário pertence a outra clínica.");
-            }
-
-            var url = await _armazenamento.Salvar(dto.Arquivo, "documentos");
+            var caminho = await _armazenamento.Salvar(dto.Arquivo, AssinadorDeArquivos.PastaDeDocumentos);
 
             var documento = new DocumentoClinico
             {
@@ -75,7 +79,7 @@ namespace VetCare.API.UseCases
                 EnviadoPorId = _usuarioAtual.Id,
                 NomeArquivo = dto.Arquivo.FileName,
                 TipoDocumento = string.IsNullOrWhiteSpace(dto.TipoDocumento) ? "Outro" : dto.TipoDocumento.Trim(),
-                UrlArquivo = url,
+                UrlArquivo = caminho,
                 TamanhoBytes = dto.Arquivo.Length
             };
 
@@ -84,11 +88,24 @@ namespace VetCare.API.UseCases
 
             var salvo = await _documentos.ObterPorId(documento.Id);
 
-            return Resultado<DocumentoDTO>.Ok(MapearParaDTO(salvo ?? documento), "Documento anexado com sucesso.");
+            return Resultado<DocumentoDTO>.Ok(MapearParaDTO(salvo ?? documento, _assinador), "Documento anexado com sucesso.");
         }
 
         public async Task<Resultado<List<DocumentoDTO>>> ListarPorPaciente(Guid pacienteId)
         {
+            var pet = await _pets.ObterPorId(pacienteId);
+
+            if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<List<DocumentoDTO>>.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            // HU-013: o tutor acessa apenas os documentos dos próprios pets.
+            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            {
+                return Resultado<List<DocumentoDTO>>.NaoAutorizado("Você não tem acesso a este prontuário.");
+            }
+
             var prontuario = await _prontuarios.ObterPorPacienteId(pacienteId);
 
             if (prontuario == null)
@@ -96,30 +113,19 @@ namespace VetCare.API.UseCases
                 return Resultado<List<DocumentoDTO>>.Ok(new List<DocumentoDTO>());
             }
 
-            // HU-013: o tutor acessa apenas os documentos dos próprios pets.
-            if (_usuarioAtual.EhTutor && prontuario.Paciente?.TutorId != _usuarioAtual.TutorId)
-            {
-                return Resultado<List<DocumentoDTO>>.NaoAutorizado("Você não tem acesso a este prontuário.");
-            }
-
             var documentos = await _documentos.ObterPorProntuario(prontuario.Id);
 
-            return Resultado<List<DocumentoDTO>>.Ok(documentos.Select(MapearParaDTO).ToList());
+            return Resultado<List<DocumentoDTO>>.Ok(documentos.Select(d => MapearParaDTO(d, _assinador)).ToList());
         }
 
-        /// <summary>HU-012, CA-2: visualização e download pelo usuário autorizado.</summary>
+        /// <summary>HU-012, CA-2: visualização e download pelo usuário autorizado, com registro na auditoria.</summary>
         public async Task<Resultado<(string Caminho, string NomeArquivo)>> ObterParaDownload(Guid id)
         {
             var documento = await _documentos.ObterPorId(id);
 
-            if (documento == null)
+            if (documento == null || documento.Prontuario?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<(string, string)>.NaoEncontrado("Documento não encontrado.");
-            }
-
-            if (documento.Prontuario?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<(string, string)>.NaoAutorizado("Este documento pertence a outra clínica.");
             }
 
             if (_usuarioAtual.EhTutor && documento.Prontuario?.Paciente?.TutorId != _usuarioAtual.TutorId)
@@ -134,26 +140,50 @@ namespace VetCare.API.UseCases
                 return Resultado<(string, string)>.NaoEncontrado("O arquivo deste documento não está disponível.");
             }
 
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Download, "DocumentoClinico", documento.Id, $"Download de {documento.NomeArquivo}");
+
             return Resultado<(string, string)>.Ok((caminho, documento.NomeArquivo));
         }
 
-        private async Task<Prontuario?> ResolverProntuario(Guid? prontuarioId, Guid? pacienteId)
+        /// <summary>
+        /// Localiza (ou cria) o prontuário, mas só depois de confirmar que o paciente é desta
+        /// clínica. Sem o paciente carregado a verificação não acontece, então a resposta é
+        /// "não encontrado" em vez de deixar passar.
+        /// </summary>
+        private async Task<Prontuario?> ResolverProntuarioDaClinica(Guid? prontuarioId, Guid? pacienteId)
         {
+            Prontuario? prontuario = null;
+
             if (prontuarioId.HasValue && prontuarioId.Value != Guid.Empty)
             {
-                return await _prontuarios.ObterPorId(prontuarioId.Value);
+                prontuario = await _prontuarios.ObterPorId(prontuarioId.Value);
             }
-
-            if (pacienteId.HasValue && pacienteId.Value != Guid.Empty)
+            else if (pacienteId.HasValue && pacienteId.Value != Guid.Empty)
             {
-                return await _prontuarios.ObterPorPacienteId(pacienteId.Value)
-                       ?? await _prontuarios.ObterOuCriarPorPacienteId(pacienteId.Value);
+                var pet = await _pets.ObterPorId(pacienteId.Value);
+
+                if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return null;
+                }
+
+                prontuario = await _prontuarios.ObterPorPacienteId(pet.Id)
+                             ?? await _prontuarios.ObterOuCriarPorPacienteId(pet.Id);
+
+                prontuario.Paciente ??= pet;
             }
 
-            return null;
+            if (prontuario?.Paciente == null || prontuario.Paciente.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return null;
+            }
+
+            return prontuario;
         }
 
-        public static DocumentoDTO MapearParaDTO(DocumentoClinico documento)
+        /// <summary>A URL sai assinada: o arquivo só abre para quem recebeu esta resposta.</summary>
+        public static DocumentoDTO MapearParaDTO(DocumentoClinico documento, AssinadorDeArquivos assinador)
         {
             return new DocumentoDTO
             {
@@ -161,7 +191,7 @@ namespace VetCare.API.UseCases
                 ProntuarioId = documento.ProntuarioId,
                 NomeArquivo = documento.NomeArquivo,
                 TipoDocumento = documento.TipoDocumento,
-                UrlArquivo = documento.UrlArquivo,
+                UrlArquivo = assinador.Assinar(documento.UrlArquivo),
                 TamanhoBytes = documento.TamanhoBytes,
                 EnviadoPor = documento.EnviadoPor?.Nome ?? string.Empty,
                 DataUpload = documento.DataUpload

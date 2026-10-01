@@ -101,8 +101,12 @@ export function Tutores() {
           return;
         }
 
-        await api.post('/api/tutores', form);
-        setAviso('Tutor cadastrado com sucesso.');
+        await api.post('/api/tutores', { ...form, senha: form.senha || null });
+        setAviso(
+          form.senha
+            ? 'Tutor cadastrado com sucesso. Ele recebeu um e-mail de boas-vindas.'
+            : 'Tutor cadastrado. Ele recebeu por e-mail o link para criar a própria senha.',
+        );
       }
 
       setModalAberto(false);
@@ -263,12 +267,16 @@ export function Tutores() {
                 />
               </Campo>
 
-              <Campo rotulo="Senha inicial" dica="Deixe em branco para o sistema gerar uma senha provisória.">
+              <Campo
+                rotulo="Senha inicial"
+                dica="Deixe em branco para o tutor criar a própria senha pelo link enviado por e-mail (válido por 72 horas)."
+              >
                 <input
                   type="password"
                   className="vc-campo"
                   value={form.senha}
                   onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                  autoComplete="new-password"
                 />
               </Campo>
             </>

@@ -89,9 +89,11 @@ checa "sem novidade, a resposta vem sem eventos" '"eventos":\[\]' "$r"
 
 echo "== O tutor confirma a presença e a clínica é avisada =="
 
-# Uma sessão em aberto do tutor, que é o que a tela dele oferece para confirmar.
+# Uma sessão em aberto do tutor, que é o que a tela dele oferece para confirmar. A clínica
+# agenda uma nova antes, para o roteiro não depender do que sobrou de execuções anteriores.
+CRIADA=$(garantir_sessao_em_aberto "$TK_ADMIN")
 r=$(get "/api/sessoes/minhas?apenasFuturas=true" "$TK_TUTOR")
-SESSAO=$(val "$(grep -o '{[^{}]*}' <<<"$r" | grep -Ev '"status":"(Cancelada|Conclu)' | head -1)" id)
+SESSAO=$(val "$(grep -o '{[^{}]*}' <<<"$r" | grep "\"id\":\"$CRIADA\"" | grep '"status":"Aguardando' | head -1)" id)
 checa "tutor tem sessão em aberto para confirmar" "^[0-9a-f-]\{36\}$" "$SESSAO"
 
 V=$(versao_do_mural "$TK_VET")

@@ -14,7 +14,7 @@ namespace VetCare.API.Models
         public string Orientacoes { get; set; } = string.Empty;
 
         /// <summary>Ativa ou Cancelada. Receitas não são excluídas (RN-004).</summary>
-        public string Status { get; set; } = "Ativa";
+        public string Status { get; set; } = StatusPrescricao.Ativa;
 
         public Prontuario? Prontuario { get; set; }
         public Pet? Paciente { get; set; }

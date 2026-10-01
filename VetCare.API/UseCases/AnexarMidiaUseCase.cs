@@ -20,6 +20,7 @@ namespace VetCare.API.UseCases
         private readonly ISessaoRepository _sessoes;
         private readonly IAtendimentoRepository _atendimentos;
         private readonly ArmazenamentoArquivos _armazenamento;
+        private readonly AssinadorDeArquivos _assinador;
         private readonly UsuarioAtual _usuarioAtual;
 
         public AnexarMidiaUseCase(
@@ -27,12 +28,14 @@ namespace VetCare.API.UseCases
             ISessaoRepository sessoes,
             IAtendimentoRepository atendimentos,
             ArmazenamentoArquivos armazenamento,
+            AssinadorDeArquivos assinador,
             UsuarioAtual usuarioAtual)
         {
             _midias = midias;
             _sessoes = sessoes;
             _atendimentos = atendimentos;
             _armazenamento = armazenamento;
+            _assinador = assinador;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -61,14 +64,9 @@ namespace VetCare.API.UseCases
             // HU-010, CA-1: a mídia precisa estar vinculada a uma sessão existente.
             var sessao = await _sessoes.ObterPorIdComRelacionamentos(dto.SessaoId);
 
-            if (sessao == null)
+            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<MidiaDTO>.NaoEncontrado("Sessão não encontrada.");
-            }
-
-            if (sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<MidiaDTO>.NaoAutorizado("Esta sessão pertence a outra clínica.");
             }
 
             if (_usuarioAtual.EhVeterinario && sessao.VeterinarioId != _usuarioAtual.VeterinarioId)
@@ -80,7 +78,7 @@ namespace VetCare.API.UseCases
             var atendimentoId = dto.AtendimentoId
                                 ?? (await _atendimentos.ObterPorSessao(dto.SessaoId))?.Id;
 
-            var url = await _armazenamento.Salvar(dto.Arquivo, "uploads");
+            var caminho = await _armazenamento.Salvar(dto.Arquivo, AssinadorDeArquivos.PastaDeMidias);
 
             var midia = new MidiaSessao
             {
@@ -88,19 +86,33 @@ namespace VetCare.API.UseCases
                 AtendimentoId = atendimentoId,
                 Tipo = FormatosDeVideo.Contains(extensao) ? "Video" : "Imagem",
                 NomeArquivo = dto.Arquivo.FileName,
-                UrlArquivo = url
+                UrlArquivo = caminho
             };
 
             await _midias.Adicionar(midia);
             await _midias.SalvarAlteracoes();
 
-            return Resultado<MidiaDTO>.Ok(MapearParaDTO(midia), "Mídia anexada com sucesso.");
+            return Resultado<MidiaDTO>.Ok(MapearParaDTO(midia, _assinador), "Mídia anexada com sucesso.");
         }
 
+        /// <summary>Equipe da clínica e o tutor do paciente; ninguém mais enxerga as mídias de uma sessão.</summary>
         public async Task<Resultado<List<MidiaDTO>>> ListarPorSessao(Guid sessaoId)
         {
+            var sessao = await _sessoes.ObterPorIdComRelacionamentos(sessaoId);
+
+            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<List<MidiaDTO>>.NaoEncontrado("Sessão não encontrada.");
+            }
+
+            if (_usuarioAtual.EhTutor && sessao.Tratamento?.Paciente?.TutorId != _usuarioAtual.TutorId)
+            {
+                return Resultado<List<MidiaDTO>>.NaoAutorizado("Esta sessão não pertence a um pet sob sua responsabilidade.");
+            }
+
             var midias = await _midias.ObterPorSessao(sessaoId);
-            return Resultado<List<MidiaDTO>>.Ok(midias.Select(MapearParaDTO).ToList());
+
+            return Resultado<List<MidiaDTO>>.Ok(midias.Select(m => MapearParaDTO(m, _assinador)).ToList());
         }
 
         public async Task<Resultado> Remover(Guid id)
@@ -116,7 +128,7 @@ namespace VetCare.API.UseCases
 
             if (sessao?.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
-                return Resultado.NaoAutorizado("Esta mídia pertence a outra clínica.");
+                return Resultado.NaoEncontrado("Mídia não encontrada.");
             }
 
             if (_usuarioAtual.EhVeterinario && sessao.VeterinarioId != _usuarioAtual.VeterinarioId)
@@ -132,7 +144,8 @@ namespace VetCare.API.UseCases
             return Resultado.Ok("Mídia removida com sucesso.");
         }
 
-        public static MidiaDTO MapearParaDTO(MidiaSessao midia)
+        /// <summary>A URL sai assinada: o arquivo só abre para quem recebeu esta resposta.</summary>
+        public static MidiaDTO MapearParaDTO(MidiaSessao midia, AssinadorDeArquivos assinador)
         {
             return new MidiaDTO
             {
@@ -141,7 +154,7 @@ namespace VetCare.API.UseCases
                 AtendimentoId = midia.AtendimentoId,
                 Tipo = midia.Tipo,
                 NomeArquivo = midia.NomeArquivo,
-                UrlArquivo = midia.UrlArquivo,
+                UrlArquivo = assinador.Assinar(midia.UrlArquivo),
                 DataUpload = midia.DataUpload
             };
         }
