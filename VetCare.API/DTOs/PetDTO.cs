@@ -20,6 +20,12 @@ namespace VetCare.API.DTOs
         public Guid TutorId { get; set; }
         public string NomeTutor { get; set; } = string.Empty;
         public string TelefoneTutor { get; set; } = string.Empty;
+
+        /// <summary>Nulo quando a clínica ainda não designou um profissional (cadastro feito pelo tutor).</summary>
+        public Guid? VeterinarioResponsavelId { get; set; }
+
+        public string NomeVeterinarioResponsavel { get; set; } = string.Empty;
+
         public bool Ativo { get; set; }
         public DateTime? DataObito { get; set; }
 

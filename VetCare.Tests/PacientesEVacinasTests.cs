@@ -19,6 +19,7 @@ namespace VetCare.Tests
             new AlergiaRepository(Contexto),
             new VacinaRepository(Contexto),
             new TratamentoRepository(Contexto),
+            new VeterinarioRepository(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 

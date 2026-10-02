@@ -156,11 +156,19 @@ namespace VetCare.API.Data
 
                 entidade.HasIndex(p => new { p.ClinicaId, p.Ativo });
                 entidade.HasIndex(p => p.TutorId);
+                entidade.HasIndex(p => p.VeterinarioResponsavelId);
 
                 // RN-001: um paciente pertence a exatamente um tutor responsável.
                 entidade.HasOne(p => p.Tutor)
                         .WithMany(t => t.Pets)
                         .HasForeignKey(p => p.TutorId);
+
+                // Um veterinário por paciente; se o cadastro do profissional sair, o paciente
+                // fica sem responsável em vez de ser apagado junto.
+                entidade.HasOne(p => p.VeterinarioResponsavel)
+                        .WithMany()
+                        .HasForeignKey(p => p.VeterinarioResponsavelId)
+                        .OnDelete(DeleteBehavior.SetNull);
 
                 entidade.HasOne(p => p.Clinica).WithMany().HasForeignKey(p => p.ClinicaId);
             });

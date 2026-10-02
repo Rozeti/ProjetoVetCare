@@ -40,9 +40,9 @@ namespace VetCare.API.UseCases
                 return Resultado<List<VacinaDTO>>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
-                return Resultado<List<VacinaDTO>>.NaoAutorizado("Você não tem acesso a este paciente.");
+                return Resultado<List<VacinaDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var vacinas = await _vacinas.ObterPorPaciente(pacienteId);
@@ -72,6 +72,11 @@ namespace VetCare.API.UseCases
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<VacinaDTO>.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado<VacinaDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             // O aplicador, quando informado, precisa ser um veterinário desta clínica.

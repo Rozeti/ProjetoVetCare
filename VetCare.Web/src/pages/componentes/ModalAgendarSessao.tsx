@@ -40,6 +40,10 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
   const [petSelecionado, setPetSelecionado] = useState(pacienteId ?? '');
   const [tratamentoId, setTratamentoId] = useState('');
   const [vetSelecionado, setVetSelecionado] = useState(veterinarioId ?? '');
+
+  // A sessão entra na agenda de quem acompanha o paciente: escolhido o pet, o
+  // veterinário responsável vem junto e a lista fica travada nele.
+  const responsavelDoPet = pets.find((p) => p.id === petSelecionado)?.veterinarioResponsavelId ?? '';
   const [data, setData] = useState(paraValorInputData(new Date()));
   const [hora, setHora] = useState('09:00');
   const [observacoes, setObservacoes] = useState('');
@@ -122,7 +126,9 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
       return;
     }
 
-    if (!veterinarioId && !vetSelecionado) {
+    const veterinarioDaSessao = responsavelDoPet || vetSelecionado;
+
+    if (!veterinarioId && !veterinarioDaSessao) {
       setErro('Selecione o veterinário responsável pela sessão.');
       return;
     }
@@ -132,7 +138,7 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
     try {
       await api.post('/api/sessoes', {
         tratamentoId,
-        veterinarioId: vetSelecionado || null,
+        veterinarioId: veterinarioDaSessao || null,
         dataHora: paraIsoLocal(data, hora),
         observacoes,
       });
@@ -196,8 +202,17 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
         </Campo>
 
         {!veterinarioId && (
-          <Campo rotulo="Veterinário" obrigatorio>
-            <select className="vc-campo" value={vetSelecionado} onChange={(e) => setVetSelecionado(e.target.value)}>
+          <Campo
+            rotulo="Veterinário"
+            obrigatorio
+            dica={responsavelDoPet ? 'Veterinário responsável pelo paciente. Para trocar, transfira o paciente.' : undefined}
+          >
+            <select
+              className="vc-campo"
+              value={responsavelDoPet || vetSelecionado}
+              onChange={(e) => setVetSelecionado(e.target.value)}
+              disabled={!!responsavelDoPet}
+            >
               <option value="">Selecione o profissional</option>
               {veterinarios.map((vet) => (
                 <option key={vet.id} value={vet.id}>

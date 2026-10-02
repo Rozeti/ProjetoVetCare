@@ -16,6 +16,8 @@ namespace VetCare.API.DTOs
         public string IdadeDescritiva { get; set; } = string.Empty;
         public string NomeTutor { get; set; } = string.Empty;
         public string TelefoneTutor { get; set; } = string.Empty;
+        public Guid? VeterinarioResponsavelId { get; set; }
+        public string NomeVeterinarioResponsavel { get; set; } = string.Empty;
         public DateTime DataCriacao { get; set; }
         public DateTime UltimaAtualizacao { get; set; }
         public DateTime? DataObito { get; set; }

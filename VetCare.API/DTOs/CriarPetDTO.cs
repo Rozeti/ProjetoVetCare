@@ -27,5 +27,11 @@ namespace VetCare.API.DTOs
         /// <summary>RN-001: o vínculo com o tutor responsável é obrigatório.</summary>
         [Required(ErrorMessage = "O paciente precisa estar vinculado a um tutor.")]
         public Guid TutorId { get; set; }
+
+        /// <summary>
+        /// Profissional que acompanha o paciente. Quando quem cadastra é um veterinário, o
+        /// campo é ignorado: ele mesmo passa a ser o responsável.
+        /// </summary>
+        public Guid? VeterinarioResponsavelId { get; set; }
     }
 }

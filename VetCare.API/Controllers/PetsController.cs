@@ -14,20 +14,30 @@ namespace VetCare.API.Controllers
     public class PetsController : ControllerBase
     {
         private readonly GerenciarPacientesUseCase _useCase;
+        private readonly TransferirPacienteUseCase _transferir;
 
-        public PetsController(GerenciarPacientesUseCase useCase)
+        public PetsController(GerenciarPacientesUseCase useCase, TransferirPacienteUseCase transferir)
         {
             _useCase = useCase;
+            _transferir = transferir;
         }
 
+        /// <summary>
+        /// Lista no recorte de quem consulta: o veterinário vê só os pacientes sob sua
+        /// responsabilidade e o tutor só os próprios pets. Administração e apoio veem a
+        /// clínica inteira e podem filtrar por veterinário ou pelos pacientes ainda sem
+        /// responsável designado.
+        /// </summary>
         [HttpGet]
         public async Task<IActionResult> Listar(
             [FromQuery] Guid? tutorId,
+            [FromQuery] Guid? veterinarioId,
+            [FromQuery] bool? semResponsavel,
             [FromQuery] string? busca,
             [FromQuery] bool? ativo,
             [FromQuery] ParametrosPagina paginacao)
         {
-            return this.Responder(await _useCase.Listar(tutorId, busca, ativo, paginacao));
+            return this.Responder(await _useCase.Listar(tutorId, veterinarioId, semResponsavel == true, busca, ativo, paginacao));
         }
 
         /// <summary>
@@ -39,7 +49,7 @@ namespace VetCare.API.Controllers
         [Authorize(Roles = Perfis.Tutor)]
         public async Task<IActionResult> ListarMeusPets()
         {
-            var resultado = await _useCase.Listar(null, null, true, new ParametrosPagina { Tamanho = 100 });
+            var resultado = await _useCase.Listar(null, null, false, null, true, new ParametrosPagina { Tamanho = 100 });
 
             return resultado.Sucesso
                 ? Ok(resultado.Dados!.Itens)
@@ -75,6 +85,17 @@ namespace VetCare.API.Controllers
         public async Task<IActionResult> Atualizar(Guid id, AtualizarPetDTO dto)
         {
             return this.Responder(await _useCase.Atualizar(id, dto));
+        }
+
+        /// <summary>
+        /// Troca o veterinário responsável. Os tratamentos em andamento e as sessões futuras
+        /// acompanham o paciente, que sai da lista do profissional anterior.
+        /// </summary>
+        [HttpPatch("{id:guid}/veterinario-responsavel")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
+        public async Task<IActionResult> Transferir(Guid id, TransferirPacienteDTO dto)
+        {
+            return this.Responder(await _transferir.Executar(id, dto));
         }
 
         [HttpPatch("{id:guid}/status")]

@@ -94,7 +94,7 @@ export function Dashboard() {
               destaque={`${indicadores.sessoesDoDia} sessão(ões) hoje`}
             />
             <Estatistica
-              rotulo="Pacientes ativos"
+              rotulo={indicadores.escopo === 'Veterinario' ? 'Meus pacientes ativos' : 'Pacientes ativos'}
               valor={indicadores.pacientesAtivos}
               icone={<PawPrint size={20} />}
               cor="text-sucesso"

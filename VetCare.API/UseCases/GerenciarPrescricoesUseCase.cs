@@ -45,9 +45,9 @@ namespace VetCare.API.UseCases
                 return Resultado<List<PrescricaoDTO>>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
-                return Resultado<List<PrescricaoDTO>>.NaoAutorizado("Você não tem acesso a este paciente.");
+                return Resultado<List<PrescricaoDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(pacienteId);
@@ -65,7 +65,7 @@ namespace VetCare.API.UseCases
                 return Resultado<PrescricaoDTO>.NaoEncontrado("Receita não encontrada.");
             }
 
-            if (_usuarioAtual.EhTutor && prescricao.Paciente?.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, prescricao.Paciente))
             {
                 return Resultado<PrescricaoDTO>.NaoAutorizado("Você não tem acesso a esta receita.");
             }
@@ -85,6 +85,11 @@ namespace VetCare.API.UseCases
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<PrescricaoDTO>.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado<PrescricaoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? Guid.Empty;

@@ -171,6 +171,13 @@ export function MeusPets() {
                 </div>
               </dl>
 
+              {pet.nomeVeterinarioResponsavel && (
+                <p className="mb-4 text-sm text-slate-600">
+                  <span className="text-slate-500">Veterinário responsável:</span>{' '}
+                  <span className="font-semibold text-slate-800">{pet.nomeVeterinarioResponsavel}</span>
+                </p>
+              )}
+
               {/* HU-013, CA-2: a consulta abre a visão filtrada do prontuário. */}
               <Link to={`/prontuario/${pet.id}`} className="vc-botao-primario w-full">
                 <FileText size={16} />

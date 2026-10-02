@@ -36,9 +36,9 @@ namespace VetCare.API.UseCases
                 return Resultado<List<AlergiaDTO>>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
-                return Resultado<List<AlergiaDTO>>.NaoAutorizado("Você não tem acesso a este paciente.");
+                return Resultado<List<AlergiaDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var registros = await _alergias.ObterPorPaciente(pacienteId, apenasAtivas);
@@ -65,6 +65,11 @@ namespace VetCare.API.UseCases
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<AlergiaDTO>.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado<AlergiaDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var alergia = new AlergiaCondicao

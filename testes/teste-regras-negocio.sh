@@ -53,9 +53,10 @@ TUTORUSER=$(jsonval "$r" id); TUTORID=$(jsonval "$r" tutorId)
 checa "HU-002 cadastro de tutor" "tutorId" "$r"
 
 echo "== HU-003 pacientes =="
-r=$(post /api/pets "$ADMIN" "{\"nome\":\"Luna\",\"especie\":\"Cachorro\",\"raca\":\"Border Collie\",\"dataNascimento\":\"2021-03-15\",\"sexo\":\"Fêmea\",\"pesoAtualKg\":18.4,\"tutorId\":\"$TUTORID\"}")
+r=$(post /api/pets "$ADMIN" "{\"nome\":\"Luna\",\"especie\":\"Cachorro\",\"raca\":\"Border Collie\",\"dataNascimento\":\"2021-03-15\",\"sexo\":\"Fêmea\",\"pesoAtualKg\":18.4,\"tutorId\":\"$TUTORID\",\"veterinarioResponsavelId\":\"$VETID\"}")
 PETID=$(jsonval "$r" id)
 checa "HU-003 CA-1 cadastro vinculado ao tutor" "Luna" "$r"
+checa "Paciente nasce com veterinário responsável" "nomeVeterinarioResponsavel\":\"Dra. Teste" "$r"
 
 r=$(post /api/pets "$ADMIN" '{"nome":"SemTutor","especie":"Gato","raca":"SRD","dataNascimento":"2021-03-15","tutorId":"00000000-0000-0000-0000-000000000000"}')
 checa "HU-003 CA-2 / RN-001 tutor obrigatório" "tutor" "$r"

@@ -9,6 +9,9 @@ import { paraValorInputData } from '../../utils/formato';
 interface Props {
   aberto: boolean;
   pacienteId: string;
+  /** Veterinário que acompanha o paciente: o tratamento é dele. Nulo quando ainda não há responsável. */
+  veterinarioResponsavelId?: string | null;
+  nomeVeterinarioResponsavel?: string;
   aoFechar: () => void;
   aoSalvar: () => void;
 }
@@ -17,22 +20,33 @@ interface Props {
  * Abertura do processo terapêutico que agrupa avaliação, sessões e atendimentos
  * de um paciente, conforme a definição de Tratamento no DAS.
  */
-export function ModalTratamento({ aberto, pacienteId, aoFechar, aoSalvar }: Props) {
+export function ModalTratamento({ aberto, ...props }: Props) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos
   // novos, o que dispensa um efeito para limpá-los.
   if (!aberto) {
     return null;
   }
 
-  return <Formulario pacienteId={pacienteId} aoFechar={aoFechar} aoSalvar={aoSalvar} />;
+  return <Formulario {...props} />;
 }
 
-function Formulario({ pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
+function Formulario({
+  pacienteId,
+  veterinarioResponsavelId,
+  nomeVeterinarioResponsavel,
+  aoFechar,
+  aoSalvar,
+}: Omit<Props, 'aberto'>) {
   const { usuario, ehVeterinario } = useAuth();
 
+  // O paciente já tem quem o acompanha: o tratamento nasce no nome dele. Sem responsável
+  // (cadastro vindo do aplicativo), o primeiro tratamento define quem passa a ser.
+  const responsavelDefinido = !!veterinarioResponsavelId;
+
   const [veterinarios, setVeterinarios] = useState<Veterinario[]>([]);
-  // O veterinário logado assume o tratamento por padrão.
-  const [veterinarioId, setVeterinarioId] = useState(ehVeterinario ? usuario?.veterinarioId ?? '' : '');
+  const [veterinarioId, setVeterinarioId] = useState(
+    veterinarioResponsavelId ?? (ehVeterinario ? usuario?.veterinarioId ?? '' : ''),
+  );
   const [dataInicio, setDataInicio] = useState(paraValorInputData(new Date()));
   const [objetivo, setObjetivo] = useState('');
   const [observacoes, setObservacoes] = useState('');
@@ -40,8 +54,8 @@ function Formulario({ pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    // O veterinário assume o próprio tratamento; só a administração escolhe o responsável.
-    if (ehVeterinario && usuario?.veterinarioId) {
+    // Com o responsável definido, ou sendo o próprio veterinário, não há o que escolher.
+    if (responsavelDefinido || (ehVeterinario && usuario?.veterinarioId)) {
       return;
     }
 
@@ -59,7 +73,7 @@ function Formulario({ pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
     return () => {
       ativo = false;
     };
-  }, [ehVeterinario, usuario?.veterinarioId]);
+  }, [responsavelDefinido, ehVeterinario, usuario?.veterinarioId]);
 
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
@@ -113,15 +127,22 @@ function Formulario({ pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
         </Campo>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Campo rotulo="Veterinário responsável" obrigatorio>
+          <Campo
+            rotulo="Veterinário responsável"
+            obrigatorio
+            dica={responsavelDefinido ? 'Definido pelo cadastro do paciente. Para trocar, transfira o paciente.' : undefined}
+          >
             <select
               className="vc-campo"
               value={veterinarioId}
               onChange={(e) => setVeterinarioId(e.target.value)}
-              disabled={ehVeterinario && !!usuario?.veterinarioId}
+              disabled={responsavelDefinido || (ehVeterinario && !!usuario?.veterinarioId)}
             >
               <option value="">Selecione</option>
-              {ehVeterinario && usuario?.veterinarioId && (
+              {responsavelDefinido && (
+                <option value={veterinarioResponsavelId ?? ''}>{nomeVeterinarioResponsavel}</option>
+              )}
+              {!responsavelDefinido && ehVeterinario && usuario?.veterinarioId && (
                 <option value={usuario.veterinarioId}>{usuario.nome}</option>
               )}
               {veterinarios.map((vet) => (

@@ -105,7 +105,7 @@ namespace VetCare.API.UseCases
                 return Resultado<List<MidiaDTO>>.NaoEncontrado("Sessão não encontrada.");
             }
 
-            if (_usuarioAtual.EhTutor && sessao.Tratamento?.Paciente?.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
             {
                 return Resultado<List<MidiaDTO>>.NaoAutorizado("Esta sessão não pertence a um pet sob sua responsabilidade.");
             }

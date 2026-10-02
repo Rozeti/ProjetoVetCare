@@ -100,8 +100,8 @@ namespace VetCare.API.UseCases
                 return Resultado<List<DocumentoDTO>>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            // HU-013: o tutor acessa apenas os documentos dos próprios pets.
-            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            // HU-013: o tutor acessa apenas os documentos dos próprios pets; o veterinário, os dos seus pacientes.
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
                 return Resultado<List<DocumentoDTO>>.NaoAutorizado("Você não tem acesso a este prontuário.");
             }
@@ -128,7 +128,7 @@ namespace VetCare.API.UseCases
                 return Resultado<(string, string)>.NaoEncontrado("Documento não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && documento.Prontuario?.Paciente?.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, documento.Prontuario?.Paciente))
             {
                 return Resultado<(string, string)>.NaoAutorizado("Você não tem acesso a este documento.");
             }

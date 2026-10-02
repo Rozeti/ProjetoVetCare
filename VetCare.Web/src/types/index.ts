@@ -90,10 +90,22 @@ export interface Pet {
   tutorId: string;
   nomeTutor: string;
   telefoneTutor: string;
+  /** Veterinário que acompanha o paciente; nulo quando a clínica ainda não designou ninguém. */
+  veterinarioResponsavelId?: string | null;
+  nomeVeterinarioResponsavel: string;
   ativo: boolean;
   dataObito?: string | null;
   alertasClinicos: AlergiaCondicao[];
   vacinasVencidas: number;
+}
+
+/** Resposta da transferência de um paciente para outro veterinário. */
+export interface ResultadoTransferencia {
+  paciente: Pet;
+  nomeVeterinarioAnterior: string;
+  nomeNovoVeterinario: string;
+  tratamentosTransferidos: number;
+  sessoesTransferidas: number;
 }
 
 export type TipoAlerta = 'Alergia' | 'Comorbidade' | 'Restricao' | 'Cirurgia';
@@ -305,6 +317,8 @@ export interface Prontuario {
   idadeDescritiva: string;
   nomeTutor: string;
   telefoneTutor: string;
+  veterinarioResponsavelId?: string | null;
+  nomeVeterinarioResponsavel: string;
   dataCriacao: string;
   ultimaAtualizacao: string;
   dataObito?: string | null;

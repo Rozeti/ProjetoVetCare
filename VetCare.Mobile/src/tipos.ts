@@ -68,6 +68,9 @@ export interface Pet {
   tutorId: string;
   nomeTutor: string;
   telefoneTutor: string;
+  /** Veterinário que acompanha o pet; vazio enquanto a clínica não designa ninguém. */
+  veterinarioResponsavelId?: string | null;
+  nomeVeterinarioResponsavel: string;
   ativo: boolean;
   dataObito?: string | null;
   alertasClinicos: AlergiaCondicao[];

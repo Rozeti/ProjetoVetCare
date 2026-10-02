@@ -68,6 +68,11 @@ namespace VetCare.API.UseCases
                 return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
             }
 
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
+            {
+                return Resultado<AtendimentoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
             if (sessao.Status == StatusSessao.Cancelada)
             {
                 return Resultado<AtendimentoDTO>.Invalido(

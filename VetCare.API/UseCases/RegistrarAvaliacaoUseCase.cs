@@ -57,6 +57,11 @@ namespace VetCare.API.UseCases
                 return Resultado<AvaliacaoDTO>.NaoEncontrado("Tratamento não encontrado.");
             }
 
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
+            {
+                return Resultado<AvaliacaoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
             var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? tratamento.VeterinarioId;
 
             if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)

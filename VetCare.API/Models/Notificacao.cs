@@ -43,6 +43,7 @@ namespace VetCare.API.Models
         public const string NovoRegistroProntuario = "NovoRegistroProntuario";
         public const string NovaMensagem = "NovaMensagem";
         public const string DoseDeVacina = "DoseDeVacina";
+        public const string PacienteTransferido = "PacienteTransferido";
     }
 
     /// <summary>Andamento da entrega de uma notificação por e-mail e push.</summary>

@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
+  ArrowRightLeft,
   ClipboardList,
   Download,
   FileText,
@@ -50,6 +51,7 @@ import { ModalAvaliacao } from './componentes/ModalAvaliacao';
 import { ModalRegistrarAtendimento } from './componentes/ModalRegistrarAtendimento';
 import { ModalTratamento } from './componentes/ModalTratamento';
 import { ModalAlertaClinico } from './componentes/ModalAlertaClinico';
+import { ModalTransferirPaciente } from './componentes/ModalTransferirPaciente';
 import { CarteiraVacinacao } from './componentes/CarteiraVacinacao';
 import { Receituario } from './componentes/Receituario';
 
@@ -63,10 +65,11 @@ const TIPOS_DE_DOCUMENTO = ['Contrato', 'Exame', 'Laudo', 'Outro'];
 export function Prontuario() {
   const { pacienteId = '' } = useParams();
   const [parametros, setParametros] = useSearchParams();
-  const { podeVerObservacoesInternas, temPerfil, ehTutor } = useAuth();
+  const { podeVerObservacoesInternas, temPerfil, ehTutor, ehVeterinario, usuario } = useAuth();
 
   const podeRegistrar = temPerfil('Administrador', 'Veterinario');
   const podeAnexarDocumento = temPerfil('Administrador', 'Veterinario', 'Apoio');
+  const administraResponsaveis = temPerfil('Administrador', 'Apoio');
 
   // O tutor não alcança a lista geral de pacientes: ele volta para os próprios pets.
   const voltarPara = ehTutor ? '/meus-pets' : '/pacientes';
@@ -88,6 +91,7 @@ export function Prontuario() {
   const [atendimentoEmCorrecao, setAtendimentoEmCorrecao] = useState<Atendimento | null>(null);
   const [modalTratamento, setModalTratamento] = useState(false);
   const [modalAlerta, setModalAlerta] = useState(false);
+  const [modalTransferencia, setModalTransferencia] = useState(false);
   const [tipoDocumento, setTipoDocumento] = useState('Exame');
   const [enviandoDocumento, setEnviandoDocumento] = useState(false);
   const [nomeClinica, setNomeClinica] = useState('Clínica VetSPA');
@@ -212,6 +216,14 @@ export function Prontuario() {
     (v) => v.situacaoDose === 'Vencida' || v.situacaoDose === 'A vencer',
   ).length;
 
+  // A administração transfere qualquer paciente; o veterinário só passa adiante o que está com ele.
+  const podeTransferir =
+    !prontuario.dataObito &&
+    (administraResponsaveis ||
+      (ehVeterinario &&
+        !!prontuario.veterinarioResponsavelId &&
+        prontuario.veterinarioResponsavelId === usuario?.veterinarioId));
+
   const abas: { valor: Aba; rotulo: string; contador?: number; alerta?: boolean }[] = [
     { valor: 'linha-do-tempo', rotulo: 'Linha do tempo', contador: prontuario.historico.length },
     { valor: 'evolucao', rotulo: 'Evolução' },
@@ -238,6 +250,7 @@ export function Prontuario() {
           prontuario.castrado ? 'Castrado' : null,
           prontuario.microchip ? `Chip ${prontuario.microchip}` : null,
           `Tutor: ${prontuario.nomeTutor}`,
+          `Veterinário: ${prontuario.nomeVeterinarioResponsavel || 'sem responsável'}`,
         ]
           .filter(Boolean)
           .join(' · ')}
@@ -251,6 +264,13 @@ export function Prontuario() {
               <Printer size={16} />
               Imprimir
             </button>
+
+            {podeTransferir && (
+              <button type="button" className="vc-botao-secundario" onClick={() => setModalTransferencia(true)}>
+                <ArrowRightLeft size={16} />
+                {prontuario.veterinarioResponsavelId ? 'Transferir' : 'Definir veterinário'}
+              </button>
+            )}
 
             {podeRegistrar && (
               <>
@@ -569,9 +589,30 @@ export function Prontuario() {
         }}
       />
 
+      <ModalTransferirPaciente
+        paciente={
+          modalTransferencia
+            ? {
+                id: pacienteId,
+                nome: prontuario.nomePaciente,
+                veterinarioResponsavelId: prontuario.veterinarioResponsavelId,
+                nomeVeterinarioResponsavel: prontuario.nomeVeterinarioResponsavel,
+              }
+            : null
+        }
+        aoFechar={() => setModalTransferencia(false)}
+        aoTransferir={(mensagem) => {
+          setModalTransferencia(false);
+          setAviso(mensagem);
+          recarregar();
+        }}
+      />
+
       <ModalTratamento
         aberto={modalTratamento}
         pacienteId={pacienteId}
+        veterinarioResponsavelId={prontuario.veterinarioResponsavelId}
+        nomeVeterinarioResponsavel={prontuario.nomeVeterinarioResponsavel}
         aoFechar={() => setModalTratamento(false)}
         aoSalvar={() => {
           setModalTratamento(false);

@@ -19,36 +19,43 @@ namespace VetCare.API.Data
         {
             return await _context.Pets
                 .Include(p => p.Tutor).ThenInclude(t => t!.Usuario)
+                .Include(p => p.VeterinarioResponsavel).ThenInclude(v => v!.Usuario)
                 .Include(p => p.AlergiasCondicoes.Where(a => a.Ativa))
                 .FirstOrDefaultAsync(p => p.Id == id);
         }
 
-        public async Task<PaginaDe<Pet>> Listar(
-            Guid clinicaId,
-            Guid? tutorId,
-            string? busca,
-            bool? ativo,
-            ParametrosPagina parametros)
+        public async Task<PaginaDe<Pet>> Listar(Guid clinicaId, FiltroDePacientes filtro, ParametrosPagina parametros)
         {
             var consulta = _context.Pets
                 .AsNoTracking()
                 .Include(p => p.Tutor).ThenInclude(t => t!.Usuario)
+                .Include(p => p.VeterinarioResponsavel).ThenInclude(v => v!.Usuario)
                 .Include(p => p.AlergiasCondicoes.Where(a => a.Ativa))
                 .Where(p => p.ClinicaId == clinicaId);
 
-            if (tutorId.HasValue)
+            if (filtro.TutorId.HasValue)
             {
-                consulta = consulta.Where(p => p.TutorId == tutorId.Value);
+                consulta = consulta.Where(p => p.TutorId == filtro.TutorId.Value);
             }
 
-            if (ativo.HasValue)
+            if (filtro.VeterinarioResponsavelId.HasValue)
             {
-                consulta = consulta.Where(p => p.Ativo == ativo.Value);
+                consulta = consulta.Where(p => p.VeterinarioResponsavelId == filtro.VeterinarioResponsavelId.Value);
             }
 
-            if (!string.IsNullOrWhiteSpace(busca))
+            if (filtro.ApenasSemResponsavel)
             {
-                var termo = busca.Trim().ToLowerInvariant();
+                consulta = consulta.Where(p => p.VeterinarioResponsavelId == null);
+            }
+
+            if (filtro.Ativo.HasValue)
+            {
+                consulta = consulta.Where(p => p.Ativo == filtro.Ativo.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filtro.Busca))
+            {
+                var termo = filtro.Busca.Trim().ToLowerInvariant();
 
                 consulta = consulta.Where(p =>
                     p.Nome.ToLower().Contains(termo) ||
@@ -104,8 +111,11 @@ namespace VetCare.API.Data
                 (ignorarPetId == null || p.Id != ignorarPetId));
         }
 
-        public async Task<int> ContarAtivos(Guid clinicaId) =>
-            await _context.Pets.CountAsync(p => p.ClinicaId == clinicaId && p.Ativo);
+        public async Task<int> ContarAtivos(Guid clinicaId, Guid? veterinarioResponsavelId = null) =>
+            await _context.Pets.CountAsync(p =>
+                p.ClinicaId == clinicaId &&
+                p.Ativo &&
+                (veterinarioResponsavelId == null || p.VeterinarioResponsavelId == veterinarioResponsavelId));
 
         public async Task SalvarAlteracoes() => await _context.SaveChangesAsync();
     }

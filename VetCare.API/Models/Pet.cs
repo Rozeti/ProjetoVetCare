@@ -5,6 +5,15 @@ namespace VetCare.API.Models
         public Guid Id { get; set; } = Guid.NewGuid();
         public Guid ClinicaId { get; set; }
         public Guid TutorId { get; set; }
+
+        /// <summary>
+        /// Profissional que conduz o acompanhamento do paciente. Um veterinário só enxerga
+        /// os pacientes sob sua responsabilidade; a transferência leva junto os tratamentos
+        /// em andamento e as sessões futuras. Fica vazio quando o cadastro veio do tutor
+        /// pelo aplicativo e a clínica ainda não designou ninguém.
+        /// </summary>
+        public Guid? VeterinarioResponsavelId { get; set; }
+
         public string Nome { get; set; } = string.Empty;
         public string Especie { get; set; } = string.Empty;
         public string Raca { get; set; } = string.Empty;
@@ -25,6 +34,7 @@ namespace VetCare.API.Models
         public DateTime DataCadastro { get; set; } = DateTime.UtcNow;
 
         public Tutor? Tutor { get; set; }
+        public Veterinario? VeterinarioResponsavel { get; set; }
         public Clinica? Clinica { get; set; }
         public ICollection<AlergiaCondicao> AlergiasCondicoes { get; set; } = new List<AlergiaCondicao>();
         public ICollection<Vacina> Vacinas { get; set; } = new List<Vacina>();

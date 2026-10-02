@@ -22,6 +22,7 @@ namespace VetCare.Tests
             new AlergiaRepository(Contexto),
             new VacinaRepository(Contexto),
             new TratamentoRepository(Contexto),
+            new VeterinarioRepository(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
@@ -64,7 +65,7 @@ namespace VetCare.Tests
             cadastro.Sucesso.Should().BeTrue(cadastro.Mensagem);
 
             var listagem = await CriarCasoDeUso(ComoAdministrador())
-                .Listar(null, "Nina", true, new API.Common.ParametrosPagina());
+                .Listar(null, null, false, "Nina", true, new API.Common.ParametrosPagina());
 
             listagem.Sucesso.Should().BeTrue();
             listagem.Dados!.Itens.Should().ContainSingle(p => p.Id == cadastro.Dados!.Id);

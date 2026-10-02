@@ -1,9 +1,21 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileText, Loader2, PawPrint, Pencil, Plus, Power, Search, Syringe, Trash2, X } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  FileText,
+  Loader2,
+  PawPrint,
+  Pencil,
+  Plus,
+  Power,
+  Search,
+  Syringe,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contexts/auth';
-import { ESPECIES, type PaginaDe, type Pet, type Tutor } from '../types';
+import { ESPECIES, type PaginaDe, type Pet, type Tutor, type Veterinario } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { Paginacao } from '../components/Paginacao';
@@ -11,6 +23,7 @@ import { formatarData, formatarPeso, paraValorInputData } from '../utils/formato
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
+import { ModalTransferirPaciente, type PacienteParaTransferir } from './componentes/ModalTransferirPaciente';
 
 const FORM_VAZIO = {
   nome: '',
@@ -23,15 +36,25 @@ const FORM_VAZIO = {
   dataNascimento: '',
   pesoAtualKg: '',
   tutorId: '',
+  veterinarioResponsavelId: '',
   dataObito: '',
 };
 
-/** HU-003: gestão dos pacientes (pets) vinculados a um tutor responsável. */
+/** Valor do filtro que mostra só os pacientes ainda sem veterinário designado. */
+const SEM_RESPONSAVEL = 'sem-responsavel';
+
+/**
+ * HU-003: gestão dos pacientes (pets) vinculados a um tutor responsável. Cada paciente
+ * é acompanhado por um único veterinário: o profissional vê só os seus, enquanto a
+ * administração e o apoio veem a clínica inteira e podem transferir pacientes.
+ */
 export function Pacientes() {
-  const { temPerfil } = useAuth();
+  const { usuario, temPerfil, ehVeterinario } = useAuth();
   const podeEditar = temPerfil('Administrador', 'Veterinario', 'Apoio');
   const podeInativar = temPerfil('Administrador', 'Veterinario');
   const podeExcluir = temPerfil('Administrador');
+  // Quem vê a clínica inteira escolhe o responsável; o veterinário assume os próprios cadastros.
+  const administraResponsaveis = temPerfil('Administrador', 'Apoio');
 
   // O atalho "Ver pacientes" da tela de tutores chega com ?tutor=<id>.
   const [parametros, setParametros] = useSearchParams();
@@ -39,6 +62,7 @@ export function Pacientes() {
 
   const [numeroPagina, setNumeroPagina] = useState(1);
   const [busca, setBusca] = useState('');
+  const [veterinarioFiltrado, setVeterinarioFiltrado] = useState('');
   const [mostrarInativos, setMostrarInativos] = useState(false);
   const [aviso, setAviso] = useState('');
 
@@ -47,23 +71,33 @@ export function Pacientes() {
   const [form, setForm] = useState(FORM_VAZIO);
   const [erroForm, setErroForm] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [emTransferencia, setEmTransferencia] = useState<PacienteParaTransferir | null>(null);
 
   const buscar = useCallback(async () => {
-    const [respostaPets, respostaTutores] = await Promise.all([
+    const [respostaPets, respostaTutores, respostaVeterinarios] = await Promise.all([
       api.get<PaginaDe<Pet>>('/api/pets', {
         params: {
           busca: busca || undefined,
           tutorId: tutorFiltrado || undefined,
+          veterinarioId:
+            veterinarioFiltrado && veterinarioFiltrado !== SEM_RESPONSAVEL ? veterinarioFiltrado : undefined,
+          semResponsavel: veterinarioFiltrado === SEM_RESPONSAVEL ? true : undefined,
           ativo: mostrarInativos ? undefined : true,
           pagina: numeroPagina,
           tamanho: 20,
         },
       }),
       api.get<Tutor[]>('/api/tutores/selecao'),
+      // O veterinário não escolhe responsável nem filtra por colega: a lista só serve à administração.
+      administraResponsaveis ? api.get<Veterinario[]>('/api/veterinarios') : Promise.resolve(null),
     ]);
 
-    return { pagina: respostaPets.data, tutores: respostaTutores.data };
-  }, [busca, tutorFiltrado, mostrarInativos, numeroPagina]);
+    return {
+      pagina: respostaPets.data,
+      tutores: respostaTutores.data,
+      veterinarios: respostaVeterinarios?.data ?? [],
+    };
+  }, [busca, tutorFiltrado, veterinarioFiltrado, mostrarInativos, numeroPagina, administraResponsaveis]);
 
   // O atraso evita disparar uma requisição por tecla digitada na busca.
   const { dados, carregando, erro, setErro, recarregar } = useCarregamento(
@@ -73,10 +107,12 @@ export function Pacientes() {
   );
 
   // Um pet cadastrado pelo tutor pelo aplicativo aparece aqui assim que ele salva.
-  useAtualizacao(['pets', 'tutores', 'alergias'], recarregar);
+  useAtualizacao(['pets', 'tutores', 'alergias', 'veterinarios'], recarregar);
 
   const pagina = dados?.pagina ?? paginaVazia<Pet>();
   const tutores = dados?.tutores ?? [];
+  const veterinarios = dados?.veterinarios ?? [];
+  const veterinariosAtivos = veterinarios.filter((v) => v.ativo);
   const nomeDoTutorFiltrado = tutores.find((t) => t.id === tutorFiltrado)?.nome;
 
   // Um filtro novo invalida a página atual: o resultado pode ter menos páginas.
@@ -91,9 +127,19 @@ export function Pacientes() {
     setNumeroPagina(1);
   }
 
+  function podeTransferir(pet: Pet) {
+    if (administraResponsaveis) return true;
+    // O veterinário só passa adiante um paciente que está com ele.
+    return ehVeterinario && !!pet.veterinarioResponsavelId && pet.veterinarioResponsavelId === usuario?.veterinarioId;
+  }
+
   function abrirNovo() {
     setEmEdicao(null);
-    setForm({ ...FORM_VAZIO, tutorId: tutorFiltrado });
+    setForm({
+      ...FORM_VAZIO,
+      tutorId: tutorFiltrado,
+      veterinarioResponsavelId: veterinarioFiltrado !== SEM_RESPONSAVEL ? veterinarioFiltrado : '',
+    });
     setErroForm('');
     setModalAberto(true);
   }
@@ -111,10 +157,21 @@ export function Pacientes() {
       dataNascimento: paraValorInputData(pet.dataNascimento),
       pesoAtualKg: pet.pesoAtualKg?.toString() ?? '',
       tutorId: pet.tutorId,
+      veterinarioResponsavelId: pet.veterinarioResponsavelId ?? '',
       dataObito: pet.dataObito ? paraValorInputData(pet.dataObito) : '',
     });
     setErroForm('');
     setModalAberto(true);
+  }
+
+  function abrirTransferencia(pet: Pet) {
+    setModalAberto(false);
+    setEmTransferencia({
+      id: pet.id,
+      nome: pet.nome,
+      veterinarioResponsavelId: pet.veterinarioResponsavelId,
+      nomeVeterinarioResponsavel: pet.nomeVeterinarioResponsavel,
+    });
   }
 
   async function aoEnviar(evento: FormEvent) {
@@ -124,6 +181,11 @@ export function Pacientes() {
     // HU-003, CA-2 / RN-001: o tutor é obrigatório e sinalizado antes do envio.
     if (!form.tutorId) {
       setErroForm('Selecione o tutor responsável pelo paciente.');
+      return;
+    }
+
+    if (!emEdicao && administraResponsaveis && !form.veterinarioResponsavelId) {
+      setErroForm('Selecione o veterinário que vai acompanhar o paciente.');
       return;
     }
 
@@ -155,10 +217,14 @@ export function Pacientes() {
     try {
       if (emEdicao) {
         // A edição envia a data de óbito junto: omiti-la apagaria o registro existente.
+        // O veterinário responsável não vai aqui: ele muda só pela transferência.
         await api.put(`/api/pets/${emEdicao.id}`, { ...corpo, dataObito: form.dataObito || null });
         setAviso('Paciente atualizado com sucesso.');
       } else {
-        await api.post('/api/pets', corpo);
+        await api.post('/api/pets', {
+          ...corpo,
+          veterinarioResponsavelId: form.veterinarioResponsavelId || null,
+        });
         setAviso('Paciente cadastrado com sucesso.');
       }
 
@@ -201,11 +267,17 @@ export function Pacientes() {
     }
   }
 
+  const filtrosAtivos = !!busca || !!tutorFiltrado || !!veterinarioFiltrado;
+
   return (
     <>
       <CabecalhoPagina
-        titulo="Pacientes"
-        descricao="Cadastro dos pets em tratamento e seus tutores responsáveis."
+        titulo={ehVeterinario ? 'Meus pacientes' : 'Pacientes'}
+        descricao={
+          ehVeterinario
+            ? 'Pacientes sob sua responsabilidade. Um paciente transferido para outro veterinário sai desta lista.'
+            : 'Cadastro dos pets em tratamento, com o tutor e o veterinário responsável por cada um.'
+        }
         acoes={
           podeEditar && (
             <button type="button" className="vc-botao-primario" onClick={abrirNovo}>
@@ -244,6 +316,23 @@ export function Pacientes() {
             />
           </div>
 
+          {administraResponsaveis && (
+            <select
+              className="vc-campo w-auto min-w-56"
+              value={veterinarioFiltrado}
+              onChange={(e) => filtrar(() => setVeterinarioFiltrado(e.target.value))}
+              aria-label="Filtrar por veterinário responsável"
+            >
+              <option value="">Todos os veterinários</option>
+              <option value={SEM_RESPONSAVEL}>Sem veterinário responsável</option>
+              {veterinarios.map((vet) => (
+                <option key={vet.id} value={vet.id}>
+                  {vet.nome}
+                </option>
+              ))}
+            </select>
+          )}
+
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"
@@ -274,11 +363,13 @@ export function Pacientes() {
         <Card>
           <SemDados
             icone={<PawPrint size={40} />}
-            titulo={busca || tutorFiltrado ? 'Nenhum paciente encontrado' : 'Nenhum paciente cadastrado'}
+            titulo={filtrosAtivos ? 'Nenhum paciente encontrado' : 'Nenhum paciente cadastrado'}
             descricao={
-              busca || tutorFiltrado
+              filtrosAtivos
                 ? 'Tente outro termo de busca ou limpe o filtro.'
-                : 'Cadastre o primeiro paciente para começar a registrar a evolução clínica.'
+                : ehVeterinario
+                  ? 'Os pacientes que você cadastrar, ou que forem transferidos para você, aparecem aqui.'
+                  : 'Cadastre o primeiro paciente para começar a registrar a evolução clínica.'
             }
             acao={
               podeEditar && !busca ? (
@@ -301,6 +392,7 @@ export function Pacientes() {
                   <th>Idade</th>
                   <th>Peso</th>
                   <th>Tutor</th>
+                  {!ehVeterinario && <th>Veterinário</th>}
                   <th>Status</th>
                   <th className="text-right">Ações</th>
                 </tr>
@@ -331,6 +423,15 @@ export function Pacientes() {
                       <span className="block">{pet.nomeTutor}</span>
                       {pet.telefoneTutor && <span className="text-xs text-slate-400">{pet.telefoneTutor}</span>}
                     </td>
+                    {!ehVeterinario && (
+                      <td>
+                        {pet.nomeVeterinarioResponsavel ? (
+                          pet.nomeVeterinarioResponsavel
+                        ) : (
+                          <Etiqueta className="bg-alerta-claro text-amber-800">Sem responsável</Etiqueta>
+                        )}
+                      </td>
+                    )}
                     <td>
                       {pet.dataObito ? (
                         <span title={`Óbito em ${formatarData(pet.dataObito)}`}>
@@ -368,6 +469,21 @@ export function Pacientes() {
                             title="Editar cadastro"
                           >
                             <Pencil size={16} />
+                          </button>
+                        )}
+
+                        {podeTransferir(pet) && !pet.dataObito && (
+                          <button
+                            type="button"
+                            onClick={() => abrirTransferencia(pet)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-brand-100 hover:text-brand"
+                            title={
+                              pet.veterinarioResponsavelId
+                                ? 'Transferir para outro veterinário'
+                                : 'Definir veterinário responsável'
+                            }
+                          >
+                            <ArrowRightLeft size={16} />
                           </button>
                         )}
 
@@ -412,7 +528,9 @@ export function Pacientes() {
         descricao={
           emEdicao
             ? 'A alteração preserva todo o histórico clínico já registrado.'
-            : 'O paciente precisa estar vinculado a um tutor responsável.'
+            : ehVeterinario
+              ? 'O paciente fica sob sua responsabilidade e precisa estar vinculado a um tutor.'
+              : 'O paciente precisa estar vinculado a um tutor e a um veterinário responsável.'
         }
         aoFechar={() => setModalAberto(false)}
       >
@@ -510,6 +628,48 @@ export function Pacientes() {
             </select>
           </Campo>
 
+          {/* No cadastro a administração escolhe o responsável; o veterinário assume sozinho. */}
+          {!emEdicao && administraResponsaveis && (
+            <Campo
+              rotulo="Veterinário responsável"
+              obrigatorio
+              dica="Só este profissional (além da administração) verá o paciente. Pode ser trocado depois pela transferência."
+            >
+              <select
+                className="vc-campo"
+                value={form.veterinarioResponsavelId}
+                onChange={(e) => setForm({ ...form, veterinarioResponsavelId: e.target.value })}
+              >
+                <option value="">Selecione o veterinário</option>
+                {veterinariosAtivos.map((vet) => (
+                  <option key={vet.id} value={vet.id}>
+                    {vet.nome}
+                    {vet.especialidade && ` — ${vet.especialidade}`}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
+
+          {/* Na edição o responsável é só leitura: a troca passa pela transferência, que leva a agenda junto. */}
+          {emEdicao && !ehVeterinario && (
+            <Campo rotulo="Veterinário responsável" dica="A troca é feita pela transferência, que leva junto os tratamentos e as sessões.">
+              <div className="flex items-center gap-2">
+                <input
+                  className="vc-campo"
+                  value={emEdicao.nomeVeterinarioResponsavel || 'Sem veterinário responsável'}
+                  readOnly
+                />
+                {podeTransferir(emEdicao) && !emEdicao.dataObito && (
+                  <button type="button" className="vc-botao-secundario shrink-0" onClick={() => abrirTransferencia(emEdicao)}>
+                    <ArrowRightLeft size={16} />
+                    {emEdicao.veterinarioResponsavelId ? 'Transferir' : 'Definir'}
+                  </button>
+                )}
+              </div>
+            </Campo>
+          )}
+
           {emEdicao && (
             <Campo
               rotulo="Data de óbito"
@@ -539,6 +699,16 @@ export function Pacientes() {
           </div>
         </form>
       </Modal>
+
+      <ModalTransferirPaciente
+        paciente={emTransferencia}
+        aoFechar={() => setEmTransferencia(null)}
+        aoTransferir={(mensagem) => {
+          setEmTransferencia(null);
+          setAviso(mensagem);
+          recarregar();
+        }}
+      />
     </>
   );
 }

@@ -160,6 +160,16 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - Confirmação e cancelamento pelo tutor, pela web ou pelo aplicativo.
 - Lembretes automáticos de confirmação e de vacinas a vencer, em segundo plano.
 
+### Pacientes
+- Cada paciente tem um tutor (RN-001) e um **veterinário responsável**. O veterinário vê
+  apenas os pacientes sob sua responsabilidade; administração e apoio veem a clínica inteira,
+  filtram por veterinário e enxergam os pacientes ainda sem responsável (cadastrados pelo
+  tutor no aplicativo).
+- **Transferência de paciente**: administração, apoio ou o próprio responsável passam o
+  paciente a outro veterinário. Os tratamentos em andamento e as sessões futuras vão junto,
+  o histórico fica assinado por quem o produziu, e o paciente sai da lista de quem o entregou.
+  Quem recebe, quem entrega e o tutor são notificados.
+
 ### Prontuário
 - Linha do tempo, evolução de peso e de dor, tratamentos, mídias e documentos.
 - Avaliação clínica com os cinco campos exigidos pela RN-010.
@@ -230,7 +240,7 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 | RN-005 Controle de acesso por perfil | `[Authorize(Roles = ...)]` nos controllers e verificação nos casos de uso |
 | RN-006 Bloqueio por tentativas | `AutenticarUsuarioUseCase`: 5 tentativas, bloqueio de 15 minutos |
 | RN-007 Unicidade de credenciais | Índice único em `Usuarios.Email` e verificação no cadastro |
-| RN-008 Visibilidade por perfil | Indicadores e relatórios filtram por veterinário quando o perfil é Veterinário |
+| RN-008 Visibilidade por perfil | Indicadores e relatórios filtram por veterinário quando o perfil é Veterinário. Cada paciente tem um **veterinário responsável** (`Pets.VeterinarioResponsavelId`): o profissional lista e acessa só os seus, e `AcessoAoPaciente` aplica a mesma regra em prontuário, vacinas, receitas, documentos, tratamentos e sessões. A troca é feita por `PATCH /api/pets/{id}/veterinario-responsavel` (`TransferirPacienteUseCase`), que leva junto os tratamentos em andamento e as sessões futuras, recusando a transferência se a agenda de quem recebe já estiver ocupada |
 | RN-009 Antecedência de cancelamento | `AtualizarStatusSessaoUseCase`, usando o prazo configurado na clínica |
 | RN-010 Campos obrigatórios da avaliação | `RegistrarAvaliacaoUseCase` aponta exatamente quais campos faltam |
 | RN-011 Restrição de mídias e documentos | Formato e tamanho validados antes do armazenamento |

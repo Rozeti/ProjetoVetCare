@@ -47,11 +47,12 @@ echo "  tutor: $TUTOR"
 
 echo "== Pacientes =="
 
-r=$(envia POST /api/pets "$ADMIN" "{\"nome\":\"Thor\",\"especie\":\"Cachorro\",\"raca\":\"Golden Retriever\",\"sexo\":\"Macho\",\"pelagem\":\"Dourada longa\",\"microchip\":\"982000123456789\",\"castrado\":true,\"dataNascimento\":\"2019-04-12\",\"pesoAtualKg\":32.5,\"tutorId\":\"$TUTOR\"}")
+# Cada paciente é acompanhado por um veterinário responsável; sem ele, a veterinária não o veria.
+r=$(envia POST /api/pets "$ADMIN" "{\"nome\":\"Thor\",\"especie\":\"Cachorro\",\"raca\":\"Golden Retriever\",\"sexo\":\"Macho\",\"pelagem\":\"Dourada longa\",\"microchip\":\"982000123456789\",\"castrado\":true,\"dataNascimento\":\"2019-04-12\",\"pesoAtualKg\":32.5,\"tutorId\":\"$TUTOR\",\"veterinarioResponsavelId\":\"$VET\"}")
 PET=$(val "$r" id)
 echo "  Thor: $PET"
 
-r=$(envia POST /api/pets "$ADMIN" "{\"nome\":\"Nina\",\"especie\":\"Gato\",\"raca\":\"Siamês\",\"sexo\":\"Fêmea\",\"castrado\":true,\"dataNascimento\":\"2022-09-05\",\"pesoAtualKg\":4.2,\"tutorId\":\"$TUTOR\"}")
+r=$(envia POST /api/pets "$ADMIN" "{\"nome\":\"Nina\",\"especie\":\"Gato\",\"raca\":\"Siamês\",\"sexo\":\"Fêmea\",\"castrado\":true,\"dataNascimento\":\"2022-09-05\",\"pesoAtualKg\":4.2,\"tutorId\":\"$TUTOR\",\"veterinarioResponsavelId\":\"$VET\"}")
 PET2=$(val "$r" id)
 echo "  Nina: $PET2"
 

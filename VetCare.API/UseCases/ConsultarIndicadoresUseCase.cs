@@ -60,7 +60,7 @@ namespace VetCare.API.UseCases
                 Escopo = filtroVeterinario.HasValue ? "Veterinario" : "Clinica",
                 AvaliacoesDoDia = await _avaliacoes.ContarPorPeriodo(_usuarioAtual.ClinicaId, filtroVeterinario, inicio, fim),
                 AtendimentosDoDia = await _atendimentos.ContarPorPeriodo(_usuarioAtual.ClinicaId, filtroVeterinario, inicio, fim),
-                PacientesAtivos = await _pets.ContarAtivos(_usuarioAtual.ClinicaId),
+                PacientesAtivos = await _pets.ContarAtivos(_usuarioAtual.ClinicaId, filtroVeterinario),
                 MensagensNaoLidas = await _mensagens.ContarNaoLidas(_usuarioAtual.Id),
                 NotificacoesNaoVisualizadas = await _notificacoes.ContarNaoVisualizadas(_usuarioAtual.Id)
             };

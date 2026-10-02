@@ -61,8 +61,9 @@ namespace VetCare.API.UseCases
                 return Resultado<ProntuarioDTO>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            // HU-013, CA-1 e CA-2: o tutor só acessa o prontuário dos próprios pets.
-            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            // HU-013, CA-1 e CA-2: o tutor só acessa o prontuário dos próprios pets, e o
+            // veterinário só o dos pacientes sob sua responsabilidade.
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
                 return Resultado<ProntuarioDTO>.NaoAutorizado("Você não tem acesso ao prontuário deste paciente.");
             }
@@ -101,6 +102,8 @@ namespace VetCare.API.UseCases
                 IdadeDescritiva = GerenciarPacientesUseCase.DescreverIdade(pet.DataNascimento),
                 NomeTutor = pet.Tutor?.Usuario?.Nome ?? string.Empty,
                 TelefoneTutor = pet.Tutor?.Telefone ?? string.Empty,
+                VeterinarioResponsavelId = pet.VeterinarioResponsavelId,
+                NomeVeterinarioResponsavel = pet.VeterinarioResponsavel?.Usuario?.Nome ?? string.Empty,
                 DataCriacao = prontuario.DataCriacao,
                 UltimaAtualizacao = prontuario.UltimaAtualizacao,
                 DataObito = pet.DataObito,

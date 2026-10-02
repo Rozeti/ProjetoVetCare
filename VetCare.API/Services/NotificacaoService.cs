@@ -123,6 +123,39 @@ namespace VetCare.API.Services
                 LinkProntuario(pacienteId));
         }
 
+        /// <summary>O veterinário que passa a acompanhar o paciente é avisado na hora.</summary>
+        public Task NotificarPacienteRecebido(Guid veterinarioUsuarioId, string nomePaciente, Guid pacienteId)
+        {
+            return Registrar(
+                veterinarioUsuarioId,
+                TiposDeNotificacao.PacienteTransferido,
+                "Novo paciente sob sua responsabilidade",
+                $"{nomePaciente} foi transferido para você. Os tratamentos em andamento e as sessões futuras já estão na sua agenda.",
+                LinkProntuario(pacienteId));
+        }
+
+        /// <summary>Quem deixa de acompanhar o paciente fica sabendo para onde ele foi.</summary>
+        public Task NotificarPacienteTransferido(Guid veterinarioUsuarioId, string nomePaciente, string nomeNovoVeterinario)
+        {
+            return Registrar(
+                veterinarioUsuarioId,
+                TiposDeNotificacao.PacienteTransferido,
+                "Paciente transferido",
+                $"{nomePaciente} passou a ser acompanhado por {nomeNovoVeterinario} e saiu da sua lista de pacientes.",
+                null);
+        }
+
+        /// <summary>O tutor sabe quem é o profissional que cuida do seu pet.</summary>
+        public Task NotificarNovoVeterinarioResponsavel(Guid tutorUsuarioId, string nomePaciente, string nomeVeterinario, Guid pacienteId)
+        {
+            return Registrar(
+                tutorUsuarioId,
+                TiposDeNotificacao.PacienteTransferido,
+                "Novo veterinário responsável",
+                $"{nomeVeterinario} passou a ser o veterinário responsável por {nomePaciente}.",
+                LinkProntuario(pacienteId));
+        }
+
         private async Task Registrar(Guid usuarioId, string tipo, string titulo, string conteudo, string? link)
         {
             if (usuarioId == Guid.Empty)

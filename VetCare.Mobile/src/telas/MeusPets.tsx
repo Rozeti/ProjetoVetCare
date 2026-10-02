@@ -159,6 +159,9 @@ export function MeusPets() {
                       <Text style={estilos.detalhePet}>
                         {pet.idadeDescritiva} · {formatarPeso(pet.pesoAtualKg)}
                       </Text>
+                      {!!pet.nomeVeterinarioResponsavel && (
+                        <Text style={estilos.detalhePet}>Dr(a). {pet.nomeVeterinarioResponsavel}</Text>
+                      )}
                     </View>
 
                     <Icone nome="seta" tamanho={26} cor={cores.textoSuave} />

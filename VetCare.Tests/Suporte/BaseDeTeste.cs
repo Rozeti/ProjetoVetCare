@@ -52,6 +52,8 @@ namespace VetCare.Tests.Suporte
             {
                 ClinicaId = Clinica.Id,
                 TutorId = Tutor.Id,
+                // O veterinário do cenário é quem acompanha o paciente; é ele quem o enxerga.
+                VeterinarioResponsavelId = Veterinario.Id,
                 Nome = "Paciente de Teste",
                 Especie = "Cachorro",
                 Raca = "SRD",

@@ -40,7 +40,9 @@ echo "Ambiente da API: $AMBIENTE"
 echo
 
 PET=$(val "$(get '/api/pets?busca=Thor' "$ADMIN")" id)
-VET=$(val "$(get /api/veterinarios "$ADMIN")" id)
+# Com um veterinário responsável por paciente, as sessões de Thor só entram na agenda dele.
+VET=$(val "$(get '/api/pets?busca=Thor' "$ADMIN")" veterinarioResponsavelId)
+[ -z "$VET" ] && VET=$(val "$(get /api/veterinarios "$ADMIN")" id)
 
 echo "== Paginação (RNF-004) =="
 r=$(get '/api/pets?pagina=1&tamanho=1' "$ADMIN")

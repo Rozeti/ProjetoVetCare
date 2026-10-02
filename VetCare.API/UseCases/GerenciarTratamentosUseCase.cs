@@ -44,17 +44,34 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoEncontrado("Paciente não encontrado.");
             }
 
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado<TratamentoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
             if (!pet.Ativo)
             {
                 return Resultado<TratamentoDTO>.Invalido(
                     "Este paciente está inativo. Reative o cadastro antes de iniciar um tratamento.");
             }
 
-            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? Guid.Empty;
+            // O tratamento é conduzido pelo veterinário responsável pelo paciente. Sem ninguém
+            // designado ainda (cadastro vindo do aplicativo), o primeiro tratamento define quem é.
+            var veterinarioId = dto.VeterinarioId
+                                ?? pet.VeterinarioResponsavelId
+                                ?? _usuarioAtual.VeterinarioId
+                                ?? Guid.Empty;
 
             if (veterinarioId == Guid.Empty)
             {
                 return Resultado<TratamentoDTO>.Invalido("Informe o veterinário responsável pelo tratamento.");
+            }
+
+            if (pet.VeterinarioResponsavelId.HasValue && pet.VeterinarioResponsavelId.Value != veterinarioId)
+            {
+                return Resultado<TratamentoDTO>.Invalido(
+                    $"O veterinário responsável por {pet.Nome} é {pet.VeterinarioResponsavel?.Usuario?.Nome ?? "outro profissional"}. " +
+                    "Transfira o paciente antes de abrir um tratamento com outro veterinário.");
             }
 
             var veterinario = await _veterinarios.ObterPorId(veterinarioId);
@@ -62,6 +79,13 @@ namespace VetCare.API.UseCases
             if (veterinario == null || veterinario.Usuario?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<TratamentoDTO>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
+            }
+
+            if (!pet.VeterinarioResponsavelId.HasValue)
+            {
+                pet.VeterinarioResponsavelId = veterinario.Id;
+                pet.VeterinarioResponsavel = veterinario;
+                _pets.Atualizar(pet);
             }
 
             var dataInicio = dto.DataInicio == default
@@ -101,9 +125,9 @@ namespace VetCare.API.UseCases
                 return Resultado<List<TratamentoDTO>>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && pet.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
-                return Resultado<List<TratamentoDTO>>.NaoAutorizado("Você não tem acesso a este paciente.");
+                return Resultado<List<TratamentoDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var tratamentos = await _tratamentos.ObterPorPaciente(pacienteId);
@@ -134,7 +158,7 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoEncontrado("Tratamento não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && tratamento.Paciente?.TutorId != _usuarioAtual.TutorId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
             {
                 return Resultado<TratamentoDTO>.NaoAutorizado("Você não tem acesso a este tratamento.");
             }

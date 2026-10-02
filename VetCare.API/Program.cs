@@ -353,6 +353,7 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<GerenciarVeterinariosUseCase>();
     servicos.AddScoped<GerenciarClinicaUseCase>();
     servicos.AddScoped<GerenciarPacientesUseCase>();
+    servicos.AddScoped<TransferirPacienteUseCase>();
     servicos.AddScoped<GerenciarAlergiasUseCase>();
     servicos.AddScoped<GerenciarVacinasUseCase>();
     servicos.AddScoped<GerenciarTratamentosUseCase>();

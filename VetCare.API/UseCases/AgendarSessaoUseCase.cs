@@ -76,6 +76,18 @@ namespace VetCare.API.UseCases
                     "Não é possível agendar sessões para um tratamento que não está em andamento.");
             }
 
+            // O paciente é acompanhado por um único veterinário: as sessões entram na agenda
+            // dele. Para outro profissional atender, o paciente precisa ser transferido antes.
+            var responsavelId = tratamento.Paciente?.VeterinarioResponsavelId;
+
+            if (responsavelId.HasValue && responsavelId.Value != veterinarioId)
+            {
+                return Resultado<SessaoDTO>.Invalido(
+                    $"As sessões de {tratamento.Paciente?.Nome} ficam na agenda do veterinário responsável " +
+                    $"({tratamento.Paciente?.VeterinarioResponsavel?.Usuario?.Nome ?? "outro profissional"}). " +
+                    "Transfira o paciente antes de agendar com outro veterinário.");
+            }
+
             var dataHora = NormalizarParaUtc(dto.DataHora);
 
             // HU-004, CA-5: agendamento retroativo é bloqueado.

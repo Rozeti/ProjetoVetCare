@@ -6,9 +6,9 @@ em execução, comprovando o comportamento ponta a ponta.
 
 | Roteiro | Verificações | Precisa de |
 |---|---|---|
-| `teste-regras-negocio.sh` | 46 | API em `http://localhost:5265` |
+| `teste-regras-negocio.sh` | 47 | API em `http://localhost:5265` |
 | `teste-api-mobile.sh` | 26 | API + dados de demonstração |
-| `teste-funcionalidades-novas.sh` | 40 a 46 | API + dados de demonstração |
+| `teste-funcionalidades-novas.sh` | 41 a 47 | API + dados de demonstração |
 | `teste-tempo-real.sh` | 27 | API + dados de demonstração |
 | `teste-navegador.mjs` | 20 | API + front-end em `http://localhost:5173` + Microsoft Edge |
 | `criar-dados-demonstracao.sh` | — | API |

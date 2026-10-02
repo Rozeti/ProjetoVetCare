@@ -193,7 +193,7 @@ namespace VetCare.Tests
             await Contexto.SaveChangesAsync();
 
             var pagina = await new PetRepository(Contexto)
-                .Listar(Clinica.Id, null, null, null, new ParametrosPagina { Pagina = 1, Tamanho = 3 });
+                .Listar(Clinica.Id, new FiltroDePacientes(), new ParametrosPagina { Pagina = 1, Tamanho = 3 });
 
             pagina.Itens.Should().HaveCount(3);
             pagina.Total.Should().Be(8, "sete criados aqui mais o paciente do cenário base");
