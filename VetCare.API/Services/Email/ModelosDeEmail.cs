@@ -114,28 +114,6 @@ namespace VetCare.API.Services.Email
                     "imediatamente e avise a clínica.");
         }
 
-        /// <summary>
-        /// Pedido pelo administrador na tela de configurações para conferir se o servidor de
-        /// e-mail está funcionando antes de alguém depender dele numa recuperação de senha.
-        /// </summary>
-        public MensagemDeEmail Teste(Usuario usuario)
-        {
-            return Montar(
-                usuario,
-                assunto: "E-mail de teste",
-                titulo: "O envio de e-mails está funcionando",
-                paragrafos: new[]
-                {
-                    $"Esta mensagem foi enviada pelo {_aplicacao.NomeDoSistema} a pedido de um administrador da " +
-                    $"{_aplicacao.NomeDaClinica}, em {DateTime.Now:dd/MM/yyyy 'às' HH:mm}.",
-                    "Se você está lendo isto, o servidor de e-mail está configurado corretamente. A recuperação de senha, " +
-                    "as boas-vindas e os avisos do tratamento chegarão por este mesmo caminho.",
-                },
-                botao: new Botao($"Abrir o {_aplicacao.NomeDoSistema}", _aplicacao.LinkDoPortal("/configuracoes")),
-                codigo: null,
-                observacao: "Nenhuma ação é necessária. Este e-mail existe apenas para confirmar a configuração.");
-        }
-
         /// <summary>HU-015: cada notificação do tratamento chega também por e-mail, com atalho para o portal.</summary>
         public MensagemDeEmail Notificacao(Usuario usuario, Notificacao notificacao)
         {

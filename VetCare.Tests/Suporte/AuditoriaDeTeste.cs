@@ -83,9 +83,6 @@ namespace VetCare.Tests.Suporte
 
         public string Descricao => "e-mail de teste";
 
-        /// <summary>Por padrão se comporta como um servidor real; o teste desliga para simular a caixa de saída local.</summary>
-        public bool EnviaDeVerdade { get; set; } = true;
-
         public Task Enviar(MensagemDeEmail mensagem, CancellationToken cancelamento)
         {
             if (FalharCom != null)

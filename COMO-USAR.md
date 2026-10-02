@@ -487,10 +487,20 @@ passo com o Gmail:
    docker compose up -d api
    ```
 
-5. Entre no portal como administrador, abra **Configurações** e, no cartão **Envio de
-   e-mails**, clique em **Enviar e-mail de teste**. A resposta aparece na hora: ou o e-mail
-   chegou na sua caixa de entrada, ou a tela diz exatamente o que o servidor recusou (senha
-   de app errada, porta trocada etc.).
+5. Confira se o Gmail aceitou a conta:
+
+   ```
+   docker compose logs api | findstr "e-mail"
+   ```
+
+   A linha esperada é `Servidor de e-mail verificado: conexão e autenticação aceitas`. Se
+   aparecer `O servidor de e-mail não aceitou a configuração`, a mesma linha diz o que
+   corrigir (senha de app errada, porta trocada etc.). A partir daí, use "Esqueci minha
+   senha" com uma conta que tenha e-mail de verdade: a mensagem chega em segundos.
+
+Os e-mails só chegam a endereços que existem. A conta inicial `admin@vetcare.com` é
+inventada, então tudo que for enviado a ela volta com "endereço não encontrado"; cadastre
+os usuários de verdade com os e-mails deles.
 
 Outros provedores funcionam do mesmo jeito, só mudando o servidor: Outlook/Hotmail
 (`smtp.office365.com`, também com senha de app), Brevo (`smtp-relay.brevo.com`, gratuito até
@@ -743,8 +753,9 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 | "Muitas tentativas" no login | Proteção contra ataque de senha | Espere 1 minuto |
 | "Conta bloqueada" no login | 5 senhas erradas seguidas (RN-006) | Espere 15 minutos, ou peça a um administrador para redefinir |
 | O celular não acha a API | Celular em outra rede | Conecte no mesmo Wi-Fi do computador |
-| "Esqueci minha senha" não manda e-mail | `SMTP_HOST` vazio no `.env` | O e-mail está em `emails-enviados` (Parte 5½); ou configure o servidor de e-mail e confira em Configurações → "Enviar e-mail de teste" |
-| "Enviar e-mail de teste" diz que o servidor recusou usuário ou senha | Senha normal da conta no lugar da "senha de app" | Gere a senha de app (Parte 5½) e rode `docker compose up -d api` |
+| "Esqueci minha senha" não manda e-mail | `SMTP_HOST` vazio no `.env` | O e-mail está em `emails-enviados` (Parte 5½); ou configure o servidor de e-mail |
+| O log da API diz que o servidor de e-mail recusou usuário ou senha | Senha normal da conta no lugar da "senha de app" | Gere a senha de app (Parte 5½) e rode `docker compose up -d api` |
+| O Gmail devolve "Endereço não encontrado" | O destinatário é um e-mail inventado, como `admin@vetcare.com` | Cadastre o usuário com um e-mail que exista |
 | O celular não recebe notificações com o app fechado | Expo Go no Android, ou `projectId` ausente | Veja "Notificações no celular do tutor" na Parte 5½ |
 | Foto ou documento não abre e a API responde 403 | O link assinado expirou (dura 4 horas) | Recarregue a página do prontuário: os links são gerados de novo |
 | Tudo travou e você quer recomeçar | — | `docker compose down` e depois `docker compose up -d` (**sem** `-v`, senão apaga os dados) |

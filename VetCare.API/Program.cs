@@ -330,9 +330,6 @@ static void AdicionarServicos(IServiceCollection servicos, IConfiguration config
     servicos.AddSingleton<ModelosDeEmail>();
     servicos.AddSingleton<FilaDeEmails>();
 
-    // Situação do canal de e-mail e envio de teste, para o administrador conferir a configuração.
-    servicos.AddScoped<DiagnosticoDeEmail>();
-
     // Push: o serviço da Expo entrega no celular do tutor; o sinal acorda o entregador.
     servicos.AddSingleton<SinalDeNotificacoes>();
     servicos.AddSingleton<IServicoDePush, ServicoDePushExpo>();

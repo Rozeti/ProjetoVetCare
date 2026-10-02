@@ -1,20 +1,16 @@
 using System.Net.Sockets;
 using FluentAssertions;
 using MailKit.Security;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using VetCare.API.Data;
 using VetCare.API.Services.Email;
-using VetCare.Tests.Suporte;
 
 namespace VetCare.Tests
 {
     /// <summary>
     /// Para o e-mail sair de verdade basta preencher servidor, usuário e senha: o remetente
-    /// segue a conta autenticada quando ninguém o definiu, as falhas do provedor chegam em
-    /// português e o administrador consegue testar o canal pela tela de configurações.
+    /// segue a conta autenticada quando ninguém o definiu, e as falhas do provedor chegam
+    /// ao log em português, dizendo o que corrigir.
     /// </summary>
-    public class ConfiguracaoDeEmailTests : BaseDeTeste
+    public class ConfiguracaoDeEmailTests
     {
         [Fact]
         public void Sem_smtp_o_remetente_de_fabrica_e_mantido()
@@ -94,76 +90,5 @@ namespace VetCare.Tests
             FalhasDeEmail.Descrever(new InvalidOperationException("algo inesperado"))
                 .Should().Contain("algo inesperado");
         }
-
-        [Fact]
-        public async Task Envio_de_teste_vai_para_o_email_do_proprio_administrador()
-        {
-            var email = new EmailDeTeste();
-            var diagnostico = CriarDiagnostico(email, new OpcoesDeEmail
-            {
-                Smtp = { Host = "smtp.gmail.com", Usuario = "clinica@gmail.com", Senha = "x" }
-            });
-
-            var resultado = await diagnostico.EnviarTeste(CancellationToken.None);
-
-            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
-            resultado.Dados!.Destinatario.Should().Be(UsuarioAdministrador.Email);
-            resultado.Dados.Canal.Should().Be("smtp");
-            resultado.Dados.Mensagem.Should().Contain(UsuarioAdministrador.Email);
-
-            email.Enviados.Should().ContainSingle();
-            email.Enviados[0].Destinatario.Should().Be(UsuarioAdministrador.Email);
-            email.Enviados[0].Assunto.Should().Contain("E-mail de teste");
-            // O HTML codifica os acentos (est&#225;); a versão em texto é a legível.
-            email.Enviados[0].CorpoTexto.Should().Contain("está funcionando");
-        }
-
-        [Fact]
-        public async Task Envio_de_teste_sem_servidor_avisa_que_o_email_ficou_na_pasta_local()
-        {
-            var diagnostico = CriarDiagnostico(new EmailDeTeste { EnviaDeVerdade = false }, new OpcoesDeEmail());
-
-            var resultado = await diagnostico.EnviarTeste(CancellationToken.None);
-
-            resultado.Sucesso.Should().BeTrue();
-            resultado.Dados!.Canal.Should().Be("local");
-            resultado.Dados.Mensagem.Should().Contain("emails-enviados");
-        }
-
-        [Fact]
-        public async Task Recusa_do_servidor_volta_como_erro_de_validacao_explicado()
-        {
-            var email = new EmailDeTeste { FalharCom = "SMTP fora do ar" };
-            var diagnostico = CriarDiagnostico(email, new OpcoesDeEmail { Smtp = { Host = "smtp.exemplo.com" } });
-
-            var resultado = await diagnostico.EnviarTeste(CancellationToken.None);
-
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Mensagem.Should().Contain("SMTP fora do ar");
-        }
-
-        [Fact]
-        public void Situacao_descreve_o_canal_e_o_remetente_efetivo()
-        {
-            var diagnostico = CriarDiagnostico(new EmailDeTeste(), new OpcoesDeEmail
-            {
-                Smtp = { Host = "smtp.gmail.com", Porta = 587, Usuario = "clinica@gmail.com" }
-            });
-
-            var situacao = diagnostico.Situacao();
-
-            situacao.Canal.Should().Be("smtp");
-            situacao.EnviaDeVerdade.Should().BeTrue();
-            situacao.Servidor.Should().Be("smtp.gmail.com:587");
-            situacao.Remetente.Should().Be("clinica@gmail.com");
-        }
-
-        private DiagnosticoDeEmail CriarDiagnostico(EmailDeTeste email, OpcoesDeEmail opcoes) =>
-            new(email,
-                Dependencias.ModelosDeEmail(),
-                Options.Create(opcoes),
-                new UsuarioRepository(Contexto),
-                ComoAdministrador(),
-                NullLogger<DiagnosticoDeEmail>.Instance);
     }
 }
