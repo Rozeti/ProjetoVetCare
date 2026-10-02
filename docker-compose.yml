@@ -3,6 +3,13 @@
 name: vetcare
 
 services:
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "8081:8080"
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
