@@ -52,8 +52,12 @@ Os dois canais funcionam sem configuração nenhuma, em modo de demonstração:
 
 - **E-mail** — sem `SMTP_HOST` no `.env`, cada mensagem (recuperação de senha, boas-vindas,
   avisos do tratamento) é gravada como um arquivo `.html` na pasta `emails-enviados` da API.
-  Para enviar de verdade, preencha `SMTP_HOST`, `SMTP_PORTA`, `SMTP_USUARIO`, `SMTP_SENHA` e
-  `EMAIL_REMETENTE`; o `.env.example` traz os valores dos provedores mais comuns.
+  Para enviar de verdade, preencha `SMTP_HOST`, `SMTP_USUARIO` e `SMTP_SENHA` (uma conta
+  comum do Gmail com "senha de app" basta; o remetente segue a conta do SMTP quando
+  `EMAIL_REMETENTE` fica em branco). A API verifica a conexão na subida, e o administrador
+  confere o canal em **Configurações → Envio de e-mails → Enviar e-mail de teste**
+  (`GET /api/email` e `POST /api/email/teste`). O `.env.example` traz os valores dos
+  provedores mais comuns.
 - **Push no celular** — a API usa o serviço de push da Expo e não exige credencial. O
   aplicativo precisa do identificador do projeto Expo em `extra.eas.projectId` (gerado por
   `npx eas init`) e de um build de desenvolvimento ou de loja: o Expo Go, no Android, não

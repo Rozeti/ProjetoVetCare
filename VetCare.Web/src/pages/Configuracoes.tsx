@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, MailCheck, Save, Send, ServerOff } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
-import type { Clinica } from '../types';
-import { Alerta, CabecalhoPagina, Campo, Card, Carregando } from '../components/ui';
+import type { Clinica, SituacaoEmail, TesteDeEmail } from '../types';
+import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta } from '../components/ui';
 
 /**
  * Parâmetros operacionais da clínica. Os valores aqui alimentam regras de negócio:
@@ -170,6 +170,136 @@ export function Configuracoes() {
           </button>
         </div>
       </form>
+
+      <div className="mt-6 max-w-3xl">
+        <CartaoDeEmail />
+      </div>
     </>
+  );
+}
+
+/**
+ * Situação do canal de e-mail e envio de teste. O servidor é definido no `.env` da
+ * API (não há como trocá-lo pela tela, de propósito: a senha do SMTP não deve passar
+ * pelo navegador), mas o administrador consegue conferir aqui se ele está funcionando.
+ */
+function CartaoDeEmail() {
+  const [situacao, setSituacao] = useState<SituacaoEmail | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [testando, setTestando] = useState(false);
+  const [resultado, setResultado] = useState<TesteDeEmail | null>(null);
+  const [erroDoTeste, setErroDoTeste] = useState('');
+
+  useEffect(() => {
+    api
+      .get<SituacaoEmail>('/api/email')
+      .then(({ data }) => setSituacao(data))
+      .catch((falha) => setErro(mensagemDeErro(falha, 'Não foi possível consultar a situação do e-mail.')))
+      .finally(() => setCarregando(false));
+  }, []);
+
+  async function enviarTeste() {
+    setResultado(null);
+    setErroDoTeste('');
+    setTestando(true);
+
+    try {
+      const { data } = await api.post<TesteDeEmail>('/api/email/teste');
+      setResultado(data);
+    } catch (falha) {
+      setErroDoTeste(mensagemDeErro(falha, 'Não foi possível enviar o e-mail de teste.'));
+    } finally {
+      setTestando(false);
+    }
+  }
+
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="mb-1 font-semibold text-slate-900">Envio de e-mails</h2>
+          <p className="text-sm text-slate-500">
+            Recuperação de senha, boas-vindas e avisos do tratamento saem por este canal.
+          </p>
+        </div>
+
+        {situacao && (
+          <Etiqueta
+            className={
+              situacao.enviaDeVerdade ? 'bg-sucesso-claro text-emerald-800' : 'bg-alerta-claro text-amber-800'
+            }
+          >
+            {situacao.enviaDeVerdade ? <MailCheck size={14} /> : <ServerOff size={14} />}
+            {situacao.enviaDeVerdade ? 'Servidor configurado' : 'Sem servidor de e-mail'}
+          </Etiqueta>
+        )}
+      </div>
+
+      {carregando ? (
+        <Carregando texto="Consultando o canal de e-mail..." />
+      ) : erro || !situacao ? (
+        <div className="mt-4">
+          <Alerta tipo="erro">{erro || 'Situação do e-mail indisponível.'}</Alerta>
+        </div>
+      ) : (
+        <>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Servidor</dt>
+              <dd className="mt-0.5 break-all font-medium text-slate-800">
+                {situacao.servidor ?? 'Nenhum — e-mails gravados na pasta emails-enviados'}
+              </dd>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Remetente</dt>
+              <dd className="mt-0.5 break-all font-medium text-slate-800">
+                {situacao.nomeRemetente} &lt;{situacao.remetente}&gt;
+              </dd>
+            </div>
+          </dl>
+
+          {!situacao.enviaDeVerdade && (
+            <div className="mt-4">
+              <Alerta tipo="aviso">
+                Nenhum servidor de e-mail está configurado, então as mensagens não chegam a ninguém: elas ficam
+                gravadas na pasta <strong>emails-enviados</strong> da API. Para enviar de verdade, preencha{' '}
+                <strong>SMTP_HOST</strong>, <strong>SMTP_USUARIO</strong> e <strong>SMTP_SENHA</strong> no
+                arquivo <strong>.env</strong> e suba a API novamente. O guia COMO-USAR explica o passo a passo
+                com o Gmail.
+              </Alerta>
+            </div>
+          )}
+
+          {resultado && (
+            <div className="mt-4">
+              <Alerta tipo="sucesso" aoFechar={() => setResultado(null)}>
+                {resultado.mensagem}
+              </Alerta>
+            </div>
+          )}
+
+          {erroDoTeste && (
+            <div className="mt-4">
+              <Alerta tipo="erro" aoFechar={() => setErroDoTeste('')}>
+                {erroDoTeste}
+              </Alerta>
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+            <p className="text-xs text-slate-500">
+              O e-mail de teste vai para o endereço da sua própria conta e responde na hora se o servidor aceitou.
+            </p>
+
+            <button type="button" className="vc-botao-secundario" onClick={enviarTeste} disabled={testando}>
+              {testando ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+              Enviar e-mail de teste
+            </button>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }

@@ -17,6 +17,16 @@ namespace VetCare.API.Services.Email
         /// <summary>Descrição curta do canal, para o log de inicialização ("SMTP smtp.gmail.com:587").</summary>
         string Descricao { get; }
 
+        /// <summary>Verdadeiro quando os e-mails saem de fato para a internet, e não para uma pasta local.</summary>
+        bool EnviaDeVerdade => false;
+
         Task Enviar(MensagemDeEmail mensagem, CancellationToken cancelamento);
+
+        /// <summary>
+        /// Confere, sem enviar nada, se o canal está pronto: no SMTP isso significa conectar e
+        /// autenticar. Uma senha errada aparece aqui, na subida da API, e não só quando alguém
+        /// pede a recuperação de senha. Lança exceção quando a verificação falha.
+        /// </summary>
+        Task Verificar(CancellationToken cancelamento) => Task.CompletedTask;
     }
 }

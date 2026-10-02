@@ -50,14 +50,21 @@ export function SemDados({
   titulo,
   descricao,
   acao,
+  compacto = false,
 }: {
   icone?: ReactNode;
   titulo: string;
   descricao?: string;
   acao?: ReactNode;
+  /** Versão mais baixa, para listas dentro de modais e cartões pequenos. */
+  compacto?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
+    <div
+      className={`flex flex-col items-center justify-center px-6 text-center ${
+        compacto ? 'rounded-xl border border-dashed border-slate-200 py-8' : 'py-14'
+      }`}
+    >
       <div className="mb-3 text-slate-300">{icone ?? <Info size={40} />}</div>
       <p className="font-semibold text-slate-700">{titulo}</p>
       {descricao && <p className="mt-1 text-sm text-slate-500 max-w-md">{descricao}</p>}

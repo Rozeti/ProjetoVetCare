@@ -436,6 +436,24 @@ export interface Clinica {
   duracaoSessaoMinutos: number;
 }
 
+/** Como os e-mails estão saindo do sistema; só o administrador consulta. */
+export interface SituacaoEmail {
+  canal: 'smtp' | 'local';
+  enviaDeVerdade: boolean;
+  /** Ex.: "smtp.gmail.com:587". Nulo quando nenhum servidor está configurado. */
+  servidor: string | null;
+  remetente: string;
+  nomeRemetente: string;
+  descricao: string;
+}
+
+export interface TesteDeEmail {
+  destinatario: string;
+  canal: 'smtp' | 'local';
+  mensagem: string;
+  duracaoMs: number;
+}
+
 /**
  * Recursos que a API anuncia quando algo muda no banco. O nome vem do controller
  * correspondente em minúsculas, então `/api/sessoes` publica em `sessoes`.

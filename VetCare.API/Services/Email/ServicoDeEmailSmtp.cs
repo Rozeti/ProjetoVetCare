@@ -1,3 +1,4 @@
+using MailKit;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
@@ -19,12 +20,15 @@ namespace VetCare.API.Services.Email
             _opcoes = opcoes.Value;
         }
 
-        public string Descricao => $"SMTP {_opcoes.Smtp.Host}:{_opcoes.Smtp.Porta} ({_opcoes.Smtp.Seguranca})";
+        public string Descricao =>
+            $"SMTP {_opcoes.Smtp.Host}:{_opcoes.Smtp.Porta} ({_opcoes.Smtp.Seguranca}), remetente {_opcoes.RemetenteEfetivo}";
+
+        public bool EnviaDeVerdade => true;
 
         public async Task Enviar(MensagemDeEmail mensagem, CancellationToken cancelamento)
         {
             var mime = new MimeMessage();
-            mime.From.Add(new MailboxAddress(_opcoes.NomeRemetente, _opcoes.Remetente));
+            mime.From.Add(new MailboxAddress(_opcoes.NomeRemetente, _opcoes.RemetenteEfetivo));
             mime.To.Add(new MailboxAddress(mensagem.NomeDestinatario, mensagem.Destinatario));
             mime.Subject = mensagem.Assunto;
 
@@ -34,20 +38,39 @@ namespace VetCare.API.Services.Email
                 TextBody = mensagem.CorpoTexto
             }.ToMessageBody();
 
-            using var cliente = new SmtpClient
-            {
-                Timeout = (int)TimeSpan.FromSeconds(_opcoes.Smtp.TempoLimiteSegundos).TotalMilliseconds
-            };
+            using var cliente = CriarCliente();
 
+            await ConectarEAutenticar(cliente, cancelamento);
+            await cliente.SendAsync(mime, cancelamento);
+            await cliente.DisconnectAsync(true, cancelamento);
+        }
+
+        /// <summary>Conecta e autentica sem enviar nada: é o bastante para saber se a configuração está certa.</summary>
+        public async Task Verificar(CancellationToken cancelamento)
+        {
+            using var cliente = CriarCliente();
+
+            await ConectarEAutenticar(cliente, cancelamento);
+            await cliente.DisconnectAsync(true, cancelamento);
+        }
+
+        private SmtpClient CriarCliente() => new()
+        {
+            Timeout = (int)TimeSpan.FromSeconds(_opcoes.Smtp.TempoLimiteSegundos).TotalMilliseconds
+        };
+
+        private async Task ConectarEAutenticar(SmtpClient cliente, CancellationToken cancelamento)
+        {
             await cliente.ConnectAsync(_opcoes.Smtp.Host, _opcoes.Smtp.Porta, ResolverSeguranca(), cancelamento);
 
-            if (!string.IsNullOrWhiteSpace(_opcoes.Smtp.Usuario))
+            // Um relay interno da clínica (ou um servidor de testes) pode não pedir senha;
+            // nesse caso o usuário informado é simplesmente ignorado em vez de derrubar o envio.
+            var servidorAceitaLogin = cliente.Capabilities.HasFlag(SmtpCapabilities.Authentication);
+
+            if (!string.IsNullOrWhiteSpace(_opcoes.Smtp.Usuario) && servidorAceitaLogin)
             {
                 await cliente.AuthenticateAsync(_opcoes.Smtp.Usuario, _opcoes.Smtp.Senha, cancelamento);
             }
-
-            await cliente.SendAsync(mime, cancelamento);
-            await cliente.DisconnectAsync(true, cancelamento);
         }
 
         private SecureSocketOptions ResolverSeguranca() => _opcoes.Smtp.Seguranca.Trim().ToLowerInvariant() switch

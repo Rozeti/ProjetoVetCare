@@ -463,17 +463,49 @@ desenvolvimento (Parte 4) a pasta fica direto em `VetCare.API/emails-enviados`, 
 
 ### Enviar e-mails de verdade
 
-Abra o `.env` e preencha a parte de e-mail com os dados do seu provedor. Com o Gmail, por
-exemplo: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORTA=587`, `SMTP_USUARIO=` seu e-mail,
-`SMTP_SENHA=` uma "senha de app" (gerada em Conta Google → Segurança → Senhas de app) e
-`EMAIL_REMETENTE=` o mesmo e-mail. Depois:
+Não é preciso pagar nada: o sistema envia por qualquer servidor SMTP, e uma conta comum do
+Gmail serve (limite de cerca de 500 e-mails por dia, mais do que uma clínica usa). O passo a
+passo com o Gmail:
 
-```
-docker compose up -d api
-```
+1. Entre na sua Conta Google → **Segurança** → ative a **Verificação em duas etapas** (o
+   Google só libera senhas de app para contas com ela ligada).
+2. Ainda em Segurança, procure **Senhas de app**, crie uma com o nome "VetCare" e copie as
+   16 letras que aparecem. É essa senha que vai no `.env` — **não** a senha normal da conta.
+3. Abra o `.env` e preencha:
 
-Se a API não conseguir falar com o servidor de e-mail, ela guarda a mensagem e tenta de
-novo sozinha, algumas vezes, antes de desistir — e registra o motivo em `docker compose logs api`.
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_USUARIO=seu-email@gmail.com
+   SMTP_SENHA=as 16 letras da senha de app, sem espaços
+   ```
+
+   `EMAIL_REMETENTE` pode ficar em branco: o sistema usa a própria conta do SMTP como
+   remetente, que é o que o Gmail e o Outlook exigem.
+4. Suba a API de novo para ela ler o `.env`:
+
+   ```
+   docker compose up -d api
+   ```
+
+5. Entre no portal como administrador, abra **Configurações** e, no cartão **Envio de
+   e-mails**, clique em **Enviar e-mail de teste**. A resposta aparece na hora: ou o e-mail
+   chegou na sua caixa de entrada, ou a tela diz exatamente o que o servidor recusou (senha
+   de app errada, porta trocada etc.).
+
+Outros provedores funcionam do mesmo jeito, só mudando o servidor: Outlook/Hotmail
+(`smtp.office365.com`, também com senha de app), Brevo (`smtp-relay.brevo.com`, gratuito até
+300 e-mails por dia, com o remetente validado no painel deles) ou um serviço pago como
+Amazon SES e SendGrid, que uma clínica usaria em produção com um domínio próprio, por
+exemplo `nao-responda@suaclinica.com.br`, informado em `EMAIL_REMETENTE`.
+
+Dois detalhes importam para quem recebe:
+
+- Os links dos e-mails apontam para `WEB_URL`. Com `http://localhost:8080`, o link só abre
+  no próprio computador que roda o Docker; para abrir pelo celular, troque pelo IP da
+  máquina (Parte 5). O aplicativo do tutor não depende disso: ele usa o código de 6 dígitos.
+- Na subida, a API já testa a conexão com o servidor de e-mail e escreve o resultado em
+  `docker compose logs api`. Se um envio falhar depois, ela tenta de novo sozinha, algumas
+  vezes, antes de desistir, sempre com o motivo explicado em português no log.
 
 ### Notificações no celular do tutor
 
@@ -711,7 +743,8 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 | "Muitas tentativas" no login | Proteção contra ataque de senha | Espere 1 minuto |
 | "Conta bloqueada" no login | 5 senhas erradas seguidas (RN-006) | Espere 15 minutos, ou peça a um administrador para redefinir |
 | O celular não acha a API | Celular em outra rede | Conecte no mesmo Wi-Fi do computador |
-| "Esqueci minha senha" não manda e-mail | `SMTP_HOST` vazio no `.env` | O e-mail está em `emails-enviados` (Parte 5½); ou configure o servidor de e-mail |
+| "Esqueci minha senha" não manda e-mail | `SMTP_HOST` vazio no `.env` | O e-mail está em `emails-enviados` (Parte 5½); ou configure o servidor de e-mail e confira em Configurações → "Enviar e-mail de teste" |
+| "Enviar e-mail de teste" diz que o servidor recusou usuário ou senha | Senha normal da conta no lugar da "senha de app" | Gere a senha de app (Parte 5½) e rode `docker compose up -d api` |
 | O celular não recebe notificações com o app fechado | Expo Go no Android, ou `projectId` ausente | Veja "Notificações no celular do tutor" na Parte 5½ |
 | Foto ou documento não abre e a API responde 403 | O link assinado expirou (dura 4 horas) | Recarregue a página do prontuário: os links são gerados de novo |
 | Tudo travou e você quer recomeçar | — | `docker compose down` e depois `docker compose up -d` (**sem** `-v`, senão apaga os dados) |
