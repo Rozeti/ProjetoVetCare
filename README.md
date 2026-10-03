@@ -169,6 +169,15 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
   paciente a outro veterinário. Os tratamentos em andamento e as sessões futuras vão junto,
   o histórico fica assinado por quem o produziu, e o paciente sai da lista de quem o entregou.
   Quem recebe, quem entrega e o tutor são notificados.
+- **Tutores acompanham os pacientes**: o veterinário vê os tutores dos pacientes sob sua
+  responsabilidade (mais os que ainda não têm paciente, para conseguir cadastrar o primeiro),
+  na tela de tutores, nos seletores dos formulários e nos contatos das mensagens. Uma
+  transferência leva o tutor junto, sem nenhum vínculo a mais.
+- **Carteira de vacinação**: o veterinário responsável e a administração corrigem e apagam
+  aplicações lançadas por engano; cada correção e exclusão fica na auditoria.
+- **Confirmação antes de agir**: toda exclusão, cancelamento, inativação e edição do portal
+  passa por uma janela de confirmação própria (`ConfirmacaoProvider`), que também pede o
+  motivo quando a ação exige um, como o cancelamento de receita.
 
 ### Prontuário
 - Linha do tempo, evolução de peso e de dor, tratamentos, mídias e documentos.

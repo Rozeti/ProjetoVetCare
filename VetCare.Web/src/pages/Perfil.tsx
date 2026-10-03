@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Bell, KeyRound, Loader2, Mail, Phone, Smartphone } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useAuth } from '../contexts/auth';
 import type { Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Campo, Card } from '../components/ui';
@@ -26,6 +27,8 @@ export function Perfil() {
   const [avisoContato, setAvisoContato] = useState('');
   const [salvandoContato, setSalvandoContato] = useState(false);
 
+  const { confirmarEdicao } = useConfirmacao();
+
   if (!usuario) return null;
 
   async function alterarSenha(evento: FormEvent) {
@@ -40,6 +43,12 @@ export function Perfil() {
 
     if (novaSenha !== confirmacao) {
       setErroSenha('A confirmação não confere com a nova senha.');
+      return;
+    }
+
+    if (
+      !(await confirmarEdicao('Alterar a sua senha? A senha atual deixa de funcionar na hora.', 'Alterar senha'))
+    ) {
       return;
     }
 
@@ -88,6 +97,11 @@ export function Perfil() {
 
     setErroContato('');
     setAvisoContato('');
+
+    if (!(await confirmarEdicao('Salvar os novos dados de contato? É por eles que a clínica fala com você.'))) {
+      return;
+    }
+
     setSalvandoContato(true);
 
     try {

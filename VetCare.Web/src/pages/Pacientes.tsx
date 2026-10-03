@@ -23,6 +23,7 @@ import { formatarData, formatarPeso, paraValorInputData } from '../utils/formato
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import { ModalTransferirPaciente, type PacienteParaTransferir } from './componentes/ModalTransferirPaciente';
 
 const FORM_VAZIO = {
@@ -72,6 +73,7 @@ export function Pacientes() {
   const [erroForm, setErroForm] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [emTransferencia, setEmTransferencia] = useState<PacienteParaTransferir | null>(null);
+  const { confirmar, confirmarEdicao, confirmarExclusao } = useConfirmacao();
 
   const buscar = useCallback(async () => {
     const [respostaPets, respostaTutores, respostaVeterinarios] = await Promise.all([
@@ -199,6 +201,20 @@ export function Pacientes() {
       return;
     }
 
+    if (
+      emEdicao &&
+      !(await confirmarEdicao(
+        <>
+          Salvar as alterações no cadastro de <strong>{emEdicao.nome}</strong>?
+          {form.dataObito && !emEdicao.dataObito && (
+            <> O registro de óbito inativa o paciente e encerra os tratamentos em aberto.</>
+          )}
+        </>,
+      ))
+    ) {
+      return;
+    }
+
     setSalvando(true);
 
     const corpo = {
@@ -241,6 +257,23 @@ export function Pacientes() {
   async function alternarStatus(pet: Pet) {
     setErro('');
 
+    if (
+      pet.ativo &&
+      !(await confirmar({
+        titulo: 'Inativar paciente',
+        mensagem: (
+          <>
+            Inativar <strong>{pet.nome}</strong>? O paciente sai das listas ativas, mas o prontuário é preservado e
+            ele pode ser reativado depois.
+          </>
+        ),
+        rotuloConfirmar: 'Inativar',
+        perigo: true,
+      }))
+    ) {
+      return;
+    }
+
     try {
       await api.patch(`/api/pets/${pet.id}/status`, { ativo: !pet.ativo });
       setAviso(pet.ativo ? `${pet.nome} foi inativado.` : `${pet.nome} foi reativado.`);
@@ -252,7 +285,14 @@ export function Pacientes() {
 
   /** HU-003, CA-4: só um cadastro sem histórico clínico pode ser excluído de fato. */
   async function excluir(pet: Pet) {
-    if (!window.confirm(`Excluir o cadastro de ${pet.nome}? Esta ação só é permitida sem registros clínicos e não pode ser desfeita.`)) {
+    if (
+      !(await confirmarExclusao(
+        <>
+          Excluir o cadastro de <strong>{pet.nome}</strong>? Esta ação só é permitida sem registros clínicos e não
+          pode ser desfeita.
+        </>,
+      ))
+    ) {
       return;
     }
 

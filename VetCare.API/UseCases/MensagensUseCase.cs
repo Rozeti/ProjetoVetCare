@@ -16,6 +16,7 @@ namespace VetCare.API.UseCases
         private readonly IMensagemRepository _mensagens;
         private readonly IUsuarioRepository _usuarios;
         private readonly IPetRepository _pets;
+        private readonly ITutorRepository _tutores;
         private readonly NotificacaoService _notificacoes;
         private readonly UsuarioAtual _usuarioAtual;
 
@@ -23,12 +24,14 @@ namespace VetCare.API.UseCases
             IMensagemRepository mensagens,
             IUsuarioRepository usuarios,
             IPetRepository pets,
+            ITutorRepository tutores,
             NotificacaoService notificacoes,
             UsuarioAtual usuarioAtual)
         {
             _mensagens = mensagens;
             _usuarios = usuarios;
             _pets = pets;
+            _tutores = tutores;
             _notificacoes = notificacoes;
             _usuarioAtual = usuarioAtual;
         }
@@ -139,11 +142,25 @@ namespace VetCare.API.UseCases
         {
             var todos = await _usuarios.ListarTodos(_usuarioAtual.ClinicaId, null, true);
 
+            // O veterinário conversa com os tutores dos seus pacientes; os demais tutores
+            // não aparecem na lista, assim como não aparecem na tela de tutores.
+            HashSet<Guid>? tutoresDoVeterinario = null;
+
+            if (_usuarioAtual.EhVeterinario)
+            {
+                var visiveis = _usuarioAtual.VeterinarioId.HasValue
+                    ? await _tutores.ListarTodos(_usuarioAtual.ClinicaId, _usuarioAtual.VeterinarioId)
+                    : new List<Tutor>();
+
+                tutoresDoVeterinario = visiveis.Select(t => t.UsuarioId).ToHashSet();
+            }
+
             // RN-005: o tutor conversa apenas com a equipe clínica, nunca com outros tutores —
             // e não precisa conhecer o e-mail pessoal de cada membro da equipe.
             var contatos = todos
                 .Where(u => u.Id != _usuarioAtual.Id)
                 .Where(u => !_usuarioAtual.EhTutor || u.Perfil != Perfis.Tutor)
+                .Where(u => tutoresDoVeterinario == null || u.Perfil != Perfis.Tutor || tutoresDoVeterinario.Contains(u.Id))
                 .Select(u => new UsuarioDTO
                 {
                     Id = u.Id,

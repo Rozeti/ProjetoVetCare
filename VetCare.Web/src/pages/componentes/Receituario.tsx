@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Ban, Loader2, Pill, Plus, Printer, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { Prescricao } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
@@ -105,10 +106,24 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
     }
   }
 
-  async function cancelar(prescricao: Prescricao) {
-    const motivo = window.prompt('Motivo do cancelamento da receita:');
+  const { perguntar } = useConfirmacao();
 
-    if (motivo === null) {
+  async function cancelar(prescricao: Prescricao) {
+    const { confirmado, texto: motivo } = await perguntar({
+      titulo: 'Cancelar receita',
+      mensagem: (
+        <>
+          Cancelar a receita emitida em <strong>{formatarData(prescricao.dataEmissao)}</strong>? Ela continua no
+          prontuário como cancelada e não pode mais ser impressa.
+        </>
+      ),
+      rotuloConfirmar: 'Cancelar receita',
+      rotuloCancelar: 'Voltar',
+      perigo: true,
+      campoTexto: { rotulo: 'Motivo do cancelamento', placeholder: 'Ex.: dosagem revista', obrigatorio: true },
+    });
+
+    if (!confirmado) {
       return;
     }
 

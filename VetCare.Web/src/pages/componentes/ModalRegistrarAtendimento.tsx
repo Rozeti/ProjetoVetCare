@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Loader2, Lock, Paperclip, Pencil, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro, urlDoArquivo } from '../../services/api';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 import { useAuth } from '../../contexts/auth';
 import type { Atendimento, ItemAgenda, Midia } from '../../types';
 import { Alerta, Campo, Etiqueta, Modal } from '../../components/ui';
@@ -121,6 +122,8 @@ function Formulario({
     setForm((atual) => ({ ...atual, [campo]: valor }));
   }
 
+  const { confirmarEdicao, confirmarExclusao } = useConfirmacao();
+
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
 
@@ -128,6 +131,17 @@ function Formulario({
 
     if (!form.tecnicasAplicadas.trim() || !form.evolucaoClinica.trim()) {
       setErro('Informe as técnicas aplicadas e a evolução clínica.');
+      return;
+    }
+
+    if (
+      atendimentoSalvo &&
+      editando &&
+      !(await confirmarEdicao(
+        'Salvar a correção deste atendimento? A versão anterior fica preservada no histórico do prontuário.',
+        'Salvar correção',
+      ))
+    ) {
       return;
     }
 
@@ -200,6 +214,10 @@ function Formulario({
   }
 
   async function removerMidia(id: string) {
+    if (!(await confirmarExclusao('Remover este arquivo da sessão? Ele deixa de aparecer no prontuário.', 'Remover'))) {
+      return;
+    }
+
     try {
       await api.delete(`/api/midias/${id}`);
       setMidias((atual) => atual.filter((m) => m.id !== id));

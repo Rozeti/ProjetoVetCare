@@ -77,7 +77,17 @@ export function Perfil() {
     }
   }
 
-  async function salvarContato() {
+  // Toda edição pede confirmação antes de gravar por cima do que está salvo.
+  function salvarContato() {
+    if (!usuario?.tutorId) return;
+
+    Alert.alert('Salvar contato', 'Salvar os novos dados de contato? É por eles que a clínica fala com você.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Salvar', onPress: () => void gravarContato() },
+    ]);
+  }
+
+  async function gravarContato() {
     if (!usuario?.tutorId) return;
 
     setErroContato('');
@@ -114,6 +124,13 @@ export function Perfil() {
       return;
     }
 
+    Alert.alert('Alterar senha', 'A senha atual deixa de funcionar na hora. Continuar?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Alterar', onPress: () => void gravarSenha() },
+    ]);
+  }
+
+  async function gravarSenha() {
     setSalvandoSenha(true);
 
     try {

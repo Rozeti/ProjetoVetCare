@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Loader2, Lock } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 import { useAuth } from '../../contexts/auth';
 import type { Avaliacao, Tratamento } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
@@ -62,12 +63,24 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
     setForm((atual) => ({ ...atual, [campo]: valor }));
   }
 
+  const { confirmarEdicao } = useConfirmacao();
+
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
 
     if (!emEdicao && !form.tratamentoId) {
       setErro('Selecione o tratamento ao qual esta avaliação pertence.');
+      return;
+    }
+
+    if (
+      avaliacao &&
+      !(await confirmarEdicao(
+        'Salvar a correção desta avaliação? A versão anterior fica preservada no histórico do prontuário.',
+        'Salvar correção',
+      ))
+    ) {
       return;
     }
 

@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/auth';
 import type { PaginaDe, Tutor } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
@@ -19,9 +20,14 @@ const FORM_VAZIO = {
   cpf: '',
 };
 
-/** Cadastro dos tutores responsáveis pelos pacientes (apoio à HU-003 e RN-001). */
+/**
+ * Cadastro dos tutores responsáveis pelos pacientes (apoio à HU-003 e RN-001). O tutor
+ * acompanha o paciente: o veterinário vê os tutores dos seus pacientes, e um paciente
+ * transferido leva o tutor junto.
+ */
 export function Tutores() {
-  const { temPerfil } = useAuth();
+  const { temPerfil, ehVeterinario } = useAuth();
+  const { confirmarEdicao } = useConfirmacao();
   const podeEditar = temPerfil('Administrador', 'Veterinario', 'Apoio');
 
   const [numeroPagina, setNumeroPagina] = useState(1);
@@ -82,6 +88,18 @@ export function Tutores() {
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErroForm('');
+
+    if (
+      emEdicao &&
+      !(await confirmarEdicao(
+        <>
+          Salvar as alterações no contato de <strong>{emEdicao.nome}</strong>?
+        </>,
+      ))
+    ) {
+      return;
+    }
+
     setSalvando(true);
 
     try {
@@ -121,8 +139,12 @@ export function Tutores() {
   return (
     <>
       <CabecalhoPagina
-        titulo="Tutores"
-        descricao="Responsáveis legais pelos pacientes em tratamento."
+        titulo={ehVeterinario ? 'Meus tutores' : 'Tutores'}
+        descricao={
+          ehVeterinario
+            ? 'Tutores dos pacientes sob sua responsabilidade, além dos que ainda não têm paciente cadastrado.'
+            : 'Responsáveis legais pelos pacientes em tratamento.'
+        }
         acoes={
           podeEditar && (
             <button type="button" className="vc-botao-primario" onClick={abrirNovo}>
@@ -168,7 +190,11 @@ export function Tutores() {
           <SemDados
             icone={<UserSquare2 size={40} />}
             titulo={busca ? 'Nenhum tutor encontrado' : 'Nenhum tutor cadastrado'}
-            descricao="Cadastre o tutor antes de registrar o paciente: todo pet precisa de um responsável."
+            descricao={
+              ehVeterinario && !busca
+                ? 'Os tutores dos seus pacientes aparecem aqui. Para um tutor novo, cadastre-o e depois registre o paciente.'
+                : 'Cadastre o tutor antes de registrar o paciente: todo pet precisa de um responsável.'
+            }
             acao={
               podeEditar && !busca ? (
                 <button type="button" className="vc-botao-sutil" onClick={abrirNovo}>

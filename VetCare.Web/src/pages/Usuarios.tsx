@@ -1,6 +1,7 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import { KeyRound, Loader2, Pencil, Plus, Power, Search, Users } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useAuth } from '../contexts/auth';
 import type { PaginaDe, Perfil, Usuario } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
@@ -107,6 +108,8 @@ export function Usuarios() {
     setModalAberto(true);
   }
 
+  const { confirmar, confirmarEdicao } = useConfirmacao();
+
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErroForm('');
@@ -118,6 +121,17 @@ export function Usuarios() {
 
     if (!emEdicao && form.senha && form.senha.length < 6) {
       setErroForm('A senha inicial deve ter no mínimo 6 caracteres, ou ficar em branco.');
+      return;
+    }
+
+    if (
+      emEdicao &&
+      !(await confirmarEdicao(
+        <>
+          Salvar as alterações no cadastro de <strong>{form.nome}</strong>?
+        </>,
+      ))
+    ) {
       return;
     }
 
@@ -166,6 +180,23 @@ export function Usuarios() {
   async function alternarStatus(usuario: Usuario) {
     setErro('');
 
+    if (
+      usuario.ativo &&
+      !(await confirmar({
+        titulo: 'Desativar usuário',
+        mensagem: (
+          <>
+            Desativar o acesso de <strong>{usuario.nome}</strong>? A pessoa deixa de entrar no sistema em até um
+            minuto, e os dados associados a ela são mantidos.
+          </>
+        ),
+        rotuloConfirmar: 'Desativar',
+        perigo: true,
+      }))
+    ) {
+      return;
+    }
+
     try {
       await api.patch(`/api/usuarios/${usuario.id}/status`, { ativo: !usuario.ativo });
       setAviso(usuario.ativo ? `${usuario.nome} foi desativado.` : `${usuario.nome} foi reativado.`);
@@ -177,9 +208,17 @@ export function Usuarios() {
 
   /** HU-002, CA-5: o sistema gera uma nova senha provisória e a envia ao usuário por e-mail. */
   async function redefinirSenha(usuario: Usuario) {
-    const confirmado = window.confirm(
-      `Gerar uma nova senha provisória para ${usuario.nome}? A senha atual deixará de funcionar imediatamente.`,
-    );
+    const confirmado = await confirmar({
+      titulo: 'Redefinir senha',
+      mensagem: (
+        <>
+          Gerar uma nova senha provisória para <strong>{usuario.nome}</strong>? A senha atual deixa de funcionar
+          imediatamente, e a nova é enviada por e-mail à pessoa.
+        </>
+      ),
+      rotuloConfirmar: 'Gerar nova senha',
+      perigo: true,
+    });
 
     if (!confirmado) {
       return;

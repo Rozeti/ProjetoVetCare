@@ -12,8 +12,13 @@ namespace VetCare.API.Data
         /// <summary>Vínculos de vários usuários numa só consulta, para as listagens paginadas.</summary>
         Task<List<Tutor>> ObterPorUsuarios(IEnumerable<Guid> usuariosIds);
 
-        Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros);
-        Task<List<Tutor>> ListarTodos(Guid clinicaId);
+        /// <summary>
+        /// Com <paramref name="veterinarioId"/>, devolve só os tutores ligados a ele: os que
+        /// têm algum paciente sob sua responsabilidade e os que ainda não têm paciente.
+        /// </summary>
+        Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros, Guid? veterinarioId = null);
+
+        Task<List<Tutor>> ListarTodos(Guid clinicaId, Guid? veterinarioId = null);
         void Atualizar(Tutor tutor);
         Task SalvarAlteracoes();
     }

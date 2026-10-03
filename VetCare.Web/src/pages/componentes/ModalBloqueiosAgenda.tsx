@@ -5,6 +5,7 @@ import type { BloqueioAgenda } from '../../types';
 import { Alerta, Campo, Carregando, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { formatarDataHora, paraIsoLocal, paraValorInputData } from '../../utils/formato';
 import { useCarregamento } from '../../hooks/useCarregamento';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 
 interface Props {
   aberto: boolean;
@@ -36,6 +37,7 @@ function Conteudo({ veterinarioId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) 
   const [salvando, setSalvando] = useState(false);
   const [removendo, setRemovendo] = useState<string | null>(null);
   const [aviso, setAviso] = useState('');
+  const { confirmarExclusao } = useConfirmacao();
 
   const buscar = useCallback(async () => {
     const { data } = await api.get<BloqueioAgenda[]>('/api/bloqueios-agenda', {
@@ -95,6 +97,18 @@ function Conteudo({ veterinarioId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) 
   async function remover(bloqueio: BloqueioAgenda) {
     setErro('');
     setAviso('');
+
+    if (
+      !(await confirmarExclusao(
+        <>
+          Remover o bloqueio <strong>{bloqueio.motivo}</strong>? O período volta a aceitar agendamentos.
+        </>,
+        'Remover',
+      ))
+    ) {
+      return;
+    }
+
     setRemovendo(bloqueio.id);
 
     try {

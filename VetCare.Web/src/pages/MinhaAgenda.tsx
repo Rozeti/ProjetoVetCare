@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarDays, Check, Info, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Sessao } from '../types';
@@ -28,9 +29,29 @@ export function MinhaAgenda() {
 
   const sessoes = dados ?? [];
 
+  const { confirmar } = useConfirmacao();
+
   async function alterarStatus(sessao: Sessao, status: 'Confirmada' | 'Cancelada') {
     setErro('');
     setAviso('');
+
+    if (
+      status === 'Cancelada' &&
+      !(await confirmar({
+        titulo: 'Cancelar sessão',
+        mensagem: (
+          <>
+            Cancelar a sessão de <strong>{sessao.nomePaciente}</strong>? A clínica é avisada e o horário é liberado
+            para outro paciente.
+          </>
+        ),
+        rotuloConfirmar: 'Cancelar sessão',
+        rotuloCancelar: 'Voltar',
+        perigo: true,
+      }))
+    ) {
+      return;
+    }
 
     try {
       await api.patch(`/api/sessoes/${sessao.id}/status`, { status });

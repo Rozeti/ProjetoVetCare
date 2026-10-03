@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import type { Clinica } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando } from '../components/ui';
 
@@ -24,12 +25,24 @@ export function Configuracoes() {
       .finally(() => setCarregando(false));
   }, []);
 
+  const { confirmarEdicao } = useConfirmacao();
+
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     if (!clinica) return;
 
     setErro('');
     setAviso('');
+
+    if (
+      !(await confirmarEdicao(
+        'Salvar as configurações da clínica? Os novos horários e prazos passam a valer imediatamente para a agenda.',
+        'Salvar configurações',
+      ))
+    ) {
+      return;
+    }
+
     setSalvando(true);
 
     try {

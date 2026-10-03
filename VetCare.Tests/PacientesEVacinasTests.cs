@@ -27,6 +27,7 @@ namespace VetCare.Tests
             new VacinaRepository(Contexto),
             new PetRepository(Contexto),
             new VeterinarioRepository(Contexto),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private CriarPetDTO PacienteNovo() => new()
@@ -143,7 +144,8 @@ namespace VetCare.Tests
         [Fact]
         public void Idade_de_filhote_e_descrita_em_meses()
         {
-            var tresMeses = DateTime.UtcNow.Date.AddMonths(-3);
+            // O caso de uso conta pela data da clínica; medir pelo UTC falhava entre 21h e 0h de Brasília.
+            var tresMeses = RelogioDaClinica.Padrao.Hoje.AddMonths(-3);
 
             GerenciarPacientesUseCase.DescreverIdade(tresMeses).Should().Be("3 meses");
             GerenciarPacientesUseCase.CalcularIdade(tresMeses).Should().Be(0);

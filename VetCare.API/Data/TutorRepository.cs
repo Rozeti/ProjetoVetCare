@@ -42,23 +42,31 @@ namespace VetCare.API.Data
                 .ToListAsync();
         }
 
-        public async Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros)
+        public async Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros, Guid? veterinarioId = null)
         {
-            return await Filtrar(clinicaId, busca).OrderBy(t => t.Usuario!.Nome).Paginar(parametros);
+            return await Filtrar(clinicaId, busca, veterinarioId).OrderBy(t => t.Usuario!.Nome).Paginar(parametros);
         }
 
-        public async Task<List<Tutor>> ListarTodos(Guid clinicaId)
+        public async Task<List<Tutor>> ListarTodos(Guid clinicaId, Guid? veterinarioId = null)
         {
-            return await Filtrar(clinicaId, null).OrderBy(t => t.Usuario!.Nome).ToListAsync();
+            return await Filtrar(clinicaId, null, veterinarioId).OrderBy(t => t.Usuario!.Nome).ToListAsync();
         }
 
-        private IQueryable<Tutor> Filtrar(Guid clinicaId, string? busca)
+        private IQueryable<Tutor> Filtrar(Guid clinicaId, string? busca, Guid? veterinarioId)
         {
             var consulta = _context.Tutores
                 .AsNoTracking()
                 .Include(t => t.Usuario)
                 .Include(t => t.Pets)
                 .Where(t => t.Usuario!.ClinicaId == clinicaId);
+
+            // O tutor acompanha o paciente: o veterinário vê os tutores dos seus pacientes e os
+            // que ainda não têm paciente (para poder cadastrar o primeiro).
+            if (veterinarioId.HasValue)
+            {
+                consulta = consulta.Where(t =>
+                    !t.Pets.Any() || t.Pets.Any(p => p.VeterinarioResponsavelId == veterinarioId.Value));
+            }
 
             if (!string.IsNullOrWhiteSpace(busca))
             {

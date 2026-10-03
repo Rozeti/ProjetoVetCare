@@ -574,9 +574,11 @@ Faça nesta ordem, porque cada passo depende do anterior:
 3. **Pacientes → Novo paciente.** Cadastre um pet, escolha o tutor do passo 2 e o
    veterinário do passo 1 como responsável.
    *O sistema não deixa salvar sem tutor — é a RN-001. E só o veterinário responsável (além
-   da administração) vê o paciente: entre com o veterinário para conferir. Para passar o
-   paciente a outro profissional, use o botão "Transferir" na lista ou no prontuário; os
-   tratamentos em andamento e as sessões futuras vão junto.*
+   da administração) vê o paciente e o tutor dele: entre com o veterinário para conferir, em
+   Pacientes e em Tutores. Para passar o paciente a outro profissional, use o botão
+   "Transferir" na lista ou no prontuário; os tratamentos em andamento, as sessões futuras e
+   o tutor vão junto. Toda exclusão, cancelamento e edição abre uma janela de confirmação
+   antes de gravar.*
 4. **Abra o prontuário do pet → Tratamentos → Novo tratamento.** Descreva o objetivo.
 5. **Prontuário → Registrar avaliação.** Preencha os cinco campos clínicos.
    *Tente deixar um em branco: o sistema recusa e diz qual falta — é a RN-010.*

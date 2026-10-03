@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Loader2, Pencil, Plus, Syringe, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { SituacaoDose, Vacina } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
@@ -42,8 +43,11 @@ interface Props {
 /** Carteira de vacinação e vermifugação do paciente, com controle de vencimento. */
 export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
   const { temPerfil } = useAuth();
+  const { confirmarEdicao, confirmarExclusao } = useConfirmacao();
+  // O veterinário responsável corrige e apaga as aplicações dos seus pacientes; a
+  // administração, as de todos. A API confere o vínculo com o paciente.
   const podeEditar = temPerfil('Administrador', 'Veterinario');
-  const podeRemover = temPerfil('Administrador');
+  const podeRemover = temPerfil('Administrador', 'Veterinario');
 
   const [modalAberto, setModalAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Vacina | null>(null);
@@ -86,6 +90,19 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
       return;
     }
 
+    if (
+      emEdicao &&
+      !(await confirmarEdicao(
+        <>
+          Salvar a correção da aplicação de <strong>{emEdicao.nome}</strong>? Uma nova data de próxima dose gera
+          um novo lembrete para o tutor.
+        </>,
+        'Salvar correção',
+      ))
+    ) {
+      return;
+    }
+
     setSalvando(true);
 
     const campos = {
@@ -115,9 +132,18 @@ export function CarteiraVacinacao({ pacienteId, vacinas, aoAtualizar }: Props) {
   }
 
   async function remover(vacina: Vacina) {
-    if (!window.confirm(`Remover o registro de ${vacina.nome} da carteira?`)) {
+    if (
+      !(await confirmarExclusao(
+        <>
+          Excluir a aplicação de <strong>{vacina.nome}</strong> de {formatarData(vacina.dataAplicacao)} da carteira?
+          O registro some da carteira do paciente e a exclusão fica na auditoria.
+        </>,
+      ))
+    ) {
       return;
     }
+
+    setErro('');
 
     try {
       await api.delete(`/api/vacinas/${vacina.id}`);

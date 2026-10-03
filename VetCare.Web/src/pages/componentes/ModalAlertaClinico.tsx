@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Archive, Loader2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { AlergiaCondicao, Gravidade, TipoAlerta } from '../../types';
 import { Alerta, Campo, Etiqueta, Modal } from '../../components/ui';
 import { formatarData } from '../../utils/formato';
@@ -71,8 +72,26 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
     }
   }
 
+  const { confirmar } = useConfirmacao();
+
   /** Condição resolvida é arquivada, não excluída: o histórico continua relevante. */
   async function arquivar(alerta: AlergiaCondicao) {
+    if (
+      !(await confirmar({
+        titulo: 'Arquivar alerta clínico',
+        mensagem: (
+          <>
+            Arquivar o alerta <strong>{alerta.descricao}</strong>? Ele deixa de aparecer em destaque no prontuário,
+            mas continua no histórico do paciente.
+          </>
+        ),
+        rotuloConfirmar: 'Arquivar',
+        perigo: true,
+      }))
+    ) {
+      return;
+    }
+
     try {
       await api.patch(`/api/alergias/${alerta.id}/status`, { ativo: false });
       aoSalvar();

@@ -29,16 +29,31 @@ namespace VetCare.API.UseCases
             _usuarioAtual = usuarioAtual;
         }
 
+        /// <summary>
+        /// O veterinário vê os tutores dos pacientes sob sua responsabilidade (e os que ainda
+        /// não têm paciente); administração e apoio veem todos. O recorte vem do token.
+        /// </summary>
         public async Task<Resultado<PaginaDe<TutorDTO>>> Listar(string? busca, ParametrosPagina parametros)
         {
-            var pagina = await _tutores.Listar(_usuarioAtual.ClinicaId, busca, parametros);
+            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId == null)
+            {
+                return Resultado<PaginaDe<TutorDTO>>.Ok(
+                    PaginaDe<TutorDTO>.Criar(Array.Empty<TutorDTO>(), 1, parametros.Tamanho, 0));
+            }
+
+            var pagina = await _tutores.Listar(_usuarioAtual.ClinicaId, busca, parametros, RecorteDoVeterinario);
             return Resultado<PaginaDe<TutorDTO>>.Ok(pagina.Converter(MapearParaDTO));
         }
 
-        /// <summary>Lista completa usada pelos seletores de tutor nos formulários.</summary>
+        /// <summary>Lista completa usada pelos seletores de tutor nos formulários, no mesmo recorte da listagem.</summary>
         public async Task<Resultado<List<TutorDTO>>> ListarParaSelecao()
         {
-            var tutores = await _tutores.ListarTodos(_usuarioAtual.ClinicaId);
+            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId == null)
+            {
+                return Resultado<List<TutorDTO>>.Ok(new List<TutorDTO>());
+            }
+
+            var tutores = await _tutores.ListarTodos(_usuarioAtual.ClinicaId, RecorteDoVeterinario);
             return Resultado<List<TutorDTO>>.Ok(tutores.Select(MapearParaDTO).ToList());
         }
 
@@ -51,14 +66,17 @@ namespace VetCare.API.UseCases
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
             }
 
-            // HU-013, CA-1: o tutor enxerga apenas o próprio cadastro.
-            if (_usuarioAtual.EhTutor && tutor.Id != _usuarioAtual.TutorId)
+            // HU-013, CA-1: o tutor enxerga apenas o próprio cadastro; o veterinário, os
+            // tutores dos seus pacientes. Para os demais o cadastro simplesmente não existe.
+            if (!AcessoAoTutor.Permitido(_usuarioAtual, tutor))
             {
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
             }
 
             return Resultado<TutorDTO>.Ok(MapearParaDTO(tutor));
         }
+
+        private Guid? RecorteDoVeterinario => _usuarioAtual.EhVeterinario ? _usuarioAtual.VeterinarioId : null;
 
         /// <summary>
         /// Cadastra o tutor. Quando UsuarioId não é informado, cria também o usuário de
@@ -156,9 +174,11 @@ namespace VetCare.API.UseCases
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
             }
 
-            if (_usuarioAtual.EhTutor && tutor.Id != _usuarioAtual.TutorId)
+            if (!AcessoAoTutor.Permitido(_usuarioAtual, tutor))
             {
-                return Resultado<TutorDTO>.NaoAutorizado("Você só pode alterar o seu próprio cadastro.");
+                return Resultado<TutorDTO>.NaoAutorizado(_usuarioAtual.EhTutor
+                    ? "Você só pode alterar o seu próprio cadastro."
+                    : "Este tutor não tem pacientes sob sua responsabilidade.");
             }
 
             tutor.Telefone = dto.Telefone?.Trim() ?? tutor.Telefone;
@@ -171,7 +191,7 @@ namespace VetCare.API.UseCases
             return Resultado<TutorDTO>.Ok(MapearParaDTO(tutor), "Tutor atualizado com sucesso.");
         }
 
-        private static TutorDTO MapearParaDTO(Tutor tutor)
+        private TutorDTO MapearParaDTO(Tutor tutor)
         {
             return new TutorDTO
             {
@@ -183,7 +203,8 @@ namespace VetCare.API.UseCases
                 Endereco = tutor.Endereco,
                 Cpf = tutor.Cpf,
                 Ativo = tutor.Usuario?.Ativo ?? false,
-                QuantidadePets = tutor.Pets?.Count ?? 0
+                // O veterinário conta só os pacientes que enxerga.
+                QuantidadePets = AcessoAoTutor.ContarPacientesVisiveis(_usuarioAtual, tutor)
             };
         }
     }

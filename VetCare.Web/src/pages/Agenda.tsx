@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contexts/auth';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import type { ItemAgenda, VisaoAgenda } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { estiloStatusSessao, formatarData, formatarHora, paraValorInputData } from '../utils/formato';
@@ -75,10 +76,25 @@ export function Agenda() {
     setData(nova);
   }
 
+  const { confirmar } = useConfirmacao();
+
   /** HU-006: a equipe também confirma, cancela ou conclui a sessão pela agenda. */
   async function alterarStatus(sessaoId: string, status: string) {
     setAviso('');
     setErro('');
+
+    if (
+      status === 'Cancelada' &&
+      !(await confirmar({
+        titulo: 'Cancelar sessão',
+        mensagem: 'Cancelar esta sessão? O horário é liberado na agenda e o tutor recebe um aviso.',
+        rotuloConfirmar: 'Cancelar sessão',
+        rotuloCancelar: 'Voltar',
+        perigo: true,
+      }))
+    ) {
+      return;
+    }
 
     try {
       await api.patch(`/api/sessoes/${sessaoId}/status`, { status });

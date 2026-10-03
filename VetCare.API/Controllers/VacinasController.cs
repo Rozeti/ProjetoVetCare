@@ -45,8 +45,9 @@ namespace VetCare.API.Controllers
             return this.Responder(await _useCase.Atualizar(id, dto));
         }
 
+        /// <summary>O veterinário responsável pelo paciente e a administração podem apagar um registro lançado por engano.</summary>
         [HttpDelete("{id:guid}")]
-        [Authorize(Roles = Perfis.Administrador)]
+        [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
         public async Task<IActionResult> Remover(Guid id)
         {
             return this.Responder(await _useCase.Remover(id));

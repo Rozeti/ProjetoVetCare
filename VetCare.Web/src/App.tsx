@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { AtualizacoesProvider } from './contexts/AtualizacoesContext';
+import { ConfirmacaoProvider } from './components/Confirmacao';
 import { useAuth } from './contexts/auth';
 import { Layout } from './components/Layout';
 import type { Perfil } from './types';
@@ -68,6 +69,8 @@ const EQUIPE: Perfil[] = ['Administrador', 'Veterinario', 'Apoio'];
 export default function App() {
   return (
     <AuthProvider>
+      {/* Uma única janela de confirmação atende toda exclusão, cancelamento e edição do portal. */}
+      <ConfirmacaoProvider>
       {/* Uma única conexão com o mural de alterações serve todas as telas do portal. */}
       <AtualizacoesProvider>
         <BrowserRouter>
@@ -227,6 +230,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </AtualizacoesProvider>
+      </ConfirmacaoProvider>
     </AuthProvider>
   );
 }
