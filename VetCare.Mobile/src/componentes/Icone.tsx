@@ -10,23 +10,16 @@ const SIMBOLOS: Record<string, string> = {
   cachorro: '🐕',
   gato: '🐈',
   agenda: '📅',
-  relogio: '🕒',
   mensagem: '💬',
   sino: '🔔',
   perfil: '👤',
-  sair: '⎋',
   seta: '›',
   voltar: '‹',
   ok: '✓',
   cancelar: '✕',
   info: 'ℹ',
-  alerta: '⚠',
   documento: '📄',
-  grafico: '📈',
-  estetoscopio: '🩺',
-  peso: '⚖',
   enviar: '➤',
-  atualizar: '↻',
 };
 
 interface Props {

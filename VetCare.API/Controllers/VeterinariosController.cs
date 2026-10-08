@@ -19,14 +19,20 @@ namespace VetCare.API.Controllers
             _useCase = useCase;
         }
 
-        /// <summary>Usada também pelo toggle de profissionais da agenda geral (HU-005, CA-2).</summary>
+        /// <summary>
+        /// Usada também pelo toggle de profissionais da agenda geral (HU-005, CA-2). A lista traz
+        /// o e-mail de cada profissional, por isso é reservada à equipe: o tutor conhece a
+        /// equipe pelos contatos das mensagens, sem e-mail.
+        /// </summary>
         [HttpGet]
+        [Authorize(Roles = Perfis.EquipeClinica)]
         public async Task<IActionResult> Listar()
         {
             return this.Responder(await _useCase.Listar());
         }
 
         [HttpGet("{id:guid}")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
         public async Task<IActionResult> ObterPorId(Guid id)
         {
             return this.Responder(await _useCase.ObterPorId(id));

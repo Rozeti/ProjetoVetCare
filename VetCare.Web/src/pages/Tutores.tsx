@@ -2,6 +2,7 @@ import { useCallback, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Mail, PawPrint, Pencil, Phone, Plus, Search, UserSquare2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { emailValido, validarSenha } from '../utils/formato';
 import { useAuth } from '../contexts/auth';
 import type { PaginaDe, Tutor } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
@@ -89,6 +90,35 @@ export function Tutores() {
     evento.preventDefault();
     setErroForm('');
 
+    // As mesmas regras da API (CriarTutorDTO / AtualizarTutorDTO), conferidas antes do envio.
+    if (!emEdicao) {
+      const nome = form.nome.trim();
+
+      if (nome.length < 3 || nome.length > 120) {
+        setErroForm('Informe o nome do tutor (entre 3 e 120 caracteres).');
+        return;
+      }
+
+      if (!emailValido(form.email)) {
+        setErroForm('Informe um e-mail válido para criar o acesso do tutor.');
+        return;
+      }
+
+      if (form.senha) {
+        const senhaInvalida = validarSenha(form.senha);
+
+        if (senhaInvalida) {
+          setErroForm(`${senhaInvalida} Ou deixe em branco para o tutor criar a própria senha.`);
+          return;
+        }
+      }
+    }
+
+    if (form.telefone.trim().length > 30 || form.endereco.trim().length > 250 || form.cpf.trim().length > 20) {
+      setErroForm('Telefone (30), endereço (250) e CPF (20) têm limite de caracteres.');
+      return;
+    }
+
     if (
       emEdicao &&
       !(await confirmarEdicao(
@@ -113,13 +143,7 @@ export function Tutores() {
 
         setAviso('Dados do tutor atualizados.');
       } else {
-        if (!form.nome.trim() || !form.email.trim()) {
-          setErroForm('Informe o nome e o e-mail para criar o acesso do tutor.');
-          setSalvando(false);
-          return;
-        }
-
-        await api.post('/api/tutores', { ...form, senha: form.senha || null });
+        await api.post('/api/tutores', { ...form, nome: form.nome.trim(), email: form.email.trim(), senha: form.senha || null });
         setAviso(
           form.senha
             ? 'Tutor cadastrado com sucesso. Ele recebeu um e-mail de boas-vindas.'

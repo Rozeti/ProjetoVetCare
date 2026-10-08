@@ -38,6 +38,14 @@ const PALETA_DOSE: Record<SituacaoDose, { fundo: string; texto: string }> = {
   'A vencer': { fundo: cores.alertaClaro, texto: '#92400e' },
   'Em dia': { fundo: cores.sucessoClaro, texto: '#065f46' },
   'Dose única': { fundo: cores.fundo, texto: cores.textoSecundario },
+  Concluída: { fundo: cores.marcaClara, texto: cores.marcaEscura },
+};
+
+const ROTULO_TIPO_VACINA: Record<string, string> = {
+  Vacina: 'Vacina',
+  Vermifugo: 'Vermífugo',
+  Antipulgas: 'Antipulgas',
+  Outro: 'Outro',
 };
 
 type Parametros = RouteProp<RotasDaPilha, 'Prontuario'>;
@@ -56,6 +64,10 @@ export function Prontuario() {
   const [aba, setAba] = useState<Aba>('historico');
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+
+  // Doses vencidas ou a vencer: aparecem como contador na aba, como no portal.
+  const dosesPendentes =
+    prontuario?.vacinas.filter((v) => v.situacaoDose === 'Vencida' || v.situacaoDose === 'A vencer').length ?? 0;
 
   const carregar = useCallback(async () => {
     setErro('');
@@ -118,9 +130,20 @@ export function Prontuario() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={estilos.conteudo}>
-          {prontuario.alertasClinicos.length > 0 && (
+          {/* Uma releitura que falhe (rede, sessão) avisa aqui, sem apagar o que já está na tela. */}
+          {erro ? (
             <View style={estilos.alertas}>
-              <AlertasClinicos alertas={prontuario.alertasClinicos} />
+              <Alerta tipo="erro">{erro}</Alerta>
+            </View>
+          ) : null}
+
+          {(prontuario.alertasClinicos.length > 0 ||
+            prontuario.vacinas.some((v) => v.situacaoDose === 'Vencida')) && (
+            <View style={estilos.alertas}>
+              <AlertasClinicos
+                alertas={prontuario.alertasClinicos}
+                dosesVencidas={prontuario.vacinas.filter((v) => v.situacaoDose === 'Vencida')}
+              />
             </View>
           )}
 
@@ -136,6 +159,10 @@ export function Prontuario() {
                 .filter(Boolean)
                 .join(' · ')}
             </Text>
+
+            {prontuario.nomeVeterinarioResponsavel ? (
+              <Text style={estilos.resumoDetalhe}>Acompanhado por Dr(a). {prontuario.nomeVeterinarioResponsavel}</Text>
+            ) : null}
 
             <View style={estilos.resumoLinha}>
               <View style={estilos.resumoItem}>
@@ -172,6 +199,7 @@ export function Prontuario() {
               >
                 <Text style={[estilos.abaTexto, aba === item.valor && estilos.abaTextoAtivo]}>
                   {item.rotulo}
+                  {item.valor === 'vacinas' && dosesPendentes > 0 ? ` (${dosesPendentes})` : ''}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -390,17 +418,24 @@ function Carteira({ vacinas }: { vacinas: Vacina[] }) {
             </View>
 
             <Text style={estilos.detalheSuave}>
-              {vacina.tipo} · aplicada em {formatarData(vacina.dataAplicacao)}
+              {ROTULO_TIPO_VACINA[vacina.tipo] ?? vacina.tipo}
+              {vacina.descricaoDose ? ` · ${vacina.descricaoDose}` : ''}
+              {' · aplicada em '}
+              {formatarData(vacina.dataAplicacao)}
               {vacina.aplicadaPor ? ` · ${vacina.aplicadaPor}` : ''}
             </Text>
 
             {vacina.proximaDose ? (
               <Text style={estilos.itemDescricao}>
-                Próxima dose em {formatarData(vacina.proximaDose)}
+                {vacina.situacaoDose === 'Concluída' ? 'Dose seguinte já aplicada · prevista para ' : 'Próxima dose em '}
+                {formatarData(vacina.proximaDose)}
                 {vacina.diasParaProximaDose != null &&
                   (vacina.diasParaProximaDose < 0
                     ? ` (${Math.abs(vacina.diasParaProximaDose)} dia(s) em atraso)`
                     : ` (em ${vacina.diasParaProximaDose} dia(s))`)}
+                {vacina.recorrencia && vacina.recorrencia !== 'Nenhuma'
+                  ? ` · reforço ${vacina.recorrencia.toLowerCase()}`
+                  : ''}
               </Text>
             ) : null}
 

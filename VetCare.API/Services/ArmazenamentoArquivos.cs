@@ -30,6 +30,33 @@ namespace VetCare.API.Services
 
         public string Raiz => _raiz;
 
+        /// <summary>Tamanho da coluna que guarda o nome original do arquivo.</summary>
+        public const int TamanhoMaximoDoNome = 255;
+
+        /// <summary>
+        /// Nome de exibição vindo do aparelho de quem envia: só o nome (sem pasta, que alguns
+        /// navegadores incluem) e dentro do limite da coluna, preservando a extensão.
+        /// </summary>
+        public static string NomeSeguro(string? nomeOriginal)
+        {
+            var nome = Path.GetFileName((nomeOriginal ?? string.Empty).Trim());
+
+            if (nome.Length == 0)
+            {
+                return "arquivo";
+            }
+
+            if (nome.Length <= TamanhoMaximoDoNome)
+            {
+                return nome;
+            }
+
+            var extensao = Path.GetExtension(nome);
+            var base_ = Path.GetFileNameWithoutExtension(nome);
+
+            return base_[..Math.Max(1, TamanhoMaximoDoNome - extensao.Length)] + extensao;
+        }
+
         /// <summary>Grava o arquivo e devolve o caminho relativo que fica no banco ("/uploads/{guid}.jpg").</summary>
         public async Task<string> Salvar(IFormFile arquivo, string subpasta)
         {

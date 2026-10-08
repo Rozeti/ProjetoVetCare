@@ -125,6 +125,7 @@ export function CampoTexto({
   exemplo,
   teclado = 'default',
   maximo,
+  desabilitado = false,
 }: {
   rotulo: string;
   valor: string;
@@ -134,6 +135,8 @@ export function CampoTexto({
   exemplo?: string;
   teclado?: KeyboardTypeOptions;
   maximo?: number;
+  /** Enquanto o formulário grava, os campos ficam travados: nada muda com o envio em voo. */
+  desabilitado?: boolean;
 }) {
   return (
     <View style={estilos.campo}>
@@ -150,6 +153,7 @@ export function CampoTexto({
         placeholderTextColor={cores.textoSuave}
         keyboardType={teclado}
         maxLength={maximo}
+        editable={!desabilitado}
         accessibilityLabel={rotulo}
       />
 

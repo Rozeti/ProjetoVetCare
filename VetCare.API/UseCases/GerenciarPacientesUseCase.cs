@@ -94,7 +94,46 @@ namespace VetCare.API.UseCases
 
             var pagina = await _pets.Listar(_usuarioAtual.ClinicaId, filtro, parametros);
 
-            return Resultado<PaginaDe<PetDTO>>.Ok(pagina.Converter(MapearParaDTO));
+            // Doses vencidas aparecem como alerta na lista, ao lado das alergias e comorbidades.
+            var vencidas = await _vacinas.ContarVencidasPorPaciente(pagina.Itens.Select(p => p.Id));
+
+            return Resultado<PaginaDe<PetDTO>>.Ok(pagina.Converter(pet =>
+            {
+                var dto = MapearParaDTO(pet);
+                dto.VacinasVencidas = vencidas.GetValueOrDefault(pet.Id);
+                return dto;
+            }));
+        }
+
+        /// <summary>
+        /// Lista enxuta para os seletores (agendamento, mensagens): todos os pacientes ativos
+        /// que quem consulta enxerga, sem o teto de página da listagem.
+        /// </summary>
+        public async Task<Resultado<List<PetSelecaoDTO>>> ListarParaSelecao()
+        {
+            var filtro = new FiltroDePacientes();
+
+            if (_usuarioAtual.EhTutor)
+            {
+                filtro = new FiltroDePacientes { TutorId = _usuarioAtual.TutorId ?? Guid.Empty };
+            }
+            else if (_usuarioAtual.EhVeterinario)
+            {
+                filtro = new FiltroDePacientes { VeterinarioResponsavelId = _usuarioAtual.VeterinarioId ?? Guid.Empty };
+            }
+
+            var pets = await _pets.ListarParaSelecao(_usuarioAtual.ClinicaId, filtro);
+
+            return Resultado<List<PetSelecaoDTO>>.Ok(pets.Select(p => new PetSelecaoDTO
+            {
+                Id = p.Id,
+                Nome = p.Nome,
+                Especie = p.Especie,
+                TutorId = p.TutorId,
+                TutorUsuarioId = p.Tutor?.UsuarioId ?? Guid.Empty,
+                NomeTutor = p.Tutor?.Usuario?.Nome ?? string.Empty,
+                VeterinarioResponsavelId = p.VeterinarioResponsavelId
+            }).ToList());
         }
 
         public async Task<Resultado<PetDTO>> ObterPorId(Guid id)
@@ -116,9 +155,8 @@ namespace VetCare.API.UseCases
             var alertas = await _alergias.ObterPorPaciente(id, apenasAtivas: true);
             dto.AlertasClinicos = alertas.Select(GerenciarAlergiasUseCase.MapearParaDTO).ToList();
 
-            var hoje = RelogioDaClinica.Padrao.Hoje;
-            var vacinas = await _vacinas.ObterPorPaciente(id);
-            dto.VacinasVencidas = vacinas.Count(v => v.ProximaDose.HasValue && v.ProximaDose.Value.Date < hoje);
+            var vencidas = await _vacinas.ContarVencidasPorPaciente(new[] { id });
+            dto.VacinasVencidas = vencidas.GetValueOrDefault(id);
 
             return Resultado<PetDTO>.Ok(dto);
         }
@@ -172,6 +210,12 @@ namespace VetCare.API.UseCases
             if (tutor == null || tutor.Usuario?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<PetDTO>.Invalido("O tutor informado não foi encontrado nesta clínica.");
+            }
+
+            // O veterinário cadastra pacientes para os tutores que já enxerga (ou que ainda não têm pet).
+            if (!AcessoAoTutor.Permitido(_usuarioAtual, tutor))
+            {
+                return Resultado<PetDTO>.NaoAutorizado("Você não tem acesso ao tutor informado.");
             }
 
             if (dto.DataNascimento.Date > RelogioDaClinica.Padrao.Hoje)
@@ -256,6 +300,12 @@ namespace VetCare.API.UseCases
                 return Resultado<PetDTO>.Invalido("O tutor informado não foi encontrado nesta clínica.");
             }
 
+            // Trocar o tutor só para alguém que quem edita já enxerga: o recorte dos tutores não se amplia por aqui.
+            if (pet.TutorId != dto.TutorId && !AcessoAoTutor.Permitido(_usuarioAtual, tutor))
+            {
+                return Resultado<PetDTO>.NaoAutorizado("Você não tem acesso ao tutor informado.");
+            }
+
             if (dto.DataNascimento == default)
             {
                 return Resultado<PetDTO>.Invalido("Informe a data de nascimento do paciente.");
@@ -269,6 +319,12 @@ namespace VetCare.API.UseCases
             if (dto.DataObito.HasValue && dto.DataObito.Value.Date < dto.DataNascimento.Date)
             {
                 return Resultado<PetDTO>.Invalido("A data de óbito não pode ser anterior à data de nascimento.");
+            }
+
+            // O óbito inativa o paciente e encerra os tratamentos: uma data futura faria isso antes da hora.
+            if (dto.DataObito.HasValue && dto.DataObito.Value.Date > RelogioDaClinica.Padrao.Hoje)
+            {
+                return Resultado<PetDTO>.Invalido("A data de óbito não pode ser futura.");
             }
 
             var microchip = dto.Microchip.Trim();
@@ -362,6 +418,11 @@ namespace VetCare.API.UseCases
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             if (await _pets.PossuiRegistrosClinicos(id))

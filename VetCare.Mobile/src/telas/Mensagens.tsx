@@ -41,15 +41,21 @@ export function Mensagens() {
     setErro('');
 
     try {
-      const [respostaConversas, respostaContatos, respostaPets] = await Promise.all([
+      const [respostaConversas, respostaContatos] = await Promise.all([
         api.get<Conversa[]>('/api/mensagens/conversas'),
         api.get<Usuario[]>('/api/mensagens/contatos'),
-        api.get<Pet[]>('/api/pets/meus'),
       ]);
 
       setConversas(respostaConversas.data);
       setContatos(respostaContatos.data);
-      setPets(respostaPets.data.filter((pet) => pet.ativo));
+
+      // Os pets só alimentam as etiquetas da conversa: se a leitura falhar, a tela segue sem elas.
+      try {
+        const respostaPets = await api.get<Pet[]>('/api/pets/meus');
+        setPets(respostaPets.data.filter((pet) => pet.ativo));
+      } catch {
+        setPets([]);
+      }
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível carregar as conversas.'));
     } finally {
@@ -84,7 +90,8 @@ export function Mensagens() {
     carregarConversas();
   }, [selecionado, recarregarConversa, carregarConversas]);
 
-  useAtualizacao(['mensagens'], aoChegarMensagem);
+  // Transferir um paciente muda os contatos do tutor; isso é publicado em "pets".
+  useAtualizacao(['mensagens', 'pets'], aoChegarMensagem);
 
   /** HU-014, CA-3: abrir a conversa marca as mensagens recebidas como lidas. */
   const abrirConversa = useCallback(async (usuarioId: string, nome: string) => {
@@ -236,6 +243,7 @@ export function Mensagens() {
               onChangeText={setTexto}
               multiline
               editable={!enviando}
+              maxLength={2000}
             />
 
             <TouchableOpacity

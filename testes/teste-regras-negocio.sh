@@ -33,8 +33,8 @@ checa "HU-001 login do administrador" "." "$ADMIN"
 r=$(curl -s -X POST $API/api/usuarios/login -H 'Content-Type: application/json' -d '{"email":"admin@vetcare.com","senha":"xxx"}')
 checa "HU-001 CA-2 mensagem genérica" "E-mail ou senha inválidos" "$r"
 
-r=$(get /api/pets "")
-checa "RNF-002 acesso sem token é negado" "" "$r"
+r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/pets")
+checa "RNF-002 acesso sem token é negado (401)" "401" "$r"
 
 echo "== HU-002 gestão de usuários =="
 SUFIXO=$RANDOM
@@ -126,8 +126,8 @@ else
   echo "  OK   RN-003 nenhuma observação interna vazou para o tutor"; ok=$((ok+1))
 fi
 
-r=$(get "/api/observacoes-internas/paciente/$PETID" "$TUTORTK")
-checa "RN-003 rota de observações fechada ao tutor" "" "$r"
+r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/observacoes-internas/paciente/$PETID" -H "Authorization: Bearer $TUTORTK")
+checa "RN-003 rota de observações fechada ao tutor (403)" "403" "$r"
 
 echo "== HU-006 / RN-009 confirmação e cancelamento =="
 FUTURO3=$(date -u -d "+5 days 14:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v+5d +%Y-%m-%dT14:00:00)
@@ -158,7 +158,7 @@ fi
 echo "== HU-013 escopo do tutor =="
 r=$(get /api/pets/meus "$TUTORTK")
 checa "HU-013 CA-1 tutor vê apenas os próprios pets" "Luna" "$r"
-if grep -q '"nome":"Rex"' <<<"$r"; then
+if grep -q '"nome":"Thor"' <<<"$r"; then
   echo "  FALHA HU-013 tutor enxergou pet de outro tutor"; falhou=$((falhou+1))
 else
   echo "  OK   HU-013 pets de outros tutores não aparecem"; ok=$((ok+1))
@@ -201,8 +201,8 @@ echo "== RN-008 escopo por perfil =="
 r=$(get /api/dashboard/indicadores "$VETTK")
 checa "RN-008 veterinário tem escopo próprio" '"escopo":"Veterinario"' "$r"
 
-r=$(get /api/usuarios "$VETTK")
-checa "RN-005 veterinário não lista usuários" "" "$r"
+r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/usuarios" -H "Authorization: Bearer $VETTK")
+checa "RN-005 veterinário não lista usuários (403)" "403" "$r"
 
 echo
 echo "================================"

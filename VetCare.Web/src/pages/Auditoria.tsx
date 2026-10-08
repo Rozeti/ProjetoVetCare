@@ -5,7 +5,7 @@ import type { PaginaDe, RegistroAuditoria, Usuario } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
 import { baixarCsv } from '../utils/impressao';
-import { formatarDataHora, paraValorInputData } from '../utils/formato';
+import { formatarDataHora, paraValorInputData, trintaDiasAtras } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { paginaVazia } from '../utils/paginacao';
 
@@ -37,12 +37,6 @@ const ESTILO_ACAO: Record<string, string> = {
   SolicitacaoDeSenha: 'bg-alerta-claro text-amber-800',
   RedefinicaoSenha: 'bg-alerta-claro text-amber-800',
 };
-
-function trintaDiasAtras(): string {
-  const data = new Date();
-  data.setDate(data.getDate() - 29);
-  return paraValorInputData(data);
-}
 
 /**
  * Trilha de auditoria da clínica. Registrar quem consultou cada prontuário é
@@ -228,7 +222,7 @@ export function Auditoria() {
             />
           </div>
 
-          <button type="button" className="vc-botao-secundario" onClick={recarregar}>
+          <button type="button" className="vc-botao-secundario" onClick={recarregar} disabled={carregando}>
             <Search size={16} />
             Filtrar
           </button>
@@ -251,12 +245,12 @@ export function Auditoria() {
             <table className="vc-tabela">
               <thead>
                 <tr>
-                  <th>Data e hora</th>
-                  <th>Usuário</th>
-                  <th>Ação</th>
-                  <th>Entidade</th>
-                  <th>Detalhe</th>
-                  <th>Origem</th>
+                  <th scope="col">Data e hora</th>
+                  <th scope="col">Usuário</th>
+                  <th scope="col">Ação</th>
+                  <th scope="col">Entidade</th>
+                  <th scope="col">Detalhe</th>
+                  <th scope="col">Origem</th>
                 </tr>
               </thead>
               <tbody>

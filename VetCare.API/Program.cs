@@ -191,13 +191,26 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1)
             }));
 
+    // A partição é o identificador do usuário (nunca o nome de exibição, que dois usuários podem repetir).
     options.AddPolicy(LimitesDeRequisicao.Upload, contexto =>
         RateLimitPartition.GetFixedWindowLimiter(
-            contexto.User.Identity?.Name ?? contexto.Connection.RemoteIpAddress?.ToString() ?? "desconhecido",
+            IdentidadeParaLimite(contexto),
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 30,
                 Window = TimeSpan.FromMinutes(1)
+            }));
+
+    // O mural de atualizações segura cada requisição por até 30 s: um cliente não pode
+    // pendurar quantas quiser. Quem passar do limite espera a próxima vaga.
+    options.AddPolicy(LimitesDeRequisicao.TempoReal, contexto =>
+        RateLimitPartition.GetConcurrencyLimiter(
+            IdentidadeParaLimite(contexto),
+            _ => new ConcurrencyLimiterOptions
+            {
+                PermitLimit = 4,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 4
             }));
 });
 
@@ -232,7 +245,10 @@ if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Segura
 
 // Mídias e documentos não são servidos como arquivos estáticos: saem pelo ArquivosController,
 // com URL assinada (RN-003, RNF-002).
-app.UseCors(app.Environment.IsDevelopment() ? "PermitirMobile" : "PermitirFrontend");
+// Em desenvolvimento qualquer origem serve (o aplicativo Expo muda de endereço); fora dele a
+// política aberta só entra com Cors:PermitirQualquerOrigem, como as demais chaves de segurança.
+var corsAberto = app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Cors:PermitirQualquerOrigem");
+app.UseCors(corsAberto ? "PermitirMobile" : "PermitirFrontend");
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -257,11 +273,11 @@ app.MapHealthChecks("/health/pronto", new HealthCheckOptions
         {
             status = relatorio.Status.ToString(),
             duracaoMs = relatorio.TotalDuration.TotalMilliseconds,
+            // Sem a descrição: a sonda é anônima e uma falha de conexão descreveria o banco.
             verificacoes = relatorio.Entries.Select(e => new
             {
                 nome = e.Key,
-                status = e.Value.Status.ToString(),
-                descricao = e.Value.Description
+                status = e.Value.Status.ToString()
             })
         });
     }
@@ -270,6 +286,12 @@ app.MapHealthChecks("/health/pronto", new HealthCheckOptions
 RegistrarResumoDaInicializacao(app);
 
 app.Run();
+
+/// <summary>Chave de partição dos limitadores por usuário: o id do token ou, sem sessão, o endereço de origem.</summary>
+static string IdentidadeParaLimite(HttpContext contexto) =>
+    contexto.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+    ?? contexto.Connection.RemoteIpAddress?.ToString()
+    ?? "desconhecido";
 
 static void AdicionarRepositorios(IServiceCollection servicos)
 {

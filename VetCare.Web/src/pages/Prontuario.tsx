@@ -125,6 +125,9 @@ export function Prontuario() {
       'observacoesinternas',
       'pets',
       'sessoes',
+      'tutores',
+      'usuarios',
+      'clinica',
     ],
     recarregar,
   );
@@ -215,6 +218,9 @@ export function Prontuario() {
   const dosesPendentes = prontuario.vacinas.filter(
     (v) => v.situacaoDose === 'Vencida' || v.situacaoDose === 'A vencer',
   ).length;
+
+  // Doses vencidas entram nos alertas clínicos, ao lado das alergias e comorbidades.
+  const dosesVencidas = prontuario.vacinas.filter((v) => v.situacaoDose === 'Vencida');
 
   // A administração transfere qualquer paciente; o veterinário só passa adiante o que está com ele.
   const podeTransferir =
@@ -323,10 +329,14 @@ export function Prontuario() {
         </div>
       )}
 
-      {/* Alergias e comorbidades precisam ser lidas antes de qualquer conduta. */}
-      {prontuario.alertasClinicos.length > 0 && (
+      {/* Alergias, comorbidades e vacinação em atraso precisam ser lidas antes de qualquer conduta. */}
+      {(prontuario.alertasClinicos.length > 0 || dosesVencidas.length > 0) && (
         <div className="mb-6">
-          <AlertasClinicos alertas={prontuario.alertasClinicos} />
+          <AlertasClinicos
+            alertas={prontuario.alertasClinicos}
+            dosesVencidas={dosesVencidas}
+            aoVerVacinas={aba === 'vacinas' ? undefined : () => mudarAba('vacinas')}
+          />
         </div>
       )}
 
@@ -400,15 +410,26 @@ export function Prontuario() {
       )}
 
       {aba === 'vacinas' && (
-        <CarteiraVacinacao pacienteId={pacienteId} vacinas={prontuario.vacinas} aoAtualizar={recarregar} />
-      )}
+        <CarteiraVacinacao
+          pacienteId={pacienteId}
+          vacinas={prontuario.vacinas}
+          somenteLeitura={!!prontuario.dataObito}
+          aoAtualizar={(mensagem) => {
+            if (mensagem) setAviso(mensagem);
+            recarregar();
+          }}
+        />
+        )}
 
       {aba === 'receitas' && (
         <Receituario
           pacienteId={pacienteId}
           prescricoes={prontuario.prescricoes}
           nomeClinica={nomeClinica}
-          aoAtualizar={recarregar}
+          aoAtualizar={(mensagem) => {
+            if (mensagem) setAviso(mensagem);
+            recarregar();
+          }}
         />
       )}
 
@@ -582,9 +603,9 @@ export function Prontuario() {
         pacienteId={pacienteId}
         alertas={prontuario.alertasClinicos}
         aoFechar={() => setModalAlerta(false)}
-        aoSalvar={() => {
+        aoSalvar={(mensagem) => {
           setModalAlerta(false);
-          setAviso('Alerta clínico registrado.');
+          setAviso(mensagem);
           recarregar();
         }}
       />

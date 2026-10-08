@@ -9,15 +9,26 @@ namespace VetCare.API.UseCases
 {
     /// <summary>
     /// Receituário do paciente. Assim como os demais registros clínicos, uma receita
-    /// não é excluída: ela é cancelada, preservando o histórico (RN-004).
+    /// não é excluída: ela é cancelada, preservando o histórico (RN-004). Emissão e
+    /// cancelamento ficam na auditoria: é o documento assinado com CRMV que sai da clínica.
     /// </summary>
     public class GerenciarPrescricoesUseCase
     {
+        /// <summary>Validade assumida quando o veterinário não informa uma data.</summary>
+        public const int ValidadePadraoEmDias = 30;
+
+        /// <summary>Teto para a validade informada: uma receita não vale indefinidamente.</summary>
+        public const int ValidadeMaximaEmDias = 365;
+
+        /// <summary>Tamanho da coluna de orientações, respeitado também ao anotar o cancelamento.</summary>
+        private const int TamanhoDasOrientacoes = 2000;
+
         private readonly IPrescricaoRepository _prescricoes;
         private readonly IPetRepository _pets;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IVeterinarioRepository _veterinarios;
         private readonly NotificacaoService _notificacoes;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarPrescricoesUseCase(
@@ -26,6 +37,7 @@ namespace VetCare.API.UseCases
             IProntuarioRepository prontuarios,
             IVeterinarioRepository veterinarios,
             NotificacaoService notificacoes,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _prescricoes = prescricoes;
@@ -33,6 +45,7 @@ namespace VetCare.API.UseCases
             _prontuarios = prontuarios;
             _veterinarios = veterinarios;
             _notificacoes = notificacoes;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -80,6 +93,11 @@ namespace VetCare.API.UseCases
                 return Resultado<PrescricaoDTO>.Invalido("Informe ao menos um medicamento na receita.");
             }
 
+            if (dto.Itens.Any(i => string.IsNullOrWhiteSpace(i.Medicamento)))
+            {
+                return Resultado<PrescricaoDTO>.Invalido("Todo item da receita precisa do nome do medicamento.");
+            }
+
             var pet = await _pets.ObterPorIdComTutor(dto.PacienteId);
 
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
@@ -90,6 +108,12 @@ namespace VetCare.API.UseCases
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
                 return Resultado<PrescricaoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
+            if (!pet.EmAcompanhamento)
+            {
+                return Resultado<PrescricaoDTO>.Conflito(
+                    "O paciente está inativo ou tem óbito registrado; o prontuário fica apenas para consulta.");
             }
 
             var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? Guid.Empty;
@@ -112,6 +136,23 @@ namespace VetCare.API.UseCases
                 return Resultado<PrescricaoDTO>.NaoAutorizado("A receita deve ser emitida em seu próprio nome.");
             }
 
+            // A validade conta no calendário da clínica: hoje já emitida vencida não faz sentido.
+            var hoje = RelogioDaClinica.Padrao.Hoje;
+            var validaAte = dto.ValidaAte.HasValue
+                ? DateTime.SpecifyKind(dto.ValidaAte.Value.Date, DateTimeKind.Utc)
+                : DateTime.SpecifyKind(hoje.AddDays(ValidadePadraoEmDias), DateTimeKind.Utc);
+
+            if (validaAte.Date <= hoje)
+            {
+                return Resultado<PrescricaoDTO>.Invalido("A validade da receita deve ser uma data futura.");
+            }
+
+            if (validaAte.Date > hoje.AddDays(ValidadeMaximaEmDias))
+            {
+                return Resultado<PrescricaoDTO>.Invalido(
+                    $"A validade da receita não pode passar de {ValidadeMaximaEmDias} dias.");
+            }
+
             var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(dto.PacienteId);
 
             var prescricao = new Prescricao
@@ -120,9 +161,7 @@ namespace VetCare.API.UseCases
                 PacienteId = dto.PacienteId,
                 VeterinarioId = veterinarioId,
                 AtendimentoId = dto.AtendimentoId,
-                ValidaAte = dto.ValidaAte.HasValue
-                    ? DateTime.SpecifyKind(dto.ValidaAte.Value.Date, DateTimeKind.Utc)
-                    : DateTime.UtcNow.Date.AddDays(30),
+                ValidaAte = validaAte,
                 Orientacoes = dto.Orientacoes.Trim()
             };
 
@@ -146,6 +185,10 @@ namespace VetCare.API.UseCases
             prescricao.Paciente = pet;
             prescricao.Veterinario = veterinario;
 
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "Prescricao", prescricao.Id,
+                $"Receita de {pet.Nome} com {prescricao.Itens.Count} item(ns), assinada por {veterinario.Usuario?.Nome}");
+
             var usuarioTutor = pet.Tutor?.UsuarioId;
 
             if (usuarioTutor.HasValue)
@@ -166,6 +209,13 @@ namespace VetCare.API.UseCases
                 return Resultado.NaoEncontrado("Receita não encontrada.");
             }
 
+            // A mesma regra de acesso do restante do prontuário, mais a autoria: o veterinário
+            // só cancela o que ele próprio assinou.
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, prescricao.Paciente))
+            {
+                return Resultado.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
             if (_usuarioAtual.EhVeterinario && prescricao.VeterinarioId != _usuarioAtual.VeterinarioId)
             {
                 return Resultado.NaoAutorizado("Você só pode cancelar receitas emitidas por você.");
@@ -178,20 +228,31 @@ namespace VetCare.API.UseCases
 
             prescricao.Status = StatusPrescricao.Cancelada;
 
-            if (!string.IsNullOrWhiteSpace(motivo))
+            var motivoLimpo = (motivo ?? string.Empty).Trim();
+
+            if (motivoLimpo.Length > 0)
             {
                 var prefixo = string.IsNullOrWhiteSpace(prescricao.Orientacoes)
                     ? string.Empty
                     : prescricao.Orientacoes + " | ";
 
-                prescricao.Orientacoes = $"{prefixo}Cancelada: {motivo.Trim()}";
+                // O motivo vai para as orientações, mas nunca além do que a coluna comporta.
+                prescricao.Orientacoes = Limitar($"{prefixo}Cancelada: {motivoLimpo}", TamanhoDasOrientacoes);
             }
 
             _prescricoes.Atualizar(prescricao);
             await _prescricoes.SalvarAlteracoes();
 
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Inativacao, "Prescricao", prescricao.Id,
+                $"Cancelamento da receita de {prescricao.Paciente?.Nome} emitida em {prescricao.DataEmissao:dd/MM/yyyy}" +
+                (motivoLimpo.Length > 0 ? $". Motivo: {motivoLimpo}" : string.Empty));
+
             return Resultado.Ok("Receita cancelada. O registro permanece no histórico do paciente.");
         }
+
+        private static string Limitar(string valor, int tamanho) =>
+            valor.Length <= tamanho ? valor : valor[..tamanho];
 
         public static PrescricaoDTO MapearParaDTO(Prescricao prescricao, Pet? pet)
         {

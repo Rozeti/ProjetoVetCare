@@ -24,6 +24,7 @@ namespace VetCare.API.UseCases
         private readonly IUsuarioRepository _usuarios;
         private readonly PasswordHasher _hasher;
         private readonly ContasService _contas;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarVeterinariosUseCase(
@@ -31,12 +32,14 @@ namespace VetCare.API.UseCases
             IUsuarioRepository usuarios,
             PasswordHasher hasher,
             ContasService contas,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _veterinarios = veterinarios;
             _usuarios = usuarios;
             _hasher = hasher;
             _contas = contas;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -137,6 +140,10 @@ namespace VetCare.API.UseCases
                 await _contas.EnviarBoasVindas(usuario, senhaDefinidaPelaClinica);
             }
 
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "Veterinario", veterinario.Id,
+                $"Cadastro de {usuario.Nome} (CRMV {veterinario.Crmv}){(usuarioNovo ? " com conta nova" : " para conta existente")}");
+
             return Resultado<VeterinarioDTO>.Ok(
                 MapearParaDTO(veterinario),
                 usuarioNovo && !senhaDefinidaPelaClinica
@@ -170,6 +177,10 @@ namespace VetCare.API.UseCases
 
             _veterinarios.Atualizar(veterinario);
             await _veterinarios.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, "Veterinario", veterinario.Id,
+                $"Edição de {veterinario.Usuario?.Nome} (CRMV {veterinario.Crmv})");
 
             return Resultado<VeterinarioDTO>.Ok(MapearParaDTO(veterinario), "Veterinário atualizado com sucesso.");
         }

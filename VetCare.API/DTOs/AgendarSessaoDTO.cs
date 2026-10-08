@@ -13,6 +13,7 @@ namespace VetCare.API.DTOs
         [Required(ErrorMessage = "A data e a hora da sessão são obrigatórias.")]
         public DateTime DataHora { get; set; }
 
+        [StringLength(1000, ErrorMessage = "As observações devem ter até 1000 caracteres.")]
         public string Observacoes { get; set; } = string.Empty;
     }
 }

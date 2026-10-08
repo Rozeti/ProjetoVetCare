@@ -123,6 +123,12 @@ namespace VetCare.API.UseCases
                 return Resultado<List<MensagemDTO>>.NaoEncontrado("Usuário não encontrado nesta clínica.");
             }
 
+            // RN-005: a barreira entre tutores vale na leitura como vale no envio.
+            if (_usuarioAtual.EhTutor && outro.Perfil == Perfis.Tutor)
+            {
+                return Resultado<List<MensagemDTO>>.NaoAutorizado("Tutores conversam apenas com a equipe da clínica.");
+            }
+
             if (marcarComoLida)
             {
                 await _mensagens.MarcarConversaComoLida(_usuarioAtual.Id, outroUsuarioId);
@@ -188,9 +194,12 @@ namespace VetCare.API.UseCases
                 return null;
             }
 
-            var pet = await _pets.ObterPorId(pacienteId.Value);
+            // Só um pet que quem envia pode ver entra na conversa; fora disso a mensagem segue sem vínculo.
+            var pet = await _pets.ObterPorIdComTutor(pacienteId.Value);
 
-            return pet != null && pet.ClinicaId == _usuarioAtual.ClinicaId ? pet.Id : null;
+            return pet != null && pet.ClinicaId == _usuarioAtual.ClinicaId && AcessoAoPaciente.Permitido(_usuarioAtual, pet)
+                ? pet.Id
+                : null;
         }
 
         private static bool EstaOnline(Usuario? usuario)

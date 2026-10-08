@@ -3,29 +3,35 @@ using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
 using VetCare.API.Security;
+using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
     /// <summary>
     /// HU-009: observações internas do prontuário. O acesso é restrito a Administrador e
-    /// Veterinário (RN-003); o Tutor nunca alcança este caso de uso, nem para leitura.
+    /// Veterinário (RN-003); o Tutor nunca alcança este caso de uso, nem para leitura. O
+    /// veterinário só lê e escreve nos pacientes sob sua responsabilidade, como em todo o
+    /// prontuário (<see cref="AcessoAoPaciente"/>).
     /// </summary>
     public class RegistrarObservacaoInternaUseCase
     {
         private readonly IObservacaoInternaRepository _observacoes;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IPetRepository _pets;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public RegistrarObservacaoInternaUseCase(
             IObservacaoInternaRepository observacoes,
             IProntuarioRepository prontuarios,
             IPetRepository pets,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _observacoes = observacoes;
             _prontuarios = prontuarios;
             _pets = pets;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -50,6 +56,11 @@ namespace VetCare.API.UseCases
                     "Informe um prontuário ou um paciente válido desta clínica para vincular a observação.");
             }
 
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, prontuario.Paciente))
+            {
+                return Resultado<ObservacaoInternaDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
             var observacao = new ObservacaoInterna
             {
                 ProntuarioId = prontuario.Id,
@@ -63,6 +74,11 @@ namespace VetCare.API.UseCases
             await _observacoes.SalvarAlteracoes();
 
             var salva = await _observacoes.ObterPorId(observacao.Id);
+
+            // O conteúdo é restrito (RN-003); a auditoria guarda só o fato e o paciente.
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "ObservacaoInterna", observacao.Id,
+                $"Observação interna no prontuário de {prontuario.Paciente?.Nome}");
 
             return Resultado<ObservacaoInternaDTO>.Ok(
                 MapearParaDTO(salva ?? observacao),
@@ -83,6 +99,11 @@ namespace VetCare.API.UseCases
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<List<ObservacaoInternaDTO>>.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado<List<ObservacaoInternaDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var prontuario = await _prontuarios.ObterPorPacienteId(pacienteId);

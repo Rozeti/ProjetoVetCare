@@ -25,6 +25,7 @@ namespace VetCare.Tests
             new UsuarioRepository(Contexto),
             _hasher,
             Dependencias.Contas(Contexto, _fila),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private GerenciarUsuariosUseCase CriarCasoDeUsuarios(UsuarioAtual usuarioAtual) => new(

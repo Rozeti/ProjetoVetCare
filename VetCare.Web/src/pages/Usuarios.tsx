@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/auth';
 import type { PaginaDe, Perfil, Usuario } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
-import { formatarData } from '../utils/formato';
+import { emailValido, formatarData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
@@ -40,7 +40,9 @@ const FORM_VAZIO = {
 
 /** HU-002: cadastro, edição, ativação/desativação e redefinição de senha dos usuários. */
 export function Usuarios() {
-  const { usuario: usuarioLogado } = useAuth();
+  const { usuario: usuarioLogado, temPerfil } = useAuth();
+  // O apoio consulta a equipe (contatos, vínculos); só a administração altera cadastros.
+  const ehAdministrador = temPerfil('Administrador');
 
   const [numeroPagina, setNumeroPagina] = useState(1);
   const [busca, setBusca] = useState('');
@@ -103,6 +105,7 @@ export function Usuarios() {
       telefone: usuario.telefone ?? '',
       endereco: usuario.endereco ?? '',
       cpf: usuario.cpf ?? '',
+      setor: usuario.setor ?? '',
     });
     setErroForm('');
     setModalAberto(true);
@@ -114,13 +117,27 @@ export function Usuarios() {
     evento.preventDefault();
     setErroForm('');
 
-    if (!form.nome.trim() || !form.email.trim()) {
-      setErroForm('Informe o nome e o e-mail do usuário.');
+    // As mesmas regras da API (CriarUsuarioDTO / AtualizarUsuarioDTO), conferidas antes do envio.
+    const nome = form.nome.trim();
+    const email = form.email.trim();
+
+    if (nome.length < 3 || nome.length > 120) {
+      setErroForm('O nome deve ter entre 3 e 120 caracteres.');
       return;
     }
 
-    if (!emEdicao && form.senha && form.senha.length < 6) {
-      setErroForm('A senha inicial deve ter no mínimo 6 caracteres, ou ficar em branco.');
+    if (!emailValido(email)) {
+      setErroForm('Informe um e-mail válido.');
+      return;
+    }
+
+    if (!emEdicao && form.senha && (form.senha.length < 6 || form.senha.length > 64)) {
+      setErroForm('A senha inicial deve ter entre 6 e 64 caracteres, ou ficar em branco.');
+      return;
+    }
+
+    if (form.perfil === 'Veterinario' && form.crmv.trim().length < 3) {
+      setErroForm('Informe o CRMV do veterinário.');
       return;
     }
 
@@ -152,8 +169,10 @@ export function Usuarios() {
 
         setAviso('Usuário atualizado com sucesso.');
       } else {
-        const { data } = await api.post<{ mensagem?: string }>('/api/usuarios', {
+        await api.post('/api/usuarios', {
           ...form,
+          nome,
+          email,
           senha: form.senha || null,
         });
 
@@ -162,8 +181,6 @@ export function Usuarios() {
             ? 'Usuário cadastrado com sucesso. Ele recebeu um e-mail de boas-vindas.'
             : 'Usuário cadastrado. Ele recebeu por e-mail o link para criar a própria senha.',
         );
-
-        void data;
       }
 
       setModalAberto(false);
@@ -243,10 +260,12 @@ export function Usuarios() {
         titulo="Usuários"
         descricao="Controle de acesso da clínica por perfil."
         acoes={
-          <button type="button" className="vc-botao-primario" onClick={abrirNovo}>
-            <Plus size={16} />
-            Novo usuário
-          </button>
+          ehAdministrador ? (
+            <button type="button" className="vc-botao-primario" onClick={abrirNovo}>
+              <Plus size={16} />
+              Novo usuário
+            </button>
+          ) : undefined
         }
       />
 
@@ -306,13 +325,17 @@ export function Usuarios() {
             <table className="vc-tabela">
               <thead>
                 <tr>
-                  <th>Nome</th>
-                  <th>E-mail</th>
-                  <th>Perfil</th>
-                  <th>Vínculo</th>
-                  <th>Cadastro</th>
-                  <th>Status</th>
-                  <th className="text-right">Ações</th>
+                  <th scope="col">Nome</th>
+                  <th scope="col">E-mail</th>
+                  <th scope="col">Perfil</th>
+                  <th scope="col">Vínculo</th>
+                  <th scope="col">Cadastro</th>
+                  <th scope="col">Status</th>
+                  {ehAdministrador && (
+                    <th scope="col" className="text-right">
+                      Ações
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -335,43 +358,51 @@ export function Usuarios() {
                         {usuario.ativo ? 'Ativo' : 'Inativo'}
                       </Etiqueta>
                     </td>
-                    <td>
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => abrirEdicao(usuario)}
-                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                          title="Editar dados"
-                        >
-                          <Pencil size={16} />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => redefinirSenha(usuario)}
-                          className="rounded-lg p-2 text-slate-500 hover:bg-brand-100 hover:text-brand"
-                          title="Redefinir senha"
-                        >
-                          <KeyRound size={16} />
-                        </button>
-
-                        {/* O administrador logado não pode desativar a própria conta. */}
-                        {usuario.id !== usuarioLogado?.id && (
+                    {ehAdministrador && (
+                      <td>
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
-                            onClick={() => alternarStatus(usuario)}
-                            className={`rounded-lg p-2 ${
-                              usuario.ativo
-                                ? 'text-slate-500 hover:bg-perigo-claro hover:text-perigo'
-                                : 'text-sucesso hover:bg-sucesso-claro'
-                            }`}
-                            title={usuario.ativo ? 'Desativar acesso' : 'Reativar acesso'}
+                            onClick={() => abrirEdicao(usuario)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                            title="Editar dados"
+                            aria-label={`Editar ${usuario.nome}`}
                           >
-                            <Power size={16} />
+                            <Pencil size={16} />
                           </button>
-                        )}
-                      </div>
-                    </td>
+
+                          {/* A própria senha se troca em Perfil, com a senha atual; aqui a sessão cairia na hora. */}
+                          {usuario.id !== usuarioLogado?.id && (
+                            <button
+                              type="button"
+                              onClick={() => redefinirSenha(usuario)}
+                              className="rounded-lg p-2 text-slate-500 hover:bg-brand-100 hover:text-brand"
+                              title="Redefinir senha"
+                              aria-label={`Redefinir a senha de ${usuario.nome}`}
+                            >
+                              <KeyRound size={16} />
+                            </button>
+                          )}
+
+                          {/* O administrador logado não pode desativar a própria conta. */}
+                          {usuario.id !== usuarioLogado?.id && (
+                            <button
+                              type="button"
+                              onClick={() => alternarStatus(usuario)}
+                              className={`rounded-lg p-2 ${
+                                usuario.ativo
+                                  ? 'text-slate-500 hover:bg-perigo-claro hover:text-perigo'
+                                  : 'text-sucesso hover:bg-sucesso-claro'
+                              }`}
+                              title={usuario.ativo ? 'Desativar acesso' : 'Reativar acesso'}
+                              aria-label={`${usuario.ativo ? 'Desativar' : 'Reativar'} o acesso de ${usuario.nome}`}
+                            >
+                              <Power size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

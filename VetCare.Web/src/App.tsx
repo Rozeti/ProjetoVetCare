@@ -192,7 +192,7 @@ export default function App() {
             <Route
               path="/usuarios"
               element={
-                <Protegida perfis={['Administrador']}>
+                <Protegida perfis={['Administrador', 'Apoio']}>
                   <Usuarios />
                 </Protegida>
               }

@@ -6,6 +6,10 @@ import type { Veterinario } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
 import { paraValorInputData } from '../../utils/formato';
 
+/** Mesmos limites de CriarTratamentoDTO. */
+const LIMITE_OBJETIVO = 1000;
+const LIMITE_OBSERVACOES = 2000;
+
 interface Props {
   aberto: boolean;
   pacienteId: string;
@@ -64,7 +68,8 @@ function Formulario({
     api
       .get<Veterinario[]>('/api/veterinarios')
       .then(({ data }) => {
-        if (ativo) setVeterinarios(data);
+        // Só profissionais ativos assumem tratamentos novos.
+        if (ativo) setVeterinarios(data.filter((v) => v.ativo));
       })
       .catch((falha) => {
         if (ativo) setErro(mensagemDeErro(falha, 'Não foi possível carregar os veterinários.'));
@@ -79,8 +84,31 @@ function Formulario({
     evento.preventDefault();
     setErro('');
 
-    if (!objetivo.trim()) {
-      setErro('Descreva o objetivo terapêutico do tratamento.');
+    // Mesmas regras de CriarTratamentoDTO, conferidas antes do envio.
+    const objetivoLimpo = objetivo.trim();
+
+    if (objetivoLimpo.length < 3) {
+      setErro('Descreva o objetivo terapêutico do tratamento (mínimo de 3 caracteres).');
+      return;
+    }
+
+    if (objetivoLimpo.length > LIMITE_OBJETIVO) {
+      setErro(`O objetivo terapêutico deve ter até ${LIMITE_OBJETIVO} caracteres.`);
+      return;
+    }
+
+    if (observacoes.length > LIMITE_OBSERVACOES) {
+      setErro(`As observações devem ter até ${LIMITE_OBSERVACOES} caracteres.`);
+      return;
+    }
+
+    if (!dataInicio) {
+      setErro('Informe a data de início do tratamento.');
+      return;
+    }
+
+    if (dataInicio > paraValorInputData(new Date())) {
+      setErro('A data de início do tratamento não pode ser futura.');
       return;
     }
 
@@ -96,8 +124,8 @@ function Formulario({
         pacienteId,
         veterinarioId,
         dataInicio,
-        objetivoTerapeutico: objetivo,
-        observacoesGerais: observacoes,
+        objetivoTerapeutico: objetivoLimpo,
+        observacoesGerais: observacoes.trim(),
       });
 
       aoSalvar();
@@ -115,14 +143,15 @@ function Formulario({
       descricao="O tratamento agrupa a avaliação, as sessões e os atendimentos do paciente."
       aoFechar={aoFechar}
     >
-      <form onSubmit={aoEnviar} className="space-y-4">
-        <Campo rotulo="Objetivo terapêutico" obrigatorio>
+      <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+        <Campo rotulo="Objetivo terapêutico" obrigatorio dica={`${objetivo.length}/${LIMITE_OBJETIVO} caracteres`}>
           <textarea
             className="vc-campo"
             rows={3}
             value={objetivo}
             onChange={(e) => setObjetivo(e.target.value)}
             placeholder="Ex.: recuperar a amplitude de movimento do membro posterior direito após cirurgia."
+            maxLength={LIMITE_OBJETIVO}
           />
         </Campo>
 
@@ -153,17 +182,24 @@ function Formulario({
             </select>
           </Campo>
 
-          <Campo rotulo="Data de início" obrigatorio>
-            <input type="date" className="vc-campo" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+          <Campo rotulo="Data de início" obrigatorio dica="Hoje ou uma data passada.">
+            <input
+              type="date"
+              className="vc-campo"
+              max={paraValorInputData(new Date())}
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+            />
           </Campo>
         </div>
 
-        <Campo rotulo="Observações gerais">
+        <Campo rotulo="Observações gerais" dica={`${observacoes.length}/${LIMITE_OBSERVACOES} caracteres`}>
           <textarea
             className="vc-campo"
             rows={2}
             value={observacoes}
             onChange={(e) => setObservacoes(e.target.value)}
+            maxLength={LIMITE_OBSERVACOES}
           />
         </Campo>
 

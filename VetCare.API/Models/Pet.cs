@@ -33,6 +33,13 @@ namespace VetCare.API.Models
         public DateTime? DataObito { get; set; }
         public DateTime DataCadastro { get; set; } = DateTime.UtcNow;
 
+        /// <summary>
+        /// Um paciente inativo ou com óbito registrado não recebe registros clínicos novos:
+        /// o prontuário dele fica apenas para consulta. É a regra única usada por todos os
+        /// casos de uso que criam avaliação, atendimento, receita, sessão ou aplicação.
+        /// </summary>
+        public bool EmAcompanhamento => Ativo && DataObito == null;
+
         public Tutor? Tutor { get; set; }
         public Veterinario? VeterinarioResponsavel { get; set; }
         public Clinica? Clinica { get; set; }

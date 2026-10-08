@@ -7,7 +7,11 @@ using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
-    /// <summary>HU-010: fotos e vídeos anexados a uma sessão, respeitando os limites da RN-011.</summary>
+    /// <summary>
+    /// HU-010: fotos e vídeos anexados a uma sessão, respeitando os limites da RN-011.
+    /// Quem pode ver o paciente pode anexar e remover as mídias dele (<see cref="AcessoAoPaciente"/>);
+    /// como a remoção apaga o arquivo e não tem versão, ela fica na auditoria.
+    /// </summary>
     public class AnexarMidiaUseCase
     {
         private static readonly string[] FormatosPermitidos = { ".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov" };
@@ -21,6 +25,7 @@ namespace VetCare.API.UseCases
         private readonly IAtendimentoRepository _atendimentos;
         private readonly ArmazenamentoArquivos _armazenamento;
         private readonly AssinadorDeArquivos _assinador;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public AnexarMidiaUseCase(
@@ -29,6 +34,7 @@ namespace VetCare.API.UseCases
             IAtendimentoRepository atendimentos,
             ArmazenamentoArquivos armazenamento,
             AssinadorDeArquivos assinador,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _midias = midias;
@@ -36,6 +42,7 @@ namespace VetCare.API.UseCases
             _atendimentos = atendimentos;
             _armazenamento = armazenamento;
             _assinador = assinador;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -69,9 +76,14 @@ namespace VetCare.API.UseCases
                 return Resultado<MidiaDTO>.NaoEncontrado("Sessão não encontrada.");
             }
 
-            if (_usuarioAtual.EhVeterinario && sessao.VeterinarioId != _usuarioAtual.VeterinarioId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
             {
-                return Resultado<MidiaDTO>.NaoAutorizado("Você só pode anexar mídias às suas próprias sessões.");
+                return Resultado<MidiaDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
+            if (sessao.Status == StatusSessao.Cancelada)
+            {
+                return Resultado<MidiaDTO>.Invalido("Não é possível anexar mídias a uma sessão cancelada.");
             }
 
             // Quando o atendimento não é informado, vinculamos ao da própria sessão, se existir.
@@ -85,12 +97,16 @@ namespace VetCare.API.UseCases
                 SessaoId = dto.SessaoId,
                 AtendimentoId = atendimentoId,
                 Tipo = FormatosDeVideo.Contains(extensao) ? "Video" : "Imagem",
-                NomeArquivo = dto.Arquivo.FileName,
+                NomeArquivo = ArmazenamentoArquivos.NomeSeguro(dto.Arquivo.FileName),
                 UrlArquivo = caminho
             };
 
             await _midias.Adicionar(midia);
             await _midias.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "MidiaSessao", midia.Id,
+                $"{midia.Tipo} {midia.NomeArquivo} anexada à sessão de {sessao.Tratamento?.Paciente?.Nome}");
 
             return Resultado<MidiaDTO>.Ok(MapearParaDTO(midia, _assinador), "Mídia anexada com sucesso.");
         }
@@ -131,15 +147,20 @@ namespace VetCare.API.UseCases
                 return Resultado.NaoEncontrado("Mídia não encontrada.");
             }
 
-            if (_usuarioAtual.EhVeterinario && sessao.VeterinarioId != _usuarioAtual.VeterinarioId)
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
             {
-                return Resultado.NaoAutorizado("Você só pode remover mídias das suas próprias sessões.");
+                return Resultado.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             _midias.Remover(midia);
             await _midias.SalvarAlteracoes();
 
             _armazenamento.Remover(midia.UrlArquivo);
+
+            // O arquivo some do disco e não há versão anterior: a auditoria guarda o que era.
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Exclusao, "MidiaSessao", id,
+                $"{midia.Tipo} {midia.NomeArquivo} removida da sessão de {sessao.Tratamento?.Paciente?.Nome}");
 
             return Resultado.Ok("Mídia removida com sucesso.");
         }

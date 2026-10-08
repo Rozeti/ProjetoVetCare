@@ -6,6 +6,12 @@
 
 @host = http://localhost:5265
 
+# Datas relativas: o cliente REST calcula no momento da execução, então o arquivo não
+# envelhece. A sessão é marcada para daqui a 7 dias às 14h (dentro do expediente padrão).
+@diaDaSessao = {{$datetime "YYYY-MM-DD" 7 d}}
+@diaDaAplicacao = {{$datetime "YYYY-MM-DD" -10 d}}
+@proximaDose = {{$datetime "YYYY-MM-DD" 20 d}}
+
 ### Health check (não exige autenticação)
 GET {{host}}/health
 
@@ -178,7 +184,7 @@ Authorization: Bearer {{token}}
 {
   "tratamentoId": "{{tratamentoId}}",
   "veterinarioId": "{{veterinarioId}}",
-  "dataHora": "2026-10-05T14:00:00",
+  "dataHora": "{{diaDaSessao}}T14:00:00",
   "observacoes": "Trazer o pet em jejum de duas horas."
 }
 
@@ -192,7 +198,7 @@ Authorization: Bearer {{token}}
 {
   "tratamentoId": "{{tratamentoId}}",
   "veterinarioId": "{{veterinarioId}}",
-  "dataHora": "2026-10-05T14:00:00"
+  "dataHora": "{{diaDaSessao}}T14:00:00"
 }
 
 ### HU-004, CA-5 — Agendamento retroativo é bloqueado (400)
@@ -207,11 +213,11 @@ Authorization: Bearer {{token}}
 }
 
 ### HU-004, CA-3 — Agenda do veterinário (visao = dia | semana | mes)
-GET {{host}}/api/sessoes/agenda/{{veterinarioId}}?data=2026-10-05&visao=semana
+GET {{host}}/api/sessoes/agenda/{{veterinarioId}}?data={{diaDaSessao}}&visao=semana
 Authorization: Bearer {{token}}
 
 ### HU-005 — Agenda geral consolidada da clínica
-GET {{host}}/api/sessoes/agenda-geral?data=2026-10-05&visao=dia
+GET {{host}}/api/sessoes/agenda-geral?data={{diaDaSessao}}&visao=dia
 Authorization: Bearer {{token}}
 
 ### HU-006 — Confirmar presença
@@ -345,3 +351,172 @@ Authorization: Bearer {{token}}
 ### Configurações da clínica (RN-002 e RN-009 usam estes valores)
 GET {{host}}/api/clinica
 Authorization: Bearer {{token}}
+
+###############################################################################
+# Carteira de vacinação, alertas clínicos, receituário, bloqueios e auditoria
+###############################################################################
+
+### Alerta clínico (alergia, comorbidade, restrição ou cirurgia) — visível também ao tutor
+POST {{host}}/api/alergias
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "tipo": "Alergia",
+  "descricao": "Alergia a dipirona, com histórico de reação cutânea.",
+  "gravidade": "Grave"
+}
+
+### Carteira — dose 1 de um esquema de 3 doses (a próxima dose é obrigatória enquanto o esquema está em aberto)
+# @name dose1
+POST {{host}}/api/vacinas
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "tipo": "Vacina",
+  "nome": "V10",
+  "fabricante": "Zoetis",
+  "lote": "A2291",
+  "numeroDose": 1,
+  "totalDoses": 3,
+  "dataAplicacao": "{{diaDaAplicacao}}",
+  "proximaDose": "{{proximaDose}}"
+}
+
+@vacinaId = {{dose1.response.body.id}}
+
+### Carteira — dose 3 antes da dose 2 é recusada (400): a sequência do esquema é conferida
+POST {{host}}/api/vacinas
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "tipo": "Vacina",
+  "nome": "V10",
+  "numeroDose": 3,
+  "totalDoses": 3,
+  "dataAplicacao": "{{diaDaAplicacao}}"
+}
+
+### Carteira — recorrência calcula a próxima dose quando a data não é informada (Mensal, Trimestral, Semestral, Anual)
+POST {{host}}/api/vacinas
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "tipo": "Antipulgas",
+  "nome": "Antipulgas mensal",
+  "recorrencia": "Mensal",
+  "dataAplicacao": "{{diaDaAplicacao}}"
+}
+
+### Carteira paginada e filtrada (tipo, situacao = Em dia | A vencer | Vencida | Dose única | Concluída, busca)
+GET {{host}}/api/vacinas/paciente/{{pacienteId}}?situacao=Em dia&pagina=1&tamanho=10
+Authorization: Bearer {{token}}
+
+### Painel de prevenção: doses vencidas ou a vencer nos próximos 30 dias (equipe clínica)
+GET {{host}}/api/vacinas/vencendo?dias=30
+Authorization: Bearer {{token}}
+
+### Carteira — correção de um registro (quem aplicou, lote, datas)
+PUT {{host}}/api/vacinas/{{vacinaId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tipo": "Vacina",
+  "nome": "V10",
+  "fabricante": "Zoetis",
+  "lote": "A2291-B",
+  "numeroDose": 1,
+  "totalDoses": 3,
+  "dataAplicacao": "{{diaDaAplicacao}}",
+  "proximaDose": "{{proximaDose}}"
+}
+
+### Carteira — exclusão exige justificativa (fica na auditoria); sem ela a API responde 400
+DELETE {{host}}/api/vacinas/{{vacinaId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "justificativa": "Lançada na carteira do paciente errado."
+}
+
+### Receita com dois medicamentos (o veterinário logado assina; o administrador informa veterinarioId)
+# @name novaReceita
+POST {{host}}/api/prescricoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "orientacoes": "Administrar junto com alimento.",
+  "itens": [
+    { "medicamento": "Meloxicam 2 mg", "dosagem": "1 comprimido", "frequencia": "a cada 24 horas", "duracao": "por 5 dias", "via": "Oral" },
+    { "medicamento": "Condroitina 500 mg", "dosagem": "1 cápsula", "frequencia": "a cada 12 horas", "duracao": "uso contínuo", "via": "Oral" }
+  ]
+}
+
+@prescricaoId = {{novaReceita.response.body.id}}
+
+### RN-004 — A receita é cancelada, nunca apagada; o motivo fica no histórico e na auditoria
+PATCH {{host}}/api/prescricoes/{{prescricaoId}}/cancelar
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "motivo": "Dosagem revista após retorno."
+}
+
+### Bloqueio de agenda do veterinário (férias, congresso): sessões no período são recusadas
+POST {{host}}/api/bloqueios-agenda
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "veterinarioId": "{{veterinarioId}}",
+  "inicio": "{{$datetime "YYYY-MM-DD" 30 d}}T08:00:00",
+  "fim": "{{$datetime "YYYY-MM-DD" 35 d}}T18:00:00",
+  "motivo": "Congresso de fisioterapia"
+}
+
+### Pacientes ativos para os seletores dos formulários (sem paginação, no recorte de quem consulta)
+GET {{host}}/api/pets/selecao
+Authorization: Bearer {{token}}
+
+### Transferência de paciente para outro veterinário (leva tratamentos em andamento e sessões futuras)
+PATCH {{host}}/api/pets/{{pacienteId}}/veterinario-responsavel
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "veterinarioId": "{{veterinarioId}}",
+  "motivo": "Redistribuição da agenda."
+}
+
+### Trilha de auditoria (filtros: acao, entidade, usuarioId, inicio, fim; paginada)
+GET {{host}}/api/auditoria?entidade=Vacina&pagina=1&tamanho=25
+Authorization: Bearer {{token}}
+
+### Configurações da clínica — alterar expediente e prazo de cancelamento (RN-009)
+PUT {{host}}/api/clinica
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Clínica VetSPA",
+  "cnpj": "",
+  "telefone": "(61) 3000-0000",
+  "endereco": "",
+  "horasMinimasCancelamento": 12,
+  "duracaoSessaoMinutos": 60,
+  "horarioAbertura": "08:00",
+  "horarioFechamento": "18:00"
+}

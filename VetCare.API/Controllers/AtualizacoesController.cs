@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Security;
@@ -46,6 +47,7 @@ namespace VetCare.API.Controllers
         /// </param>
         /// <param name="espera">Segundos que a requisição pode ficar pendurada.</param>
         [HttpGet]
+        [EnableRateLimiting(LimitesDeRequisicao.TempoReal)]
         public async Task<ActionResult<FeedAtualizacoesDTO>> Consultar(
             [FromQuery] long desde = -1,
             [FromQuery] int espera = 25,

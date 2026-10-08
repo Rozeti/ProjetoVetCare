@@ -107,7 +107,7 @@ o contêiner parado, a API não consegue salvar nada e mostra erro de conexão.
 
 ### As tabelas
 
-O banco se chama `vetcare_db` e tem **24 tabelas**. As principais:
+O banco se chama `vetcare_db` e tem **25 tabelas**. As principais:
 
 | Tabela | Guarda |
 |---|---|
@@ -118,11 +118,14 @@ O banco se chama `vetcare_db` e tem **24 tabelas**. As principais:
 | `Tratamentos`, `Sessoes`, `Atendimentos`, `AvaliacoesClinicas` | O andamento clínico |
 | `Prontuarios`, `ObservacoesInternas`, `VersoesRegistrosClinicos` | O histórico e as versões antigas |
 | `Vacinas`, `Prescricoes`, `ItensPrescricao`, `AlergiasCondicoes` | Carteira, receitas e alertas |
-| `Mensagens`, `Notificacoes` | A comunicação |
+| `Mensagens`, `Notificacoes`, `DispositivosDoUsuario` | A comunicação e os aparelhos que recebem push |
+| `MidiasSessao`, `DocumentosClinicos` | Fotos, vídeos e documentos anexados ao prontuário |
+| `BloqueiosAgenda` | Férias e congressos que fecham a agenda do veterinário |
+| `TokensRedefinicaoSenha` | Códigos e links de recuperação de senha, já com validade |
 | `RegistrosAuditoria` | Quem fez o quê e quando |
 
 Você **não precisa criar nenhuma tabela**. Quando a API inicia e encontra um banco vazio, ela
-cria as 24 tabelas sozinha e cadastra a clínica mais uma conta de administrador. É só isso que
+cria as 25 tabelas sozinha e cadastra a clínica mais uma conta de administrador. É só isso que
 existe hoje — o resto você cadastra pelo sistema.
 
 ---
@@ -145,7 +148,9 @@ posicionada na pasta certa.
 
 ### Passo 3 — Libere as portas
 
-O Docker vai usar as portas 5432 (banco), 5265 (API) e 8080 (portal). Se outra coisa já
+O Docker vai usar as portas 5432 (banco), 5265 (API), 8080 (portal) e 8082 (Adminer, a
+interface do banco). Todas podem ser trocadas no `.env` (`POSTGRES_PORT`, `API_PORT`,
+`WEB_PORT`, `ADMINER_PORT`). Se outra coisa já
 estiver usando alguma delas, o sistema sobe pela metade e você recebe erro no login.
 
 **3a. Desligue qualquer PostgreSQL avulso.** Se você já rodou um banco em contêiner nesta
@@ -225,10 +230,12 @@ O `-d` significa "deixe rodando em segundo plano". Você pode fechar o terminal 
 docker compose ps
 ```
 
-Você deve ver três linhas com `(healthy)`:
+Você deve ver quatro linhas, três delas com `(healthy)` (o Adminer não publica verificação
+de saúde, então aparece só como `Up`):
 
 ```
 NAME                 SERVICE    STATUS
+vetcare-adminer-1    adminer    Up
 vetcare-api-1        api        Up (healthy)
 vetcare-postgres-1   postgres   Up (healthy)
 vetcare-web-1        web        Up (healthy)
@@ -585,8 +592,24 @@ Faça nesta ordem, porque cada passo depende do anterior:
 6. **Agenda geral → Nova sessão.** Marque um horário.
    *Tente marcar outra sessão no mesmo horário do mesmo veterinário: o sistema recusa — é a RN-002.*
 7. **Prontuário → Vacinação → Registrar.** Lance uma vacina com data da próxima dose.
-8. **Prontuário → Receitas → Nova receita.** Adicione dois medicamentos, escolha o
-   **veterinário responsável** e emita. Depois clique em imprimir.
+   *Marque "Faz parte de um esquema com várias doses" e informe "dose 1 de 3": o sistema exige que a
+   dose 2 venha depois da 1 e recusa uma dose 2 sem a 1 lançada. Escolha a recorrência
+   (Mensal, Trimestral, Semestral ou Anual) e a próxima dose é calculada sozinha. Uma vacina
+   com próxima dose no passado aparece como "Vencida" na carteira e vira o aviso "Vacinação
+   em atraso" junto dos alertas clínicos, no topo do prontuário. A lista tem busca por nome,
+   filtro por tipo e situação e paginação; editar ou excluir pede confirmação, e excluir
+   exige uma justificativa, que fica gravada na auditoria.*
+8. **Prontuário → Alerta clínico.** Registre uma alergia ou condição relacionada.
+   *Os alertas aparecem lado a lado no topo do prontuário e, resumidos, na lista de pacientes
+   e em "Meus pets" do tutor. Um alerta inativado some da tela mas fica na auditoria.*
+9. **Entre como o veterinário → Agenda → Bloqueios.** Marque férias ou um congresso.
+   *Volte ao administrador e tente agendar uma sessão dentro do período: o sistema recusa.*
+10. **Entre como Apoio administrativo** (crie um usuário com esse perfil) e vá em **Agenda
+    geral**: a recepção confirma e cancela sessões, mas não as conclui, que é tarefa do
+    veterinário.
+11. **Prontuário → Receitas → Nova receita.** Adicione dois medicamentos, escolha o
+    **veterinário responsável** e emita. Depois clique em imprimir.
+    *A validade vai de 1 a 365 dias; cancelar uma receita pede o motivo.*
 
 > Sobre o campo "Veterinário responsável": ele aparece para você porque está logado como
 > administrador, que não é um profissional habilitado a prescrever. A receita é um documento
@@ -629,7 +652,8 @@ O mesmo cadastro existe no aplicativo: em **Meus pets**, botão **+ Cadastrar**.
 
 ### Teste 4 — Os roteiros automáticos
 
-Estes são 165 verificações que o sistema faz em si mesmo. Elas criam dados de demonstração,
+Estes são os roteiros de verificação que o sistema faz em si mesmo (a quantidade de
+verificações de cada um está em `testes/README.md`). Elas criam dados de demonstração,
 então **rode num banco de teste, não no que você já começou a usar de verdade.**
 
 Precisa do Git Bash (vem junto com o Git). Clique com o botão direito na pasta do projeto →
@@ -643,13 +667,10 @@ bash testes/teste-funcionalidades-novas.sh
 bash testes/teste-tempo-real.sh
 ```
 
-Cada um termina com um resumo. O esperado é:
+Cada um termina com um resumo. O que importa é a segunda coluna:
 
 ```
- OK: 46   FALHAS: 0
- OK: 26   FALHAS: 0
- OK: 46   FALHAS: 0
- OK: 27   FALHAS: 0
+ OK: ...   FALHAS: 0
 ```
 
 Há ainda um quinto roteiro que abre o Microsoft Edge de verdade e clica pelas telas sozinho:
@@ -659,7 +680,7 @@ npm --prefix testes i puppeteer-core@23
 node testes/teste-navegador.mjs
 ```
 
-Ele gera prints em `capturas/` e termina com `OK: 20   FALHAS: 0`.
+Ele gera prints em `capturas/` e termina com `OK: 28   FALHAS: 0`.
 
 E os testes das regras isoladas, que não precisam do sistema no ar:
 
@@ -667,7 +688,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Aprovado: 131`.
+Esperado: `Falhou: 0` (são 179 testes hoje; o número cresce a cada regra nova).
 
 ---
 
@@ -755,7 +776,7 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 | `/health/pronto` diz `Unhealthy` no banco | Contêiner do banco parado | `docker compose start postgres` |
 | A API fica **para sempre** em `health: starting` e `docker compose logs api` mostra `28P01: password authentication failed` | Você trocou `POSTGRES_PASSWORD` no `.env` depois que o banco já existia | Veja o quadro "A senha do banco não bate com o `.env`" abaixo |
 | A API fica em `Restarting` e o log diz "Jwt:Chave com pelo menos 32 bytes" | A chave no `.env` tem um `$`, que o Docker apagou junto com o resto | Troque `JWT_CHAVE` por uma frase longa sem `$` e rode `docker compose up -d` |
-| "port is already allocated" ao subir | Outro programa usa a porta 5432 ou 8080 | `docker stop vetcare-postgres`, ou mude `POSTGRES_PORT` / `WEB_PORT` no `.env` |
+| "port is already allocated" ao subir | Outro programa usa a porta 5432, 8080 ou 8082 | `docker stop vetcare-postgres`, ou mude `POSTGRES_PORT` / `WEB_PORT` / `ADMINER_PORT` no `.env` |
 | "Muitas tentativas" no login | Proteção contra ataque de senha | Espere 1 minuto |
 | "Conta bloqueada" no login | 5 senhas erradas seguidas (RN-006) | Espere 15 minutos, ou peça a um administrador para redefinir |
 | O celular não acha a API | Celular em outra rede | Conecte no mesmo Wi-Fi do computador |
@@ -857,6 +878,7 @@ taskkill /PID 1234 /F
 | API | http://localhost:5265 |
 | Saúde da API e do banco | http://localhost:5265/health/pronto |
 | Banco de dados | localhost:5432 — banco `vetcare_db`, usuário `postgres` |
+| Adminer (ver o banco pelo navegador) | http://localhost:8082 — sistema PostgreSQL, servidor `postgres`, usuário e senha do `.env` |
 | Aplicativo (Expo/Metro) | http://localhost:8081 — no celular, use o QR Code |
 | E-mails gravados localmente | `docker compose exec api ls /app/emails-enviados` (ou `VetCare.API/emails-enviados` no modo desenvolvimento) |
 

@@ -7,7 +7,7 @@ import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Pet } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
-import { formatarData, formatarPeso, paraValorInputData } from '../utils/formato';
+import { formatarData, formatarPeso, paraValorInputData, validarDadosDoPet } from '../utils/formato';
 
 const FORM_VAZIO = {
   nome: '',
@@ -58,8 +58,11 @@ export function MeusPets() {
     evento.preventDefault();
     setErroForm('');
 
-    if (!form.nome.trim() || !form.dataNascimento) {
-      setErroForm('Informe o nome e a data de nascimento do seu pet.');
+    // As mesmas regras da API, conferidas antes do envio.
+    const problema = validarDadosDoPet(form);
+
+    if (problema) {
+      setErroForm(problema);
       return;
     }
 
@@ -150,11 +153,11 @@ export function MeusPets() {
                 </div>
               </div>
 
-              {pet.alertasClinicos.length > 0 && (
+              {(pet.alertasClinicos.length > 0 || pet.vacinasVencidas > 0) && (
                 <div className="mb-4">
-                  <AlertasClinicos alertas={pet.alertasClinicos} compacto />
+                  <AlertasClinicos alertas={pet.alertasClinicos} vacinasVencidas={pet.vacinasVencidas} compacto />
                 </div>
-              )}
+                )}
 
               <dl className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center">
                 <div>

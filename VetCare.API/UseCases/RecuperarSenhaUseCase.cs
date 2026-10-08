@@ -86,6 +86,13 @@ namespace VetCare.API.UseCases
                 return Resultado.Invalido("Esta conta está inativa. Procure o administrador da clínica.");
             }
 
+            var senhaFraca = PasswordHasher.ValidarForca(dto.NovaSenha);
+
+            if (senhaFraca != null)
+            {
+                return Resultado.Invalido(senhaFraca);
+            }
+
             usuario.SenhaHash = _hasher.Gerar(dto.NovaSenha);
 
             // RN-006: a redefinição libera a conta de um bloqueio por tentativas.

@@ -5,11 +5,20 @@ import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useAuth } from '../contexts/auth';
 import type { Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Campo, Card } from '../components/ui';
-import { formatarData, formatarDataHora } from '../utils/formato';
+import { formatarData, formatarDataHora, validarSenha } from '../utils/formato';
+import { useAtualizacao } from '../contexts/atualizacoes';
 
 /** Dados da conta do usuário autenticado, preferências de notificação e troca da própria senha. */
 export function Perfil() {
   const { usuario, ehTutor, atualizarUsuario } = useAuth();
+
+  // Uma correção feita pela clínica no cadastro (nome, contato, desativação) aparece aqui na hora.
+  useAtualizacao(['usuarios', 'tutores'], () => {
+    api
+      .get<Usuario>('/api/usuarios/me')
+      .then(({ data }) => atualizarUsuario(data))
+      .catch(() => undefined);
+  });
 
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
@@ -20,6 +29,7 @@ export function Perfil() {
 
   const [salvandoPreferencias, setSalvandoPreferencias] = useState(false);
   const [erroPreferencias, setErroPreferencias] = useState('');
+  const [avisoPreferencias, setAvisoPreferencias] = useState('');
 
   const [telefone, setTelefone] = useState(usuario?.telefone ?? '');
   const [endereco, setEndereco] = useState(usuario?.endereco ?? '');
@@ -36,8 +46,21 @@ export function Perfil() {
     setErroSenha('');
     setAvisoSenha('');
 
-    if (novaSenha.length < 6) {
-      setErroSenha('A nova senha deve ter no mínimo 6 caracteres.');
+    // As mesmas regras da API (AlterarSenhaDTO), conferidas antes de pedir a confirmação.
+    if (!senhaAtual) {
+      setErroSenha('Informe a senha atual.');
+      return;
+    }
+
+    const senhaInvalida = validarSenha(novaSenha);
+
+    if (senhaInvalida) {
+      setErroSenha(senhaInvalida);
+      return;
+    }
+
+    if (novaSenha === senhaAtual) {
+      setErroSenha('A nova senha precisa ser diferente da atual.');
       return;
     }
 
@@ -73,6 +96,7 @@ export function Perfil() {
     if (!usuario) return;
 
     setErroPreferencias('');
+    setAvisoPreferencias('');
     setSalvandoPreferencias(true);
 
     try {
@@ -83,6 +107,11 @@ export function Perfil() {
       });
 
       atualizarUsuario(data);
+      setAvisoPreferencias(
+        campo === 'notificarPorEmail'
+          ? `Avisos por e-mail ${valor ? 'ligados' : 'desligados'}.`
+          : `Avisos no celular ${valor ? 'ligados' : 'desligados'}.`,
+      );
     } catch (falha) {
       setErroPreferencias(mensagemDeErro(falha, 'Não foi possível salvar a preferência.'));
     } finally {
@@ -97,6 +126,17 @@ export function Perfil() {
 
     setErroContato('');
     setAvisoContato('');
+
+    // Mesmos limites de AtualizarTutorDTO.
+    if (telefone.trim().length > 30) {
+      setErroContato('O telefone deve ter até 30 caracteres.');
+      return;
+    }
+
+    if (endereco.trim().length > 250) {
+      setErroContato('O endereço deve ter até 250 caracteres.');
+      return;
+    }
 
     if (!(await confirmarEdicao('Salvar os novos dados de contato? É por eles que a clínica fala com você.'))) {
       return;
@@ -206,6 +246,13 @@ export function Perfil() {
               <Alerta tipo="erro">{erroPreferencias}</Alerta>
             </div>
           )}
+          {avisoPreferencias && !erroPreferencias && (
+            <div className="mt-4">
+              <Alerta tipo="sucesso" aoFechar={() => setAvisoPreferencias('')}>
+                {avisoPreferencias}
+              </Alerta>
+            </div>
+          )}
         </Card>
 
         {ehTutor && usuario.tutorId && (
@@ -226,6 +273,7 @@ export function Perfil() {
                   onChange={(e) => setTelefone(e.target.value)}
                   placeholder="(61) 99999-0000"
                   autoComplete="tel"
+                  maxLength={30}
                 />
               </Campo>
 
@@ -235,6 +283,7 @@ export function Perfil() {
                   value={endereco}
                   onChange={(e) => setEndereco(e.target.value)}
                   autoComplete="street-address"
+                  maxLength={250}
                 />
               </Campo>
 

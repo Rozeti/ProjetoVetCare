@@ -1,6 +1,18 @@
+# Requisições rápidas para o Visual Studio / VS Code (REST Client).
+# A coleção completa, organizada por história de usuário, está em testes.http.
 @VetCare.API_HostAddress = http://localhost:5265
 
-GET {{VetCare.API_HostAddress}}/weatherforecast/
-Accept: application/json
+### A API está no ar?
+GET {{VetCare.API_HostAddress}}/health
 
-###
+### A API consegue falar com o banco?
+GET {{VetCare.API_HostAddress}}/health/pronto
+
+### Login do administrador inicial (troque a senha depois do primeiro acesso)
+POST {{VetCare.API_HostAddress}}/api/usuarios/login
+Content-Type: application/json
+
+{
+  "email": "admin@vetcare.com",
+  "senha": "vetcare123"
+}

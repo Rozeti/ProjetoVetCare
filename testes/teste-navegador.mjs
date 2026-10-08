@@ -43,7 +43,14 @@ pagina.on('console', (msg) => {
 });
 pagina.on('pageerror', (e) => erros.push(`pageerror: ${e.message}`));
 pagina.on('response', (r) => {
-  if (r.status() >= 400) erros.push(`HTTP ${r.status()} ${r.url()}`);
+  // 401 no login inválido e 403 nas rotas que o roteiro testa de propósito são respostas
+  // esperadas, não erros; o que interessa aqui são falhas que ninguém pediu. O favicon.ico
+  // é pedido pelo navegador ao abrir a página estática usada para limpar a sessão.
+  const esperado =
+    (r.status() === 401 && r.url().includes('/usuarios/login')) ||
+    r.status() === 403 ||
+    (r.status() === 404 && r.url().endsWith('/favicon.ico'));
+  if (r.status() >= 400 && !esperado) erros.push(`HTTP ${r.status()} ${r.url()}`);
 });
 
 async function esperarTexto(texto, tempo = 8000) {
@@ -77,8 +84,10 @@ async function irPara(caminho, espera = 'networkidle2') {
 }
 
 async function entrar(email, senha) {
-  // A tela de login redireciona quem ja tem sessao, entao a limpeza vem antes.
-  await irPara(`/`, 'domcontentloaded');
+  // A tela de login redireciona quem ja tem sessao, entao a limpeza vem antes. Ela e feita
+  // numa pagina estatica da mesma origem: assim nenhuma tela do sistema esta montada e
+  // nenhuma requisicao sai sem token enquanto o armazenamento e apagado.
+  await irPara(`/favicon.svg`, 'domcontentloaded');
   await pagina.evaluate(() => {
     localStorage.clear();
   });
@@ -159,6 +168,37 @@ try {
       registrar('HU-011 CA-3 gráfico de evolução de peso', !!temSvg);
       await capturar('05-evolucao');
     }
+
+    // As demais abas precisam abrir sem erro: cada uma tem um texto próprio de cabeçalho.
+    const abasEsperadas = [
+      { prefixo: 'Vacinação', texto: 'Carteira de vacinação', captura: '05a-vacinacao' },
+      { prefixo: 'Receitas', texto: 'Receituário', captura: '05b-receitas' },
+      { prefixo: 'Tratamentos', texto: 'Tratamento', captura: null },
+      { prefixo: 'Documentos', texto: 'Documento', captura: null },
+    ];
+
+    for (const esperada of abasEsperadas) {
+      const indice = abas.findIndex((t) => t.startsWith(esperada.prefixo));
+      if (indice < 0) {
+        registrar(`HU-011 aba ${esperada.prefixo}`, false, 'aba ausente');
+        continue;
+      }
+      const botoes = await pagina.$$('[role="tab"]');
+      await botoes[indice].click();
+      const abriu = await esperarTexto(esperada.texto).then(() => true).catch(() => false);
+      registrar(`HU-011 aba ${esperada.prefixo} renderiza`, abriu);
+      if (abriu && esperada.captura) await capturar(esperada.captura);
+    }
+
+    // Carteira com filtro e paginação: a aba Vacinação tem busca e seletor de situação.
+    const indiceVacinas = abas.findIndex((t) => t.startsWith('Vacinação'));
+    if (indiceVacinas >= 0) {
+      const botoes = await pagina.$$('[role="tab"]');
+      await botoes[indiceVacinas].click();
+      await esperarTexto('Carteira de vacinação');
+      const temFiltro = await pagina.$('select[aria-label="Filtrar por situação da dose"]');
+      registrar('Carteira de vacinação com filtro de situação', !!temFiltro);
+    }
   } else {
     registrar('HU-011 prontuário', false, 'nenhum paciente na tabela');
   }
@@ -175,6 +215,20 @@ try {
   await esperarTexto('Usuários');
   registrar('HU-002 tela de usuários acessível ao administrador', true);
   await capturar('07-usuarios');
+
+  // ---- Auditoria e configurações (somente administração)
+  await irPara(`/auditoria`, 'networkidle2');
+  await esperarTexto('Auditoria');
+  registrar('Trilha de auditoria acessível ao administrador', true);
+  await capturar('07b-auditoria');
+
+  await irPara(`/tutores`, 'networkidle2');
+  await esperarTexto('Tutores');
+  registrar('Tela de tutores renderiza', true);
+
+  await irPara(`/configuracoes`, 'networkidle2');
+  await esperarTexto('Configurações da clínica');
+  registrar('Configurações da clínica renderizam', true);
 
   // ---- Relatórios (HU-017)
   await irPara(`/relatorios`, 'networkidle2');

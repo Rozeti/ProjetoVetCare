@@ -68,6 +68,26 @@ namespace VetCare.API.Data
             return await consulta.OrderBy(p => p.Nome).Paginar(parametros);
         }
 
+        public async Task<List<Pet>> ListarParaSelecao(Guid clinicaId, FiltroDePacientes filtro)
+        {
+            var consulta = _context.Pets
+                .AsNoTracking()
+                .Include(p => p.Tutor).ThenInclude(t => t!.Usuario)
+                .Where(p => p.ClinicaId == clinicaId && p.Ativo && p.DataObito == null);
+
+            if (filtro.TutorId.HasValue)
+            {
+                consulta = consulta.Where(p => p.TutorId == filtro.TutorId.Value);
+            }
+
+            if (filtro.VeterinarioResponsavelId.HasValue)
+            {
+                consulta = consulta.Where(p => p.VeterinarioResponsavelId == filtro.VeterinarioResponsavelId.Value);
+            }
+
+            return await consulta.OrderBy(p => p.Nome).ToListAsync();
+        }
+
         public void Atualizar(Pet pet) => _context.Pets.Update(pet);
 
         public async Task<bool> PossuiRegistrosClinicos(Guid petId)

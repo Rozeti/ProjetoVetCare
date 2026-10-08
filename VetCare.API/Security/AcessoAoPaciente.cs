@@ -26,7 +26,9 @@ namespace VetCare.API.Security
                        && usuario.VeterinarioId.Value == veterinarioResponsavelId.Value;
             }
 
-            return true;
+            // Só a administração e o apoio alcançam a clínica inteira; qualquer outro perfil (ou um
+            // token sem perfil) fica de fora, em vez de entrar por omissão.
+            return usuario.EhAdministrador || usuario.EhApoio;
         }
 
         public static bool Permitido(UsuarioAtual usuario, Pet? pet) =>

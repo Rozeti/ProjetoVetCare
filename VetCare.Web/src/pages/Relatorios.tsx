@@ -1,21 +1,17 @@
 import { useCallback, useState } from 'react';
-import { Activity, BarChart3, ClipboardList, Users } from 'lucide-react';
+import { Activity, BarChart3, ClipboardList, Loader2, Users } from 'lucide-react';
 import { api } from '../services/api';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useAtualizacao } from '../contexts/atualizacoes';
 import type { RelatorioProdutividade } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Estatistica, SemDados } from '../components/ui';
-import { formatarData, paraValorInputData } from '../utils/formato';
-
-function trintaDiasAtras(): string {
-  const data = new Date();
-  data.setDate(data.getDate() - 29);
-  return paraValorInputData(data);
-}
+import { formatarData, paraValorInputData, trintaDiasAtras } from '../utils/formato';
 
 /** HU-017: relatórios de produtividade por período. */
 export function Relatorios() {
   const [inicio, setInicio] = useState(trintaDiasAtras);
   const [fim, setFim] = useState(paraValorInputData(new Date()));
+  const [erroPeriodo, setErroPeriodo] = useState('');
 
   const buscar = useCallback(async () => {
     const { data } = await api.get<RelatorioProdutividade>('/api/dashboard/relatorio-produtividade', {
@@ -32,6 +28,31 @@ export function Relatorios() {
     setErro,
     recarregar,
   } = useCarregamento(buscar, 'Não foi possível gerar o relatório.');
+
+  // Um atendimento registrado agora entra no relatório do período sem recarregar a página.
+  useAtualizacao(['atendimentos', 'avaliacoes'], recarregar);
+
+  /** Os campos de data ficam fora de um <form>: a ordem do período é conferida aqui. */
+  function gerar() {
+    setErroPeriodo('');
+
+    if (!inicio || !fim) {
+      setErroPeriodo('Informe o início e o fim do período.');
+      return;
+    }
+
+    if (inicio > fim) {
+      setErroPeriodo('O início do período não pode ser posterior ao fim.');
+      return;
+    }
+
+    if (fim > paraValorInputData(new Date())) {
+      setErroPeriodo('O fim do período não pode estar no futuro.');
+      return;
+    }
+
+    recarregar();
+  }
 
   const maiorOcorrencia = relatorio?.tecnicasMaisAplicadas[0]?.ocorrencias ?? 0;
   const maiorTotalVet = relatorio?.porVeterinario[0]?.totalAtendimentos ?? 0;
@@ -82,11 +103,19 @@ export function Relatorios() {
             />
           </div>
 
-          <button type="button" className="vc-botao-primario" onClick={recarregar}>
-            <BarChart3 size={16} />
+          <button type="button" className="vc-botao-primario" onClick={gerar} disabled={carregando}>
+            {carregando ? <Loader2 className="animate-spin" size={16} /> : <BarChart3 size={16} />}
             Gerar relatório
           </button>
         </div>
+
+        {erroPeriodo && (
+          <div className="mt-3">
+            <Alerta tipo="erro" aoFechar={() => setErroPeriodo('')}>
+              {erroPeriodo}
+            </Alerta>
+          </div>
+        )}
       </Card>
 
       {carregando ? (

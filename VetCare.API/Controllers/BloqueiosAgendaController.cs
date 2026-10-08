@@ -24,7 +24,7 @@ namespace VetCare.API.Controllers
             [FromQuery] DateTime? fim)
         {
             // Sem período informado, a consulta cobre os próximos 90 dias.
-            var de = inicio ?? DateTime.UtcNow.Date;
+            var de = inicio ?? RelogioDaClinica.Padrao.ParaUtc(RelogioDaClinica.Padrao.Hoje);
             var ate = fim ?? de.AddDays(90);
 
             return this.Responder(await _useCase.Listar(veterinarioId, de, ate));

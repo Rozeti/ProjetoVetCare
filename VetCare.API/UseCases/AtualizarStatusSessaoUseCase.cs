@@ -14,20 +14,26 @@ namespace VetCare.API.UseCases
     /// </summary>
     public class AtualizarStatusSessaoUseCase
     {
+        /// <summary>Tamanho da coluna Observacoes da sessão.</summary>
+        private const int TamanhoDasObservacoes = 1000;
+
         private readonly ISessaoRepository _sessoes;
         private readonly IClinicaRepository _clinicas;
         private readonly NotificacaoService _notificacoes;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public AtualizarStatusSessaoUseCase(
             ISessaoRepository sessoes,
             IClinicaRepository clinicas,
             NotificacaoService notificacoes,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _sessoes = sessoes;
             _clinicas = clinicas;
             _notificacoes = notificacoes;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -74,17 +80,35 @@ namespace VetCare.API.UseCases
             {
                 return Resultado.NaoAutorizado("Você só pode alterar sessões da sua própria agenda.");
             }
+            else if (_usuarioAtual.EhApoio && novoStatus == StatusSessao.Concluida)
+            {
+                // A recepção confirma e cancela presenças; concluir a sessão é ato clínico.
+                return Resultado.NaoAutorizado("Somente o veterinário e a administração podem concluir uma sessão.");
+            }
+            else if (!_usuarioAtual.EhAdministrador && !_usuarioAtual.EhVeterinario && !_usuarioAtual.EhApoio)
+            {
+                return Resultado.NaoAutorizado("Seu perfil não pode alterar o status de sessões.");
+            }
 
+            var statusAnterior = sessao.Status;
             sessao.Status = novoStatus;
 
             if (!string.IsNullOrWhiteSpace(dto.Motivo))
             {
                 var prefixo = string.IsNullOrWhiteSpace(sessao.Observacoes) ? string.Empty : sessao.Observacoes + " | ";
-                sessao.Observacoes = $"{prefixo}{novoStatus}: {dto.Motivo.Trim()}";
+                var anotacao = $"{prefixo}{novoStatus}: {dto.Motivo.Trim()}";
+
+                // As observações têm tamanho fixo no banco; um motivo longo não pode derrubar a operação.
+                sessao.Observacoes = anotacao.Length <= TamanhoDasObservacoes ? anotacao : anotacao[..TamanhoDasObservacoes];
             }
 
             _sessoes.Atualizar(sessao);
             await _sessoes.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, "Sessao", sessao.Id,
+                $"Sessão de {sessao.Tratamento?.Paciente?.Nome} em {RelogioDaClinica.Padrao.Formatar(sessao.DataHora)}: {statusAnterior} → {novoStatus}" +
+                (string.IsNullOrWhiteSpace(dto.Motivo) ? string.Empty : $". Motivo: {dto.Motivo.Trim()}"));
 
             await NotificarInteressados(sessao, novoStatus);
 

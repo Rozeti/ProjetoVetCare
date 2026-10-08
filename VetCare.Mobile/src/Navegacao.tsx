@@ -7,7 +7,7 @@ import * as Notifications from 'expo-notifications';
 import { api } from './services/api';
 import { dadosDaResposta } from './services/notificacoesPush';
 import { useAuth } from './contextos/AuthContext';
-import { useAtualizacao } from './contextos/AtualizacoesContext';
+import { useAtualizacao, useAtualizacoes } from './contextos/AtualizacoesContext';
 import { abrirDestinoDaNotificacao, type RotasDaPilha, type RotasDasAbas } from './navegacao/rotas';
 import { Icone } from './componentes/Icone';
 import { cores } from './tema';
@@ -40,6 +40,8 @@ function IconeDaAba({ nome, cor, contador }: { nome: string; cor: string; contad
 
 function AbasDoTutor() {
   const insets = useSafeAreaInsets();
+  // O tutor fica sabendo quando a tela não está recebendo as alterações em tempo real.
+  const { conectado } = useAtualizacoes();
   const [naoLidas, setNaoLidas] = useState(0);
   const [notificacoes, setNotificacoes] = useState(0);
 
@@ -70,6 +72,13 @@ function AbasDoTutor() {
   }, [atualizarContadores]);
 
   return (
+    <View style={estilos.area}>
+      {!conectado ? (
+        <View style={estilos.faixaConexao} accessibilityRole="alert">
+          <Text style={estilos.faixaConexaoTexto}>Reconectando às atualizações automáticas…</Text>
+        </View>
+      ) : null}
+
     <Abas.Navigator
       screenOptions={{
         headerShown: false,
@@ -128,6 +137,7 @@ function AbasDoTutor() {
         }}
       />
     </Abas.Navigator>
+    </View>
   );
 }
 
@@ -194,6 +204,20 @@ export function Navegacao() {
 }
 
 const estilos = StyleSheet.create({
+  area: {
+    flex: 1,
+  },
+  faixaConexao: {
+    backgroundColor: cores.alertaClaro,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  faixaConexaoTexto: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
+  },
   barra: {
     backgroundColor: cores.superficie,
     borderTopColor: cores.borda,

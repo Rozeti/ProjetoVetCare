@@ -25,6 +25,27 @@ const FORM_VAZIO = {
   observacaoInterna: '',
 };
 
+type Campos = keyof typeof FORM_VAZIO;
+
+/** Mesmos limites das colunas do prontuário (CriarAvaliacaoDTO). */
+const LIMITES: Record<Exclude<Campos, 'tratamentoId'>, number> = {
+  queixaPrincipal: 2000,
+  anamnese: 4000,
+  exameFisico: 4000,
+  hipoteseDiagnostica: 2000,
+  planoTerapeutico: 4000,
+  observacaoInterna: 2000,
+};
+
+/** RN-010: os cinco campos clínicos, na ordem em que aparecem na tela. */
+const CAMPOS_CLINICOS: { campo: Exclude<Campos, 'tratamentoId' | 'observacaoInterna'>; rotulo: string }[] = [
+  { campo: 'queixaPrincipal', rotulo: 'a queixa principal' },
+  { campo: 'anamnese', rotulo: 'a anamnese' },
+  { campo: 'exameFisico', rotulo: 'o exame físico' },
+  { campo: 'hipoteseDiagnostica', rotulo: 'a hipótese diagnóstica' },
+  { campo: 'planoTerapeutico', rotulo: 'o plano terapêutico' },
+];
+
 /** HU-007: registro e correção da avaliação clínica com os cinco campos exigidos pela RN-010. */
 export function ModalAvaliacao({ aberto, ...props }: Props) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos
@@ -56,11 +77,47 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
         }
       : { ...FORM_VAZIO, tratamentoId: ativos.length === 1 ? ativos[0].id : '' },
   );
+  const [erros, setErros] = useState<Partial<Record<Campos, string>>>({});
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  function atualizar(campo: keyof typeof FORM_VAZIO, valor: string) {
+  function atualizar(campo: Campos, valor: string) {
     setForm((atual) => ({ ...atual, [campo]: valor }));
+    // O erro do campo some assim que ele é editado; o usuário vê o que ainda falta.
+    setErros((atuais) => (atuais[campo] ? { ...atuais, [campo]: undefined } : atuais));
+  }
+
+  /** RN-010 conferida antes de enviar, com o erro ao lado do campo que falta. */
+  function validar(): boolean {
+    const encontrados: Partial<Record<Campos, string>> = {};
+
+    if (!emEdicao && !form.tratamentoId) {
+      encontrados.tratamentoId = 'Selecione o tratamento ao qual esta avaliação pertence.';
+    }
+
+    for (const { campo, rotulo } of CAMPOS_CLINICOS) {
+      const valor = form[campo].trim();
+
+      if (!valor) {
+        encontrados[campo] = `Preencha ${rotulo}.`;
+      } else if (valor.length > LIMITES[campo]) {
+        encontrados[campo] = `Use no máximo ${LIMITES[campo]} caracteres.`;
+      }
+    }
+
+    if (form.observacaoInterna.length > LIMITES.observacaoInterna) {
+      encontrados.observacaoInterna = `Use no máximo ${LIMITES.observacaoInterna} caracteres.`;
+    }
+
+    setErros(encontrados);
+
+    const faltando = CAMPOS_CLINICOS.filter(({ campo }) => encontrados[campo]).map(({ rotulo }) => rotulo);
+
+    if (faltando.length > 0) {
+      setErro(`Campos obrigatórios pendentes: ${faltando.join(', ')}.`);
+    }
+
+    return Object.keys(encontrados).length === 0;
   }
 
   const { confirmarEdicao } = useConfirmacao();
@@ -69,8 +126,7 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
     evento.preventDefault();
     setErro('');
 
-    if (!emEdicao && !form.tratamentoId) {
-      setErro('Selecione o tratamento ao qual esta avaliação pertence.');
+    if (!validar()) {
       return;
     }
 
@@ -86,25 +142,23 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
 
     setSalvando(true);
 
+    const campos = {
+      queixaPrincipal: form.queixaPrincipal.trim(),
+      anamnese: form.anamnese.trim(),
+      exameFisico: form.exameFisico.trim(),
+      hipoteseDiagnostica: form.hipoteseDiagnostica.trim(),
+      planoTerapeutico: form.planoTerapeutico.trim(),
+    };
+
     try {
       if (avaliacao) {
         // RN-004: a API arquiva a versão anterior antes de aplicar a correção.
-        await api.put(`/api/avaliacoes/${avaliacao.id}`, {
-          queixaPrincipal: form.queixaPrincipal,
-          anamnese: form.anamnese,
-          exameFisico: form.exameFisico,
-          hipoteseDiagnostica: form.hipoteseDiagnostica,
-          planoTerapeutico: form.planoTerapeutico,
-        });
+        await api.put(`/api/avaliacoes/${avaliacao.id}`, campos);
       } else {
         await api.post('/api/avaliacoes', {
           tratamentoId: form.tratamentoId,
-          queixaPrincipal: form.queixaPrincipal,
-          anamnese: form.anamnese,
-          exameFisico: form.exameFisico,
-          hipoteseDiagnostica: form.hipoteseDiagnostica,
-          planoTerapeutico: form.planoTerapeutico,
-          observacaoInterna: form.observacaoInterna || null,
+          ...campos,
+          observacaoInterna: form.observacaoInterna.trim() || null,
         });
       }
 
@@ -115,6 +169,10 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
     } finally {
       setSalvando(false);
     }
+  }
+
+  function contador(campo: Exclude<Campos, 'tratamentoId'>) {
+    return `${form[campo].length}/${LIMITES[campo]}`;
   }
 
   return (
@@ -134,9 +192,9 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
           Este paciente não possui tratamento em andamento. Abra um tratamento antes de registrar a avaliação clínica.
         </Alerta>
       ) : (
-        <form onSubmit={aoEnviar} className="space-y-4">
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
           {!emEdicao && (
-            <Campo rotulo="Tratamento" obrigatorio>
+            <Campo rotulo="Tratamento" obrigatorio erro={erros.tratamentoId}>
               <select
                 className="vc-campo"
                 value={form.tratamentoId}
@@ -152,53 +210,63 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
             </Campo>
           )}
 
-          <Campo rotulo="Queixa principal" obrigatorio>
+          <Campo rotulo="Queixa principal" obrigatorio erro={erros.queixaPrincipal} dica={contador('queixaPrincipal')}>
             <textarea
               className="vc-campo"
               rows={2}
               value={form.queixaPrincipal}
               onChange={(e) => atualizar('queixaPrincipal', e.target.value)}
               placeholder="Motivo que trouxe o paciente à clínica."
+              maxLength={LIMITES.queixaPrincipal}
             />
           </Campo>
 
-          <Campo rotulo="Anamnese" obrigatorio>
+          <Campo rotulo="Anamnese" obrigatorio erro={erros.anamnese} dica={contador('anamnese')}>
             <textarea
               className="vc-campo"
               rows={3}
               value={form.anamnese}
               onChange={(e) => atualizar('anamnese', e.target.value)}
               placeholder="Histórico relatado pelo tutor, cirurgias anteriores, medicações em uso."
+              maxLength={LIMITES.anamnese}
             />
           </Campo>
 
-          <Campo rotulo="Exame físico" obrigatorio>
+          <Campo rotulo="Exame físico" obrigatorio erro={erros.exameFisico} dica={contador('exameFisico')}>
             <textarea
               className="vc-campo"
               rows={3}
               value={form.exameFisico}
               onChange={(e) => atualizar('exameFisico', e.target.value)}
               placeholder="Achados do exame: amplitude de movimento, massa muscular, marcha."
+              maxLength={LIMITES.exameFisico}
             />
           </Campo>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Campo rotulo="Hipótese diagnóstica" obrigatorio>
+            <Campo
+              rotulo="Hipótese diagnóstica"
+              obrigatorio
+              erro={erros.hipoteseDiagnostica}
+              dica={contador('hipoteseDiagnostica')}
+            >
               <textarea
                 className="vc-campo"
                 rows={3}
                 value={form.hipoteseDiagnostica}
                 onChange={(e) => atualizar('hipoteseDiagnostica', e.target.value)}
+                maxLength={LIMITES.hipoteseDiagnostica}
               />
             </Campo>
 
-            <Campo rotulo="Plano terapêutico" obrigatorio>
+            <Campo rotulo="Plano terapêutico" obrigatorio erro={erros.planoTerapeutico} dica={contador('planoTerapeutico')}>
               <textarea
                 className="vc-campo"
                 rows={3}
                 value={form.planoTerapeutico}
                 onChange={(e) => atualizar('planoTerapeutico', e.target.value)}
                 placeholder="Técnicas, frequência das sessões e metas."
+                maxLength={LIMITES.planoTerapeutico}
               />
             </Campo>
           </div>
@@ -206,16 +274,19 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
           {/* HU-009 / RN-003: anotação restrita à equipe clínica, só no registro inicial. */}
           {!emEdicao && podeVerObservacoesInternas && (
             <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
+              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800" htmlFor="avaliacao-observacao-interna">
                 <Lock size={15} />
                 Observação interna
-              </div>
+                <span className="ml-auto text-xs font-normal text-amber-700">{contador('observacaoInterna')}</span>
+              </label>
               <textarea
+                id="avaliacao-observacao-interna"
                 className="vc-campo"
                 rows={2}
                 value={form.observacaoInterna}
                 onChange={(e) => atualizar('observacaoInterna', e.target.value)}
                 placeholder="Anotação que não deve ser exibida ao tutor."
+                maxLength={LIMITES.observacaoInterna}
               />
             </div>
           )}

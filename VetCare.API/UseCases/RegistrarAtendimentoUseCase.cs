@@ -21,6 +21,7 @@ namespace VetCare.API.UseCases
         private readonly IVersaoRegistroRepository _versoes;
         private readonly NotificacaoService _notificacoes;
         private readonly AssinadorDeArquivos _assinador;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public RegistrarAtendimentoUseCase(
@@ -33,6 +34,7 @@ namespace VetCare.API.UseCases
             IVersaoRegistroRepository versoes,
             NotificacaoService notificacoes,
             AssinadorDeArquivos assinador,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _atendimentos = atendimentos;
@@ -44,6 +46,7 @@ namespace VetCare.API.UseCases
             _versoes = versoes;
             _notificacoes = notificacoes;
             _assinador = assinador;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -148,6 +151,11 @@ namespace VetCare.API.UseCases
             _prontuarios.Atualizar(prontuario);
             await _prontuarios.SalvarAlteracoes();
 
+            // Quem escreveu o registro clínico fica na trilha, não só quem o consultou.
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, TipoRegistro, atendimento.Id,
+                $"Atendimento de {sessao.Tratamento?.Paciente?.Nome} (dor {atendimento.EscalaDor}/10)");
+
             // HU-015, CA-3: um único aviso cobre o registro e, quando for o caso, a conclusão da sessão.
             var usuarioTutor = sessao.Tratamento?.Paciente?.Tutor?.UsuarioId;
 
@@ -215,6 +223,13 @@ namespace VetCare.API.UseCases
             _atendimentos.Atualizar(atendimento);
             await _atendimentos.SalvarAlteracoes();
 
+            // A correção também conta como movimentação do prontuário.
+            await MarcarProntuarioAtualizado(atendimento.ProntuarioId);
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, TipoRegistro, atendimento.Id,
+                $"Correção do atendimento de {atendimento.Sessao?.Tratamento?.Paciente?.Nome}");
+
             return Resultado<AtendimentoDTO>.Ok(
                 await MapearParaDTO(atendimento),
                 "Atendimento atualizado. A versão anterior foi preservada no histórico.");
@@ -236,6 +251,11 @@ namespace VetCare.API.UseCases
             if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
                 return Resultado<AtendimentoDTO?>.NaoEncontrado("Sessão não encontrada.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
+            {
+                return Resultado<AtendimentoDTO?>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var atendimento = await _atendimentos.ObterPorSessao(sessaoId);
@@ -261,14 +281,32 @@ namespace VetCare.API.UseCases
             return Resultado<List<HistoricoVersaoDTO>>.Ok(HistoricoVersaoDTO.MapearLista(versoes));
         }
 
-        /// <summary>Qualquer leitura ou edição passa por aqui: registro de outra clínica não existe para quem pede.</summary>
+        /// <summary>
+        /// Qualquer leitura ou edição passa por aqui: registro de outra clínica, ou de um
+        /// paciente fora da responsabilidade de quem pede, não existe para quem pede.
+        /// </summary>
         private async Task<AtendimentoFisioterapeutico?> ObterDaClinica(Guid id)
         {
             var atendimento = await _atendimentos.ObterPorId(id);
+            var paciente = atendimento?.Sessao?.Tratamento?.Paciente;
 
-            return atendimento?.Sessao?.Tratamento?.Paciente?.ClinicaId == _usuarioAtual.ClinicaId
+            return paciente?.ClinicaId == _usuarioAtual.ClinicaId && AcessoAoPaciente.Permitido(_usuarioAtual, paciente)
                 ? atendimento
                 : null;
+        }
+
+        private async Task MarcarProntuarioAtualizado(Guid prontuarioId)
+        {
+            var prontuario = await _prontuarios.ObterPorId(prontuarioId);
+
+            if (prontuario == null)
+            {
+                return;
+            }
+
+            prontuario.UltimaAtualizacao = DateTime.UtcNow;
+            _prontuarios.Atualizar(prontuario);
+            await _prontuarios.SalvarAlteracoes();
         }
 
         private async Task AtualizarPesoDoPaciente(Guid pacienteId, decimal peso)

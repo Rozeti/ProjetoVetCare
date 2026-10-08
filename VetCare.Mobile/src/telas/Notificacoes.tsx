@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
@@ -18,20 +18,29 @@ const ESTILO_POR_TIPO: Record<TipoNotificacao, { icone: string; fundo: string }>
   NovoRegistroProntuario: { icone: '🩺', fundo: cores.sucessoClaro },
   NovaMensagem: { icone: '💬', fundo: cores.marcaClara },
   DoseDeVacina: { icone: '💉', fundo: cores.alertaClaro },
+  PacienteTransferido: { icone: '↔️', fundo: cores.infoClaro },
 };
+
+/** Quantos avisos vêm por vez; "Ver mais" pede o próximo lote. */
+const LOTE = 50;
 
 /** HU-015: notificações dos eventos relevantes do tratamento. */
 export function Notificacoes() {
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
+  const [marcandoTodas, setMarcandoTodas] = useState(false);
+  const [apenasNovas, setApenasNovas] = useState(false);
+  const [limite, setLimite] = useState(LOTE);
   const [erro, setErro] = useState('');
 
   const carregar = useCallback(async () => {
     setErro('');
 
     try {
-      const { data } = await api.get<Notificacao[]>('/api/notificacoes');
+      const { data } = await api.get<Notificacao[]>('/api/notificacoes', {
+        params: { apenasNaoVisualizadas: apenasNovas, limite },
+      });
       setNotificacoes(data);
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível carregar os avisos.'));
@@ -39,7 +48,7 @@ export function Notificacoes() {
       setCarregando(false);
       setAtualizando(false);
     }
-  }, []);
+  }, [apenasNovas, limite]);
 
   useFocusEffect(
     useCallback(() => {
@@ -49,18 +58,33 @@ export function Notificacoes() {
 
   useAtualizacao(['notificacoes'], carregar);
 
-  async function marcarTodas() {
+  /** Não tem desfazer: o indicador do que ainda não foi lido some de uma vez, então pergunta antes. */
+  function marcarTodas() {
+    if (marcandoTodas) return;
+
+    Alert.alert('Marcar todos como lidos', 'Os avisos continuam na lista, sem o destaque de novos.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Marcar como lidos', onPress: () => void gravarTodosComoLidos() },
+    ]);
+  }
+
+  async function gravarTodosComoLidos() {
+    setMarcandoTodas(true);
+
     try {
       await api.patch('/api/notificacoes/todas/visualizadas');
       await carregar();
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível marcar os avisos.'));
+    } finally {
+      setMarcandoTodas(false);
     }
   }
 
   /** Marca como lido e leva à tela a que o aviso se refere (agenda, mensagens, prontuário). */
   async function abrir(notificacao: Notificacao) {
     if (!notificacao.visualizada) {
+      // Marca na hora para a interface responder; se o servidor recusar, o destaque volta.
       setNotificacoes((atual) =>
         atual.map((n) => (n.id === notificacao.id ? { ...n, visualizada: true } : n)),
       );
@@ -68,7 +92,9 @@ export function Notificacoes() {
       try {
         await api.patch(`/api/notificacoes/${notificacao.id}/visualizada`);
       } catch {
-        // Falhar ao marcar não deve atrapalhar a leitura.
+        setNotificacoes((atual) =>
+          atual.map((n) => (n.id === notificacao.id ? { ...n, visualizada: false } : n)),
+        );
       }
     }
 
@@ -106,10 +132,26 @@ export function Notificacoes() {
           </View>
 
           {naoVisualizadas > 0 && (
-            <TouchableOpacity onPress={marcarTodas} accessibilityRole="button">
-              <Text style={estilos.marcarTodas}>Marcar todos</Text>
+            <TouchableOpacity onPress={marcarTodas} disabled={marcandoTodas} accessibilityRole="button">
+              <Text style={[estilos.marcarTodas, marcandoTodas && estilos.marcarTodasDesativado]}>
+                {marcandoTodas ? 'Marcando...' : 'Marcar todos'}
+              </Text>
             </TouchableOpacity>
           )}
+        </View>
+
+        <View style={estilos.filtro}>
+          <Text style={estilos.filtroTexto}>Mostrar só os não lidos</Text>
+          <Switch
+            value={apenasNovas}
+            onValueChange={(valor) => {
+              setApenasNovas(valor);
+              setLimite(LOTE);
+            }}
+            trackColor={{ false: cores.borda, true: cores.marcaClara }}
+            thumbColor={apenasNovas ? cores.marca : '#ffffff'}
+            accessibilityLabel="Mostrar só os avisos não lidos"
+          />
         </View>
 
         {erro ? (
@@ -124,44 +166,57 @@ export function Notificacoes() {
           <Cartao>
             <SemDados
               icone="🔔"
-              titulo="Nenhum aviso"
+              titulo={apenasNovas ? 'Nenhum aviso novo' : 'Nenhum aviso'}
               descricao="Sessões agendadas, lembretes de confirmação, novos registros no prontuário, doses de vacina e mensagens aparecem aqui."
             />
           </Cartao>
         ) : (
-          notificacoes.map((notificacao) => {
-            const estilo = ESTILO_POR_TIPO[notificacao.tipo] ?? { icone: '🔔', fundo: cores.fundo };
+          <>
+            {notificacoes.map((notificacao) => {
+              const estilo = ESTILO_POR_TIPO[notificacao.tipo] ?? { icone: '🔔', fundo: cores.fundo };
 
-            return (
-              <TouchableOpacity
-                key={notificacao.id}
-                activeOpacity={0.7}
-                onPress={() => abrir(notificacao)}
-                accessibilityRole="button"
-                accessibilityLabel={`${notificacao.visualizada ? '' : 'Novo: '}${notificacao.titulo}`}
-                accessibilityHint={notificacao.linkRelacionado ? 'Abre a tela relacionada' : undefined}
-              >
-                <Cartao estilo={[estilos.cartao, !notificacao.visualizada && estilos.cartaoNovo]}>
-                  <View style={[estilos.icone, { backgroundColor: estilo.fundo }]}>
-                    <Text style={estilos.iconeTexto}>{estilo.icone}</Text>
-                  </View>
-
-                  <View style={estilos.info}>
-                    <View style={estilos.linhaTitulo}>
-                      <Text style={estilos.tituloNotificacao} numberOfLines={1}>
-                        {notificacao.titulo}
-                      </Text>
-                      <Text style={estilos.tempo}>{tempoRelativo(notificacao.dataCriacao)}</Text>
+              return (
+                <TouchableOpacity
+                  key={notificacao.id}
+                  activeOpacity={0.7}
+                  onPress={() => abrir(notificacao)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${notificacao.visualizada ? '' : 'Novo: '}${notificacao.titulo}`}
+                  accessibilityHint={notificacao.linkRelacionado ? 'Abre a tela relacionada' : undefined}
+                >
+                  <Cartao estilo={[estilos.cartao, !notificacao.visualizada && estilos.cartaoNovo]}>
+                    <View style={[estilos.icone, { backgroundColor: estilo.fundo }]}>
+                      <Text style={estilos.iconeTexto}>{estilo.icone}</Text>
                     </View>
 
-                    <Text style={estilos.conteudoNotificacao}>{notificacao.conteudo}</Text>
-                  </View>
+                    <View style={estilos.info}>
+                      <View style={estilos.linhaTitulo}>
+                        <Text style={estilos.tituloNotificacao} numberOfLines={1}>
+                          {notificacao.titulo}
+                        </Text>
+                        <Text style={estilos.tempo}>{tempoRelativo(notificacao.dataCriacao)}</Text>
+                      </View>
 
-                  {!notificacao.visualizada && <View style={estilos.pontoNovo} />}
-                </Cartao>
+                      <Text style={estilos.conteudoNotificacao}>{notificacao.conteudo}</Text>
+                    </View>
+
+                    {!notificacao.visualizada && <View style={estilos.pontoNovo} />}
+                  </Cartao>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* A API devolve um lote por vez; o botão pede o próximo até a lista acabar. */}
+            {notificacoes.length >= limite && (
+              <TouchableOpacity
+                onPress={() => setLimite((atual) => atual + LOTE)}
+                style={estilos.verMais}
+                accessibilityRole="button"
+              >
+                <Text style={estilos.verMaisTexto}>Ver avisos mais antigos</Text>
               </TouchableOpacity>
-            );
-          })
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -202,6 +257,26 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: cores.marca,
+  },
+  marcarTodasDesativado: {
+    color: cores.textoSuave,
+  },
+  filtro: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: espacos.md,
+    marginBottom: espacos.md,
+    paddingHorizontal: espacos.md,
+    paddingVertical: espacos.sm,
+    backgroundColor: cores.superficie,
+    borderRadius: raios.md,
+    borderWidth: 1,
+    borderColor: cores.borda,
+  },
+  filtroTexto: {
+    fontSize: 14,
+    color: cores.texto,
   },
   espaco: {
     marginBottom: espacos.md,
@@ -256,5 +331,14 @@ const estilos = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: cores.marca,
     marginTop: 6,
+  },
+  verMais: {
+    alignItems: 'center',
+    paddingVertical: espacos.md,
+  },
+  verMaisTexto: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: cores.marca,
   },
 });

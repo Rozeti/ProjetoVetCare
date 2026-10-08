@@ -192,9 +192,9 @@ namespace VetCare.Tests
                 ProximaDose = DateTime.UtcNow.Date.AddDays(diasAteProximaDose)
             });
 
-            var lista = await casoDeUso.ListarPorPaciente(Paciente.Id);
+            var lista = await casoDeUso.ListarPorPaciente(Paciente.Id, null, null, null, new ParametrosPagina());
 
-            lista.Dados!.Single().SituacaoDose.Should().Be(situacaoEsperada);
+            lista.Dados!.Itens.Single().SituacaoDose.Should().Be(situacaoEsperada);
         }
 
         [Fact]
@@ -210,10 +210,10 @@ namespace VetCare.Tests
                 DataAplicacao = DateTime.UtcNow.Date.AddDays(-30)
             });
 
-            var lista = await casoDeUso.ListarPorPaciente(Paciente.Id);
+            var lista = await casoDeUso.ListarPorPaciente(Paciente.Id, null, null, null, new ParametrosPagina());
 
-            lista.Dados!.Single().SituacaoDose.Should().Be("Dose única");
-            lista.Dados.Single().DiasParaProximaDose.Should().BeNull();
+            lista.Dados!.Itens.Single().SituacaoDose.Should().Be("Dose única");
+            lista.Dados.Itens.Single().DiasParaProximaDose.Should().BeNull();
         }
 
         [Fact]
@@ -236,7 +236,7 @@ namespace VetCare.Tests
 
             var comoOutro = ComoUsuario(outroUsuario, Clinica.Id, tutorId: outroTutor.Id);
 
-            var resultado = await CriarCasoDeVacinas(comoOutro).ListarPorPaciente(Paciente.Id);
+            var resultado = await CriarCasoDeVacinas(comoOutro).ListarPorPaciente(Paciente.Id, null, null, null, new ParametrosPagina());
 
             resultado.Falha.Should().Be(TipoFalha.NaoAutorizado);
         }

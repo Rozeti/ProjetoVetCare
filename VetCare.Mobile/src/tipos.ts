@@ -78,7 +78,10 @@ export interface Pet {
 }
 
 export type TipoVacina = 'Vacina' | 'Vermifugo' | 'Antipulgas' | 'Outro';
-export type SituacaoDose = 'Em dia' | 'A vencer' | 'Vencida' | 'Dose única';
+export type SituacaoDose = 'Em dia' | 'A vencer' | 'Vencida' | 'Dose única' | 'Concluída';
+
+/** Intervalo do reforço; a API calcula a próxima dose a partir dele quando a data não é informada. */
+export type RecorrenciaVacina = 'Nenhuma' | 'Mensal' | 'Trimestral' | 'Semestral' | 'Anual';
 
 /** Item da carteira de vacinação do pet. */
 export interface Vacina {
@@ -90,9 +93,15 @@ export interface Vacina {
   nome: string;
   fabricante: string;
   lote: string;
+  /** Posição e total do esquema ("Dose 2 de 3"); vazios numa aplicação avulsa. */
+  numeroDose?: number | null;
+  totalDoses?: number | null;
+  descricaoDose: string;
+  recorrencia: RecorrenciaVacina;
   dataAplicacao: string;
   proximaDose?: string | null;
   observacoes: string;
+  veterinarioId?: string | null;
   aplicadaPor: string;
   situacaoDose: SituacaoDose;
   diasParaProximaDose?: number | null;
@@ -216,6 +225,9 @@ export interface Prontuario {
   idadeDescritiva: string;
   nomeTutor: string;
   telefoneTutor: string;
+  /** Veterinário que acompanha o pet; vazio enquanto a clínica não designa ninguém. */
+  veterinarioResponsavelId?: string | null;
+  nomeVeterinarioResponsavel: string;
   dataCriacao: string;
   ultimaAtualizacao: string;
   dataObito?: string | null;
@@ -271,6 +283,13 @@ export type RecursoAtualizado =
   | 'midias'
   | 'mensagens'
   | 'notificacoes'
+  | 'tutores'
+  | 'usuarios'
+  | 'veterinarios'
+  | 'clinica'
+  | 'bloqueiosagenda'
+  | 'observacoesinternas'
+  | 'dispositivos'
   | (string & {});
 
 /** Uma alteração já gravada no banco, avisada às telas abertas. */
@@ -299,7 +318,8 @@ export type TipoNotificacao =
   | 'StatusSessao'
   | 'NovoRegistroProntuario'
   | 'NovaMensagem'
-  | 'DoseDeVacina';
+  | 'DoseDeVacina'
+  | 'PacienteTransferido';
 
 export interface Notificacao {
   id: string;

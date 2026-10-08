@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, CHAVE_TOKEN, CHAVE_USUARIO, sessaoRecusada } from '../services/api';
+import { api, CHAVE_TOKEN, CHAVE_USUARIO, registrarPerdaDeSessao, sessaoRecusada } from '../services/api';
 import {
   registrarAparelhoParaNotificacoes,
   removerAparelhoDasNotificacoes,
@@ -79,6 +79,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       ativo = false;
     };
+  }, []);
+
+  // Sessão recusada pela API no meio do uso (token expirado, conta desativada): o
+  // interceptor já apagou o token; aqui o app volta para a tela de login.
+  useEffect(() => {
+    registrarPerdaDeSessao(() => {
+      setUsuario(null);
+      setPush({ estado: 'desconhecido' });
+    });
+
+    return () => registrarPerdaDeSessao(null);
   }, []);
 
   // Com usuário na sessão, o aparelho é (re)registrado para receber os avisos: o token

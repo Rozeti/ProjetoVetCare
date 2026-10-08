@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarRange, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
-import { api } from '../services/api';
+import { CalendarRange, Check, ChevronLeft, ChevronRight, Loader2, Plus, X } from 'lucide-react';
+import { api, mensagemDeErro } from '../services/api';
 import type { AgendaGeral as AgendaGeralDTO, VisaoAgenda } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { estiloStatusSessao, formatarData, formatarHora, paraValorInputData } from '../utils/formato';
 import { ModalAgendarSessao } from './componentes/ModalAgendarSessao';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 
 const VISOES: { valor: VisaoAgenda; rotulo: string }[] = [
   { valor: 'dia', rotulo: 'Dia' },
@@ -40,8 +41,56 @@ export function AgendaGeral() {
     recarregar,
   } = useCarregamento(buscar, 'Não foi possível carregar a agenda geral.');
 
-  // HU-006: a confirmação e o cancelamento feitos pelo tutor mudam esta tela sozinhos.
-  useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos'], recarregar);
+  // HU-006: a confirmação e o cancelamento feitos pelo tutor mudam esta tela sozinhos; a
+  // legenda de profissionais e os nomes dos pacientes também acompanham os cadastros.
+  useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos', 'veterinarios', 'pets'], recarregar);
+
+  const [aviso, setAviso] = useState('');
+  // Sessão com alteração em andamento: evita o duplo clique e mostra o estado no botão.
+  const [alterando, setAlterando] = useState('');
+  const { perguntar } = useConfirmacao();
+
+  /** A recepção confirma e cancela presenças pela agenda geral; concluir a sessão é ato do veterinário. */
+  async function alterarStatus(sessaoId: string, nomePaciente: string, status: 'Confirmada' | 'Cancelada') {
+    if (alterando) return;
+
+    setAviso('');
+    setErro('');
+
+    let motivo = '';
+
+    if (status === 'Cancelada') {
+      const resposta = await perguntar({
+        titulo: 'Cancelar sessão',
+        mensagem: (
+          <>
+            Cancelar a sessão de <strong>{nomePaciente}</strong>? O horário é liberado na agenda e o tutor e o
+            veterinário recebem um aviso.
+          </>
+        ),
+        rotuloConfirmar: 'Cancelar sessão',
+        rotuloCancelar: 'Voltar',
+        perigo: true,
+        campoTexto: { rotulo: 'Motivo', placeholder: 'Ex.: pedido do tutor por telefone' },
+      });
+
+      if (!resposta.confirmado) return;
+
+      motivo = resposta.texto;
+    }
+
+    setAlterando(sessaoId);
+
+    try {
+      await api.patch(`/api/sessoes/${sessaoId}/status`, { status, motivo: motivo || null });
+      setAviso(status === 'Confirmada' ? `Presença de ${nomePaciente} confirmada.` : `Sessão de ${nomePaciente} cancelada.`);
+      recarregar();
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível atualizar o status da sessão.'));
+    } finally {
+      setAlterando('');
+    }
+  }
 
   function navegar(passo: number) {
     const nova = new Date(data);
@@ -113,6 +162,13 @@ export function AgendaGeral() {
         <div className="mb-4">
           <Alerta tipo="erro" aoFechar={() => setErro('')}>
             {erro}
+          </Alerta>
+        </div>
+      )}
+      {aviso && (
+        <div className="mb-4">
+          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
+            {aviso}
           </Alerta>
         </div>
       )}
@@ -265,6 +321,35 @@ export function AgendaGeral() {
                     </div>
 
                     <Etiqueta className={estiloStatusSessao[sessao.status]}>{sessao.status}</Etiqueta>
+
+                    {/* HU-006: a recepção confirma e cancela presenças sem precisar da agenda do veterinário. */}
+                    {sessao.status !== 'Cancelada' && sessao.status !== 'Concluída' && (
+                      <div className="flex items-center gap-1">
+                        {sessao.status === 'Aguardando confirmação' && (
+                          <button
+                            type="button"
+                            onClick={() => alterarStatus(sessao.sessaoId, sessao.nomePaciente, 'Confirmada')}
+                            disabled={alterando === sessao.sessaoId}
+                            className="rounded-lg p-2 text-sucesso hover:bg-sucesso-claro disabled:opacity-50"
+                            title="Confirmar presença"
+                            aria-label={`Confirmar a presença de ${sessao.nomePaciente}`}
+                          >
+                            {alterando === sessao.sessaoId ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => alterarStatus(sessao.sessaoId, sessao.nomePaciente, 'Cancelada')}
+                          disabled={alterando === sessao.sessaoId}
+                          className="rounded-lg p-2 text-perigo hover:bg-perigo-claro disabled:opacity-50"
+                          title="Cancelar sessão"
+                          aria-label={`Cancelar a sessão de ${sessao.nomePaciente}`}
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -278,6 +363,7 @@ export function AgendaGeral() {
         aoFechar={() => setModalAgendar(false)}
         aoSalvar={() => {
           setModalAgendar(false);
+          setAviso('Sessão agendada com sucesso. O tutor recebe o aviso para confirmar a presença.');
           recarregar();
         }}
       />

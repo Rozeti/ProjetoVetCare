@@ -61,7 +61,7 @@ export function Agenda() {
   );
 
   // HU-006: a confirmação e o cancelamento feitos pelo tutor mudam esta tela sozinhos.
-  useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos'], recarregar);
+  useAtualizacao(['sessoes', 'tratamentos', 'bloqueiosagenda', 'atendimentos', 'pets', 'veterinarios'], recarregar);
 
   // Estabiliza a referência para os useMemo que agrupam a agenda por dia.
   const sessoes = useMemo(() => dados ?? [], [dados]);
@@ -76,32 +76,44 @@ export function Agenda() {
     setData(nova);
   }
 
-  const { confirmar } = useConfirmacao();
+  const { perguntar } = useConfirmacao();
+  // Sessão com alteração em andamento: evita o duplo clique e mostra o estado no botão.
+  const [alterando, setAlterando] = useState('');
 
   /** HU-006: a equipe também confirma, cancela ou conclui a sessão pela agenda. */
   async function alterarStatus(sessaoId: string, status: string) {
+    if (alterando) return;
+
     setAviso('');
     setErro('');
 
-    if (
-      status === 'Cancelada' &&
-      !(await confirmar({
+    let motivo = '';
+
+    if (status === 'Cancelada') {
+      const resposta = await perguntar({
         titulo: 'Cancelar sessão',
         mensagem: 'Cancelar esta sessão? O horário é liberado na agenda e o tutor recebe um aviso.',
         rotuloConfirmar: 'Cancelar sessão',
         rotuloCancelar: 'Voltar',
         perigo: true,
-      }))
-    ) {
-      return;
+        campoTexto: { rotulo: 'Motivo', placeholder: 'Ex.: pedido do tutor' },
+      });
+
+      if (!resposta.confirmado) return;
+
+      motivo = resposta.texto;
     }
 
+    setAlterando(sessaoId);
+
     try {
-      await api.patch(`/api/sessoes/${sessaoId}/status`, { status });
+      await api.patch(`/api/sessoes/${sessaoId}/status`, { status, motivo: motivo || null });
       setAviso(`Sessão marcada como ${status.toLowerCase()}.`);
       recarregar();
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível atualizar o status da sessão.'));
+    } finally {
+      setAlterando('');
     }
   }
 
@@ -294,8 +306,10 @@ export function Agenda() {
                         <button
                           type="button"
                           onClick={() => alterarStatus(sessao.sessaoId, 'Confirmada')}
-                          className="rounded-lg p-2 text-sucesso hover:bg-sucesso-claro"
+                          disabled={alterando === sessao.sessaoId}
+                          className="rounded-lg p-2 text-sucesso hover:bg-sucesso-claro disabled:opacity-50"
                           title="Confirmar sessão"
+                          aria-label={`Confirmar a sessão de ${sessao.nomePaciente}`}
                         >
                           <Check size={16} />
                         </button>
@@ -309,6 +323,7 @@ export function Agenda() {
                             onClick={() => setSessaoParaAtender(sessao)}
                             className="rounded-lg p-2 text-brand hover:bg-brand-100"
                             title="Registrar atendimento"
+                            aria-label={`Registrar o atendimento de ${sessao.nomePaciente}`}
                           >
                             <ClipboardPlus size={16} />
                           </button>
@@ -316,8 +331,10 @@ export function Agenda() {
                           <button
                             type="button"
                             onClick={() => alterarStatus(sessao.sessaoId, 'Cancelada')}
-                            className="rounded-lg p-2 text-perigo hover:bg-perigo-claro"
+                            disabled={alterando === sessao.sessaoId}
+                            className="rounded-lg p-2 text-perigo hover:bg-perigo-claro disabled:opacity-50"
                             title="Cancelar sessão"
+                            aria-label={`Cancelar a sessão de ${sessao.nomePaciente}`}
                           >
                             <X size={16} />
                           </button>

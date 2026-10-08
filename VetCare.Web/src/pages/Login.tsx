@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Loader2, Lock, Mail, Stethoscope } from 'lucide-react';
 import { useAuth } from '../contexts/auth';
 import { mensagemDeErro } from '../services/api';
+import { emailValido } from '../utils/formato';
 import { Alerta } from '../components/ui';
 
 /** HU-001: tela de login única para todos os perfis. */
@@ -37,6 +38,12 @@ export function Login() {
       return;
     }
 
+    // Um e-mail mal digitado nem chega à API: o login tem limite de tentativas por minuto.
+    if (!emailValido(email)) {
+      setErro('Informe um e-mail válido.');
+      return;
+    }
+
     setEnviando(true);
 
     try {
@@ -59,7 +66,7 @@ export function Login() {
             <Stethoscope size={32} />
           </div>
           <h1 className="font-display text-3xl font-bold text-slate-900">VetCare</h1>
-          <p className="mt-1 text-sm text-slate-500">Gestão clínica da Clínica VetSPA</p>
+          <p className="mt-1 text-sm text-slate-500">Gestão clínica veterinária</p>
         </div>
 
         <div className="vc-card p-6 sm:p-8">

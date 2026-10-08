@@ -7,7 +7,7 @@ import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Sessao } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
-import { estiloStatusSessao, formatarDataExtensa, formatarHora } from '../utils/formato';
+import { estiloStatusSessao, formatarDataExtensa, formatarDataHora, formatarHora } from '../utils/formato';
 
 /** HU-006 e HU-013, CA-3: agenda dos pets do tutor, com confirmação e cancelamento. */
 export function MinhaAgenda() {
@@ -24,34 +24,52 @@ export function MinhaAgenda() {
     'Não foi possível carregar sua agenda.',
   );
 
-  // O reagendamento ou o cancelamento feito pela clínica chega sem recarregar a página.
-  useAtualizacao(['sessoes', 'tratamentos'], recarregar);
+  // O reagendamento ou o cancelamento feito pela clínica chega sem recarregar a página; o
+  // prazo de cancelamento (RN-009) vem das configurações da clínica.
+  useAtualizacao(['sessoes', 'tratamentos', 'clinica'], recarregar);
 
   const sessoes = dados ?? [];
 
   const { confirmar } = useConfirmacao();
+  // Sessão com alteração em andamento: evita o duplo clique.
+  const [alterando, setAlterando] = useState('');
 
   async function alterarStatus(sessao: Sessao, status: 'Confirmada' | 'Cancelada') {
+    if (alterando) return;
+
     setErro('');
     setAviso('');
 
-    if (
-      status === 'Cancelada' &&
-      !(await confirmar({
-        titulo: 'Cancelar sessão',
-        mensagem: (
-          <>
-            Cancelar a sessão de <strong>{sessao.nomePaciente}</strong>? A clínica é avisada e o horário é liberado
-            para outro paciente.
-          </>
-        ),
-        rotuloConfirmar: 'Cancelar sessão',
-        rotuloCancelar: 'Voltar',
-        perigo: true,
-      }))
-    ) {
+    const confirmado =
+      status === 'Cancelada'
+        ? await confirmar({
+            titulo: 'Cancelar sessão',
+            mensagem: (
+              <>
+                Cancelar a sessão de <strong>{sessao.nomePaciente}</strong>? A clínica é avisada e o horário é
+                liberado para outro paciente.
+              </>
+            ),
+            rotuloConfirmar: 'Cancelar sessão',
+            rotuloCancelar: 'Voltar',
+            perigo: true,
+          })
+        : await confirmar({
+            titulo: 'Confirmar presença',
+            mensagem: (
+              <>
+                Confirmar a presença de <strong>{sessao.nomePaciente}</strong> em{' '}
+                <strong>{formatarDataHora(sessao.dataHora)}</strong>? A clínica é avisada na hora.
+              </>
+            ),
+            rotuloConfirmar: 'Confirmar presença',
+          });
+
+    if (!confirmado) {
       return;
     }
+
+    setAlterando(sessao.id);
 
     try {
       await api.patch(`/api/sessoes/${sessao.id}/status`, { status });
@@ -66,6 +84,8 @@ export function MinhaAgenda() {
     } catch (falha) {
       // RN-009: cancelamento fora do prazo mínimo retorna a explicação da API.
       setErro(mensagemDeErro(falha, 'Não foi possível atualizar a sessão.'));
+    } finally {
+      setAlterando('');
     }
   }
 
@@ -144,8 +164,9 @@ export function MinhaAgenda() {
                       {sessao.status === 'Aguardando confirmação' && (
                         <button
                           type="button"
-                          className="vc-botao bg-sucesso text-white hover:bg-emerald-700"
+                          className="vc-botao bg-sucesso text-white hover:bg-emerald-700 disabled:opacity-60"
                           onClick={() => alterarStatus(sessao, 'Confirmada')}
+                          disabled={alterando === sessao.id}
                         >
                           <Check size={16} />
                           Confirmar presença
@@ -156,7 +177,7 @@ export function MinhaAgenda() {
                         type="button"
                         className="vc-botao-secundario"
                         onClick={() => alterarStatus(sessao, 'Cancelada')}
-                        disabled={!sessao.podeCancelar}
+                        disabled={!sessao.podeCancelar || alterando === sessao.id}
                         title={
                           sessao.podeCancelar
                             ? 'Cancelar presença'

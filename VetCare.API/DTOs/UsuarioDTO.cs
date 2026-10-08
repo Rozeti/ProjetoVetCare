@@ -24,5 +24,8 @@ namespace VetCare.API.DTOs
         public string? Telefone { get; set; }
         public string? Endereco { get; set; }
         public string? Cpf { get; set; }
+
+        /// <summary>Preenchido quando o usuário é Apoio administrativo.</summary>
+        public string? Setor { get; set; }
     }
 }

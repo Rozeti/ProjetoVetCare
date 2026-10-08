@@ -1,4 +1,4 @@
-import type { StatusSessao } from '../types';
+import type { Gravidade, SituacaoDose, StatusSessao, TipoVacina } from '../types';
 
 /** A API grava tudo em UTC; a interface sempre apresenta no fuso local do usuário. */
 export function paraData(valor: string | Date): Date {
@@ -97,4 +97,104 @@ export function iniciais(nome: string): string {
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
 
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+/** Alertas clínicos: a gravidade define o destaque (mesmas cores no prontuário, nas listas e no modal). */
+export const estiloGravidade: Record<Gravidade, string> = {
+  Grave: 'bg-perigo-claro text-red-800 border-red-300',
+  Moderada: 'bg-alerta-claro text-amber-800 border-amber-300',
+  Leve: 'bg-slate-100 text-slate-700 border-slate-300',
+};
+
+export const rotuloTipoAlerta: Record<string, string> = {
+  Alergia: 'Alergia',
+  Comorbidade: 'Comorbidade',
+  Restricao: 'Restrição',
+  Cirurgia: 'Cirurgia',
+};
+
+/** Carteira de vacinação: situação da dose e nome legível do tipo de produto. */
+export const estiloSituacaoDose: Record<SituacaoDose, string> = {
+  Vencida: 'bg-perigo-claro text-red-800',
+  'A vencer': 'bg-alerta-claro text-amber-800',
+  'Em dia': 'bg-sucesso-claro text-emerald-800',
+  'Dose única': 'bg-slate-100 text-slate-600',
+  Concluída: 'bg-brand-100 text-brand-dark',
+};
+
+export const rotuloTipoVacina: Record<TipoVacina, string> = {
+  Vacina: 'Vacina',
+  Vermifugo: 'Vermífugo',
+  Antipulgas: 'Antipulgas',
+  Outro: 'Outro',
+};
+
+/** Mesma verificação do [EmailAddress] da API: um "@" com algo antes e depois, sem espaços. */
+export function emailValido(valor: string): boolean {
+  const texto = valor.trim();
+  return texto.length > 0 && texto.length <= 180 && /^[^\s@]+@[^\s@]+$/.test(texto);
+}
+
+/** Limites de senha da API (PasswordHasher). */
+export const SENHA_MINIMA = 6;
+export const SENHA_MAXIMA = 64;
+
+export function validarSenha(senha: string): string | null {
+  if (senha.length < SENHA_MINIMA) return `A senha deve ter no mínimo ${SENHA_MINIMA} caracteres.`;
+  if (senha.length > SENHA_MAXIMA) return `A senha deve ter no máximo ${SENHA_MAXIMA} caracteres.`;
+  return null;
+}
+
+/** Início padrão dos filtros de período (relatórios e auditoria): os últimos 30 dias, inclusive hoje. */
+export function trintaDiasAtras(): string {
+  const data = new Date();
+  data.setDate(data.getDate() - 29);
+  return paraValorInputData(data);
+}
+
+/** Limites do cadastro de paciente (CriarPetDTO / CriarPetDoTutorDTO / AtualizarPetDTO). */
+export const LIMITES_DO_PET = { nome: 80, especie: 40, raca: 80, sexo: 20, pelagem: 60, microchip: 40, pesoMinimo: 0.1, pesoMaximo: 200 };
+
+/**
+ * Confere os dados de um pet antes de enviar, com as mesmas regras da API: nome e
+ * data de nascimento obrigatórios, data real e não futura, peso dentro da faixa e
+ * textos dentro das colunas. Devolve a mensagem do primeiro problema, ou null.
+ */
+export function validarDadosDoPet(dados: {
+  nome: string;
+  especie: string;
+  raca: string;
+  sexo?: string;
+  pelagem: string;
+  microchip: string;
+  dataNascimento: string;
+  pesoAtualKg: string;
+}): string | null {
+  const nome = dados.nome.trim();
+
+  if (!nome) return 'Informe o nome do pet.';
+  if (nome.length > LIMITES_DO_PET.nome) return `O nome deve ter até ${LIMITES_DO_PET.nome} caracteres.`;
+  if (!dados.especie.trim()) return 'Informe a espécie.';
+  if (dados.especie.trim().length > LIMITES_DO_PET.especie) return `A espécie deve ter até ${LIMITES_DO_PET.especie} caracteres.`;
+  if (dados.raca.trim().length > LIMITES_DO_PET.raca) return `A raça deve ter até ${LIMITES_DO_PET.raca} caracteres.`;
+  if ((dados.sexo ?? '').trim().length > LIMITES_DO_PET.sexo) return `O sexo deve ter até ${LIMITES_DO_PET.sexo} caracteres.`;
+  if (dados.pelagem.trim().length > LIMITES_DO_PET.pelagem) return `A pelagem deve ter até ${LIMITES_DO_PET.pelagem} caracteres.`;
+  if (dados.microchip.trim().length > LIMITES_DO_PET.microchip) return `O microchip deve ter até ${LIMITES_DO_PET.microchip} caracteres.`;
+
+  if (!dados.dataNascimento) return 'Informe a data de nascimento.';
+
+  const nascimento = new Date(`${dados.dataNascimento}T12:00:00`);
+
+  if (Number.isNaN(nascimento.getTime())) return 'A data de nascimento não é válida.';
+  if (dados.dataNascimento > paraValorInputData(new Date())) return 'A data de nascimento não pode ser futura.';
+
+  if (dados.pesoAtualKg.trim()) {
+    const peso = Number(dados.pesoAtualKg.replace(',', '.'));
+
+    if (!Number.isFinite(peso) || peso < LIMITES_DO_PET.pesoMinimo || peso > LIMITES_DO_PET.pesoMaximo) {
+      return `Informe um peso entre ${LIMITES_DO_PET.pesoMinimo} e ${LIMITES_DO_PET.pesoMaximo} kg.`;
+    }
+  }
+
+  return null;
 }

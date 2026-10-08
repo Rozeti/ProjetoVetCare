@@ -4,7 +4,7 @@ import { api, mensagemDeErro } from '../../services/api';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { AlergiaCondicao, Gravidade, TipoAlerta } from '../../types';
 import { Alerta, Campo, Etiqueta, Modal } from '../../components/ui';
-import { formatarData } from '../../utils/formato';
+import { estiloGravidade, formatarData } from '../../utils/formato';
 
 const TIPOS: { valor: TipoAlerta; rotulo: string }[] = [
   { valor: 'Alergia', rotulo: 'Alergia' },
@@ -15,18 +15,16 @@ const TIPOS: { valor: TipoAlerta; rotulo: string }[] = [
 
 const GRAVIDADES: Gravidade[] = ['Leve', 'Moderada', 'Grave'];
 
-const ESTILO_GRAVIDADE: Record<Gravidade, string> = {
-  Grave: 'bg-perigo-claro text-red-800',
-  Moderada: 'bg-alerta-claro text-amber-800',
-  Leve: 'bg-slate-100 text-slate-700',
-};
+/** Mesmo limite de CriarAlergiaDTO. */
+const TAMANHO_DESCRICAO = 400;
 
 interface Props {
   aberto: boolean;
   pacienteId: string;
   alertas: AlergiaCondicao[];
   aoFechar: () => void;
-  aoSalvar: () => void;
+  /** Recarrega o prontuário; a mensagem diz o que aconteceu (registro ou arquivamento). */
+  aoSalvar: (mensagem: string) => void;
 }
 
 /** Registro de alergias, comorbidades e restrições do paciente. */
@@ -54,7 +52,12 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
     const texto = descricao.trim();
 
     if (texto.length < 3) {
-      setErro('Descreva o alerta clínico.');
+      setErro('Descreva o alerta clínico (mínimo de 3 caracteres).');
+      return;
+    }
+
+    if (texto.length > TAMANHO_DESCRICAO) {
+      setErro(`A descrição deve ter até ${TAMANHO_DESCRICAO} caracteres.`);
       return;
     }
 
@@ -64,7 +67,7 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
       await api.post('/api/alergias', { pacienteId, tipo, descricao: texto, gravidade });
 
       setDescricao('');
-      aoSalvar();
+      aoSalvar('Alerta clínico registrado.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível registrar o alerta.'));
     } finally {
@@ -94,7 +97,7 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
 
     try {
       await api.patch(`/api/alergias/${alerta.id}/status`, { ativo: false });
-      aoSalvar();
+      aoSalvar('Alerta clínico arquivado. Ele continua no histórico do paciente.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível arquivar o alerta.'));
     }
@@ -107,7 +110,7 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
       descricao="Alergias e comorbidades aparecem em destaque no topo do prontuário."
       aoFechar={aoFechar}
     >
-      <form onSubmit={aoEnviar} className="space-y-4">
+      <form onSubmit={aoEnviar} className="space-y-4" noValidate>
         <div className="grid gap-4 sm:grid-cols-2">
           <Campo rotulo="Tipo" obrigatorio>
             <select className="vc-campo" value={tipo} onChange={(e) => setTipo(e.target.value as TipoAlerta)}>
@@ -132,13 +135,14 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
           </Campo>
         </div>
 
-        <Campo rotulo="Descrição" obrigatorio>
+        <Campo rotulo="Descrição" obrigatorio dica={`${descricao.length}/${TAMANHO_DESCRICAO} caracteres`}>
           <textarea
             className="vc-campo"
             rows={2}
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
             placeholder="Ex.: alergia a dipirona, com histórico de reação cutânea."
+            maxLength={TAMANHO_DESCRICAO}
           />
         </Campo>
 
@@ -162,7 +166,7 @@ function Formulario({ pacienteId, alertas, aoFechar, aoSalvar }: Omit<Props, 'ab
                 key={alerta.id}
                 className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-4 py-3"
               >
-                <Etiqueta className={ESTILO_GRAVIDADE[alerta.gravidade]}>{alerta.gravidade}</Etiqueta>
+                <Etiqueta className={estiloGravidade[alerta.gravidade]}>{alerta.gravidade}</Etiqueta>
 
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-slate-800">{alerta.descricao}</p>

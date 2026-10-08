@@ -44,8 +44,9 @@ export function RecuperarSenha() {
     setErro('');
     setAviso('');
 
-    if (!email.trim()) {
-      setErro('Informe o e-mail da sua conta.');
+    // Um e-mail mal digitado nem chega à API: o endpoint tem limite de tentativas por minuto.
+    if (!/^[^\s@]+@[^\s@]+$/.test(email.trim())) {
+      setErro('Informe um e-mail válido.');
       return;
     }
 
@@ -85,6 +86,11 @@ export function RecuperarSenha() {
 
     if (novaSenha.length < 6) {
       setErro('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (novaSenha.length > 64) {
+      setErro('A nova senha deve ter no máximo 64 caracteres.');
       return;
     }
 
@@ -192,7 +198,7 @@ export function RecuperarSenha() {
                   keyboardType="number-pad"
                   autoComplete="one-time-code"
                   textContentType="oneTimeCode"
-                  maxLength={7}
+                  maxLength={6}
                   editable={!enviando}
                 />
                 {codigoPreenchidoEmDesenvolvimento ? (

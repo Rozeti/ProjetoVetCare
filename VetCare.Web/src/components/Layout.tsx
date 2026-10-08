@@ -45,7 +45,8 @@ const MENU: ItemMenu[] = [
   { rotulo: 'Mensagens', caminho: '/mensagens', icone: MessageSquare, perfis: ['Administrador', 'Veterinario', 'Tutor', 'Apoio'] },
   { rotulo: 'Notificações', caminho: '/notificacoes', icone: Bell, perfis: ['Administrador', 'Veterinario', 'Tutor', 'Apoio'] },
   { rotulo: 'Relatórios', caminho: '/relatorios', icone: BarChart3, perfis: ['Administrador', 'Veterinario'] },
-  { rotulo: 'Usuários', caminho: '/usuarios', icone: Users, perfis: ['Administrador'] },
+  // O apoio consulta a equipe (a API abre a listagem a ele); só a administração edita.
+  { rotulo: 'Usuários', caminho: '/usuarios', icone: Users, perfis: ['Administrador', 'Apoio'] },
   { rotulo: 'Auditoria', caminho: '/auditoria', icone: ScrollText, perfis: ['Administrador'] },
   { rotulo: 'Configurações', caminho: '/configuracoes', icone: Settings, perfis: ['Administrador'] },
 ];
@@ -65,6 +66,30 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const [naoLidas, setNaoLidas] = useState(0);
   const [notificacoes, setNotificacoes] = useState(0);
+  // O nome da clínica vem da configuração, não de um texto fixo: cada instalação tem o seu.
+  const [nomeClinica, setNomeClinica] = useState('');
+
+  useAtualizacao(['clinica'], () => {
+    api
+      .get<{ nome: string }>('/api/clinica')
+      .then(({ data }) => setNomeClinica(data.nome))
+      .catch(() => undefined);
+  });
+
+  useEffect(() => {
+    let ativo = true;
+
+    api
+      .get<{ nome: string }>('/api/clinica')
+      .then(({ data }) => {
+        if (ativo) setNomeClinica(data.nome);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   // Recontar é uma leitura barata; a versão serve só para disparar o efeito abaixo.
   const [versaoDosContadores, setVersaoDosContadores] = useState(0);
@@ -223,7 +248,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Stethoscope className="text-brand" size={22} />
           <span className="font-display text-lg font-bold text-slate-900">VetCare</span>
 
-          <Link to="/notificacoes" className="relative ml-auto rounded-lg p-2 text-slate-600 hover:bg-slate-100">
+          <Link
+            to="/notificacoes"
+            className="relative ml-auto rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+            aria-label={notificacoes > 0 ? `Notificações, ${notificacoes} nova(s)` : 'Notificações'}
+          >
             <Bell size={20} />
             {notificacoes > 0 && (
               <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-perigo" aria-hidden="true" />
@@ -235,7 +264,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
         <footer className="mx-auto max-w-7xl px-4 pb-8 text-center text-xs text-slate-400 sm:px-6 lg:px-8">
           <FileText size={12} className="mr-1 inline" />
-          VetCare — plataforma de gestão clínica veterinária da Clínica VetSPA
+          VetCare — plataforma de gestão clínica veterinária{nomeClinica ? ` da ${nomeClinica}` : ''}
         </footer>
       </div>
     </div>

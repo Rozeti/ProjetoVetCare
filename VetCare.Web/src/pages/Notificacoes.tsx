@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
+  ArrowRightLeft,
   Bell,
   CalendarClock,
   CalendarPlus,
   CheckCheck,
   ClipboardList,
+  Loader2,
   MessageSquare,
   Settings2,
   Syringe,
@@ -14,6 +16,7 @@ import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contexts/auth';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import type { Notificacao, TipoNotificacao } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, SemDados } from '../components/ui';
 import { tempoRelativo } from '../utils/formato';
@@ -26,24 +29,32 @@ const ESTILO_POR_TIPO: Record<TipoNotificacao, { Icone: typeof Bell; cor: string
   NovoRegistroProntuario: { Icone: ClipboardList, cor: 'text-sucesso', fundo: 'bg-sucesso-claro' },
   NovaMensagem: { Icone: MessageSquare, cor: 'text-brand', fundo: 'bg-brand-100' },
   DoseDeVacina: { Icone: Syringe, cor: 'text-alerta', fundo: 'bg-alerta-claro' },
+  PacienteTransferido: { Icone: ArrowRightLeft, cor: 'text-info', fundo: 'bg-info-claro' },
 };
 
 const ESTILO_PADRAO = { Icone: Bell, cor: 'text-slate-500', fundo: 'bg-slate-100' };
+
+/** Quantos avisos vêm por vez; "Ver mais" pede o próximo lote. */
+const LOTE = 50;
 
 /** HU-015: notificações dos eventos relevantes do tratamento. */
 export function Notificacoes() {
   const navigate = useNavigate();
   const { ehTutor, usuario } = useAuth();
+  const { confirmar } = useConfirmacao();
 
   const [apenasNovas, setApenasNovas] = useState(false);
+  const [limite, setLimite] = useState(LOTE);
+  const [marcandoTodas, setMarcandoTodas] = useState(false);
+  const [aviso, setAviso] = useState('');
 
   const buscar = useCallback(async () => {
     const { data } = await api.get<Notificacao[]>('/api/notificacoes', {
-      params: { apenasNaoVisualizadas: apenasNovas },
+      params: { apenasNaoVisualizadas: apenasNovas, limite },
     });
 
     return data;
-  }, [apenasNovas]);
+  }, [apenasNovas, limite]);
 
   const { dados, carregando, erro, setErro, recarregar } = useCarregamento(
     buscar,
@@ -55,11 +66,30 @@ export function Notificacoes() {
   const notificacoes = dados ?? [];
 
   async function marcarTodas() {
+    if (marcandoTodas) return;
+
+    // Não tem desfazer: o indicador do que ainda não foi lido some de uma vez.
+    if (
+      !(await confirmar({
+        titulo: 'Marcar todas como lidas',
+        mensagem: 'Marcar todas as notificações como lidas? Elas continuam na lista, sem o destaque de novas.',
+        rotuloConfirmar: 'Marcar como lidas',
+      }))
+    ) {
+      return;
+    }
+
+    setMarcandoTodas(true);
+    setAviso('');
+
     try {
       await api.patch('/api/notificacoes/todas/visualizadas');
+      setAviso('Todas as notificações foram marcadas como lidas.');
       recarregar();
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível marcar as notificações.'));
+    } finally {
+      setMarcandoTodas(false);
     }
   }
 
@@ -68,9 +98,9 @@ export function Notificacoes() {
       try {
         await api.patch(`/api/notificacoes/${notificacao.id}/visualizada`);
         recarregar();
-      } catch (falha) {
-        // Falhar ao marcar não deve impedir a navegação para o conteúdo.
-        console.warn('Não foi possível marcar a notificação como visualizada.', falha);
+      } catch {
+        // Falhar ao marcar não deve impedir a navegação para o conteúdo; a próxima
+        // leitura da lista mostra o aviso ainda como novo, que é o estado real.
       }
     }
 
@@ -96,8 +126,8 @@ export function Notificacoes() {
               {canais.length > 0 ? `Também por ${canais.join(' e ')}` : 'Só no sistema'}
             </Link>
             {naoVisualizadas > 0 && (
-              <button type="button" className="vc-botao-secundario" onClick={marcarTodas}>
-                <CheckCheck size={16} />
+              <button type="button" className="vc-botao-secundario" onClick={marcarTodas} disabled={marcandoTodas}>
+                {marcandoTodas ? <Loader2 className="animate-spin" size={16} /> : <CheckCheck size={16} />}
                 Marcar todas como lidas
               </button>
             )}
@@ -109,6 +139,13 @@ export function Notificacoes() {
         <div className="mb-4">
           <Alerta tipo="erro" aoFechar={() => setErro('')}>
             {erro}
+          </Alerta>
+        </div>
+      )}
+      {aviso && (
+        <div className="mb-4">
+          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
+            {aviso}
           </Alerta>
         </div>
       )}
@@ -164,13 +201,22 @@ export function Notificacoes() {
                     </div>
 
                     {!notificacao.visualizada && (
-                      <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-brand" aria-label="Não lida" />
+                      <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-brand" role="img" aria-label="Não lida" />
                     )}
                   </button>
                 </li>
               );
             })}
           </ul>
+
+          {/* A API devolve um lote por vez; o botão pede o próximo até a lista acabar. */}
+          {notificacoes.length >= limite && (
+            <div className="border-t border-slate-100 px-5 py-3 text-center">
+              <button type="button" className="vc-botao-sutil" onClick={() => setLimite((atual) => atual + LOTE)}>
+                Ver notificações mais antigas
+              </button>
+            </div>
+          )}
         </Card>
       )}
     </>

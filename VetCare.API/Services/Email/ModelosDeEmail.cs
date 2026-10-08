@@ -104,7 +104,7 @@ namespace VetCare.API.Services.Email
                 titulo: "Senha alterada",
                 paragrafos: new[]
                 {
-                    $"A senha da sua conta no {_aplicacao.NomeDoSistema} acabou de ser alterada, em {DateTime.Now:dd/MM/yyyy 'às' HH:mm}.",
+                    $"A senha da sua conta no {_aplicacao.NomeDoSistema} acabou de ser alterada, em {RelogioDaClinica.Padrao.Formatar(DateTime.UtcNow)}.",
                     "Se foi você, não precisa fazer nada.",
                 },
                 botao: null,

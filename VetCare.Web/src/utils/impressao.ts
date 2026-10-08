@@ -166,15 +166,17 @@ export function imprimirProntuario(prontuario: Prontuario, nomeClinica: string) 
   const vacinas = prontuario.vacinas.length
     ? `<h2>Carteira de vacinação</h2>
       <table>
-        <thead><tr><th>Produto</th><th>Tipo</th><th>Aplicação</th><th>Próxima dose</th></tr></thead>
+        <thead><tr><th>Produto</th><th>Dose</th><th>Tipo</th><th>Aplicação</th><th>Próxima dose</th><th>Situação</th></tr></thead>
         <tbody>
           ${prontuario.vacinas
             .map(
               (v) => `<tr>
                 <td>${escapar(v.nome)}</td>
+                <td>${escapar(v.descricaoDose || 'Avulsa')}</td>
                 <td>${escapar(v.tipo)}</td>
                 <td>${escapar(formatarData(v.dataAplicacao))}</td>
                 <td>${v.proximaDose ? escapar(formatarData(v.proximaDose)) : '—'}</td>
+                <td>${escapar(v.situacaoDose)}</td>
               </tr>`,
             )
             .join('')}

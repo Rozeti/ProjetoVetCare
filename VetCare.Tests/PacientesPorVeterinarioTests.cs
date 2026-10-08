@@ -74,6 +74,7 @@ namespace VetCare.Tests
             new VeterinarioRepository(Contexto),
             new ProntuarioRepository(Contexto),
             new SessaoRepository(Contexto),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private static ParametrosPagina Pagina() => new() { Pagina = 1, Tamanho = 50 };

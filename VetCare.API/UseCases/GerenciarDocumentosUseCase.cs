@@ -12,6 +12,9 @@ namespace VetCare.API.UseCases
     {
         private static readonly string[] FormatosPermitidos = { ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx" };
 
+        /// <summary>Classificação do anexo, a mesma oferecida pelo portal.</summary>
+        public static readonly string[] TiposDeDocumento = { "Contrato", "Exame", "Laudo", "Outro" };
+
         /// <summary>RN-011: limite de 10 MB por documento.</summary>
         private const long TamanhoMaximo = 10L * 1024 * 1024;
 
@@ -71,14 +74,29 @@ namespace VetCare.API.UseCases
                     "Informe um prontuário ou um paciente válido desta clínica para vincular o documento.");
             }
 
+            // Anexar ao prontuário segue a mesma regra de quem pode lê-lo (HU-013).
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, prontuario.Paciente))
+            {
+                return Resultado<DocumentoDTO>.NaoAutorizado("Você não tem acesso a este prontuário.");
+            }
+
+            var tipo = string.IsNullOrWhiteSpace(dto.TipoDocumento) ? "Outro" : dto.TipoDocumento.Trim();
+
+            if (!TiposDeDocumento.Contains(tipo, StringComparer.OrdinalIgnoreCase))
+            {
+                return Resultado<DocumentoDTO>.Invalido(
+                    $"Tipo de documento inválido. Use um destes: {string.Join(", ", TiposDeDocumento)}.");
+            }
+
             var caminho = await _armazenamento.Salvar(dto.Arquivo, AssinadorDeArquivos.PastaDeDocumentos);
 
             var documento = new DocumentoClinico
             {
                 ProntuarioId = prontuario.Id,
                 EnviadoPorId = _usuarioAtual.Id,
-                NomeArquivo = dto.Arquivo.FileName,
-                TipoDocumento = string.IsNullOrWhiteSpace(dto.TipoDocumento) ? "Outro" : dto.TipoDocumento.Trim(),
+                // O nome vem do aparelho de quem envia: sem caminho e dentro do limite da coluna.
+                NomeArquivo = ArmazenamentoArquivos.NomeSeguro(dto.Arquivo.FileName),
+                TipoDocumento = TiposDeDocumento.First(t => string.Equals(t, tipo, StringComparison.OrdinalIgnoreCase)),
                 UrlArquivo = caminho,
                 TamanhoBytes = dto.Arquivo.Length
             };
@@ -87,6 +105,10 @@ namespace VetCare.API.UseCases
             await _documentos.SalvarAlteracoes();
 
             var salvo = await _documentos.ObterPorId(documento.Id);
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "DocumentoClinico", documento.Id,
+                $"Anexo de {documento.NomeArquivo} ({documento.TipoDocumento}) ao prontuário de {prontuario.Paciente?.Nome}");
 
             return Resultado<DocumentoDTO>.Ok(MapearParaDTO(salvo ?? documento, _assinador), "Documento anexado com sucesso.");
         }

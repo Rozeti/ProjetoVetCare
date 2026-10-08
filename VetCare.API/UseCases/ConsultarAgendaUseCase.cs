@@ -45,6 +45,12 @@ namespace VetCare.API.UseCases
                 return Resultado<List<ItemAgendaDTO>>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
             }
 
+            // RN-008: o veterinário vê a própria agenda; a de um colega é assunto da administração e do apoio.
+            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)
+            {
+                return Resultado<List<ItemAgendaDTO>>.NaoAutorizado("Você só pode consultar a sua própria agenda.");
+            }
+
             var (inicio, fim) = CalcularIntervalo(data, visao);
             var sessoes = await _sessoes.ObterPorPeriodo(veterinarioId, inicio, fim);
             var cor = GerenciarVeterinariosUseCase.ObterCor(veterinarioId);

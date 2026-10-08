@@ -3,9 +3,12 @@ import { MessageSquare, PawPrint, Plus, Send, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { useAuth } from '../contexts/auth';
-import type { Conversa, Mensagem, PaginaDe, Pet, Usuario } from '../types';
+import type { Conversa, Mensagem, Pet, PetSelecao, Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { formatarHora, tempoRelativo } from '../utils/formato';
+
+/** Mesmo limite de EnviarMensagemDTO. */
+const TAMANHO_MENSAGEM = 2000;
 
 /** HU-014: troca de mensagens entre tutor e equipe clínica. */
 export function Mensagens() {
@@ -18,7 +21,8 @@ export function Mensagens() {
   const [texto, setTexto] = useState('');
 
   // Uma mensagem pode ser sobre um pet específico; a lista muda conforme a conversa aberta.
-  const [petsDaConversa, setPetsDaConversa] = useState<Pet[]>([]);
+  const [petsDaConversa, setPetsDaConversa] = useState<{ id: string; nome: string }[]>([]);
+  const [carregandoContatos, setCarregandoContatos] = useState(false);
   const [pacienteId, setPacienteId] = useState('');
 
   const [carregandoLista, setCarregandoLista] = useState(true);
@@ -110,11 +114,15 @@ export function Mensagens() {
   const nomeContato = conversaAtual?.nome ?? contatoAtual?.nome ?? '';
   const perfilContato = conversaAtual?.perfil ?? contatoAtual?.perfil;
 
-  // Os pets a que a mensagem pode se referir: os do próprio tutor, ou os do tutor com quem a equipe fala.
-  useEffect(() => {
+  // Trocar de conversa zera o pet escolhido e a lista de pets, que pertencem ao contato anterior.
+  function selecionar(usuarioId: string | null) {
+    setSelecionado(usuarioId);
     setPacienteId('');
     setPetsDaConversa([]);
+  }
 
+  // Os pets a que a mensagem pode se referir: os do próprio tutor, ou os do tutor com quem a equipe fala.
+  useEffect(() => {
     if (!selecionado) return;
 
     let ativo = true;
@@ -123,12 +131,16 @@ export function Mensagens() {
       try {
         if (ehTutor) {
           const { data } = await api.get<Pet[]>('/api/pets/meus');
-          if (ativo) setPetsDaConversa(data);
-        } else if (perfilContato === 'Tutor' && nomeContato) {
-          const { data } = await api.get<PaginaDe<Pet>>('/api/pets', {
-            params: { busca: nomeContato, ativo: true, tamanho: 50 },
-          });
-          if (ativo) setPetsDaConversa(data.itens.filter((pet) => pet.nomeTutor === nomeContato));
+          if (ativo) setPetsDaConversa(data.map((pet) => ({ id: pet.id, nome: pet.nome })));
+        } else if (perfilContato === 'Tutor' && selecionado) {
+          // Os pets do tutor da conversa, ligados pelo id do usuário dele: dois tutores com o
+          // mesmo nome não se confundem.
+          const { data } = await api.get<PetSelecao[]>('/api/pets/selecao');
+          if (ativo) {
+            setPetsDaConversa(
+              data.filter((pet) => pet.tutorUsuarioId === selecionado).map((pet) => ({ id: pet.id, nome: pet.nome })),
+            );
+          }
         }
       } catch {
         // O seletor de pet é um complemento: sem ele a conversa segue normalmente.
@@ -147,19 +159,31 @@ export function Mensagens() {
   }, [mensagens]);
 
   async function abrirNovaConversa() {
+    if (carregandoContatos) return;
+
+    setCarregandoContatos(true);
+
     try {
       const { data } = await api.get<Usuario[]>('/api/mensagens/contatos');
       setContatos(data);
       setModalNovaConversa(true);
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível carregar os contatos.'));
+    } finally {
+      setCarregandoContatos(false);
     }
   }
 
   async function enviar(evento: FormEvent) {
     evento.preventDefault();
 
-    if (!selecionado || !texto.trim()) return;
+    if (!selecionado || !texto.trim() || enviando) return;
+
+    // Mesmo limite de EnviarMensagemDTO.
+    if (texto.trim().length > TAMANHO_MENSAGEM) {
+      setErro(`A mensagem deve ter até ${TAMANHO_MENSAGEM} caracteres.`);
+      return;
+    }
 
     setEnviando(true);
     setErro('');
@@ -187,7 +211,7 @@ export function Mensagens() {
         titulo="Mensagens"
         descricao="Converse sobre o tratamento sem sair do sistema."
         acoes={
-          <button type="button" className="vc-botao-primario" onClick={abrirNovaConversa}>
+          <button type="button" className="vc-botao-primario" onClick={abrirNovaConversa} disabled={carregandoContatos}>
             <Plus size={16} />
             Nova conversa
           </button>
@@ -222,7 +246,7 @@ export function Mensagens() {
                 <li key={conversa.usuarioId}>
                   <button
                     type="button"
-                    onClick={() => setSelecionado(conversa.usuarioId)}
+                    onClick={() => selecionar(conversa.usuarioId)}
                     className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
                       selecionado === conversa.usuarioId ? 'bg-brand-50' : 'hover:bg-slate-50'
                     }`}
@@ -282,7 +306,7 @@ export function Mensagens() {
 
                 <button
                   type="button"
-                  onClick={() => setSelecionado(null)}
+                  onClick={() => selecionar(null)}
                   className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 lg:hidden"
                   aria-label="Fechar conversa"
                 >
@@ -359,6 +383,7 @@ export function Mensagens() {
                     rows={2}
                     placeholder="Escreva sua mensagem..."
                     value={texto}
+                    maxLength={TAMANHO_MENSAGEM}
                     onChange={(e) => setTexto(e.target.value)}
                     onKeyDown={(e) => {
                       // Enter envia; Shift+Enter quebra linha.
@@ -392,7 +417,7 @@ export function Mensagens() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSelecionado(contato.id);
+                    selecionar(contato.id);
                     setModalNovaConversa(false);
                   }}
                   className="flex w-full items-center gap-3 px-2 py-3 text-left transition hover:bg-slate-50"

@@ -54,11 +54,13 @@ export function SeletorVeterinario({
 
         if (!ativo) return;
 
-        setVeterinarios(data);
+        // Um profissional desativado não assina registros novos.
+        const ativos = data.filter((v) => v.ativo);
+        setVeterinarios(ativos);
 
         // Com um único veterinário na clínica a escolha é óbvia e já vem resolvida.
-        if (data.length === 1) {
-          aoMudarRef.current(data[0].id);
+        if (ativos.length === 1) {
+          aoMudarRef.current(ativos[0].id);
         }
       } catch {
         if (ativo) setFalhouAoCarregar(true);

@@ -42,7 +42,8 @@ Notifications.setNotificationHandler({
 
 function obterProjectId(): string | undefined {
   const doExpo = (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId;
-  return doExpo ?? Constants.easConfig?.projectId ?? undefined;
+  // O app.json traz a chave como texto vazio até o projeto ser criado no EAS: vazio não é "definido".
+  return doExpo?.trim() || Constants.easConfig?.projectId || undefined;
 }
 
 /**

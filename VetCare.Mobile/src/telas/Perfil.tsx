@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, mensagemDeErro, URL_API } from '../services/api';
 import { useAuth } from '../contextos/AuthContext';
+import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Usuario } from '../tipos';
 import { Alerta, Avatar, Cartao } from '../componentes/ui';
 import { cores, espacos, raios } from '../tema';
@@ -45,6 +46,18 @@ export function Perfil() {
   const [erroSenha, setErroSenha] = useState('');
   const [sucessoSenha, setSucessoSenha] = useState('');
   const [salvandoSenha, setSalvandoSenha] = useState(false);
+
+  // Uma correção feita pela clínica (nome, contato, desativação) aparece aqui na hora.
+  useAtualizacao(['tutores', 'usuarios'], () => {
+    api
+      .get<Usuario>('/api/usuarios/me')
+      .then(({ data }) => {
+        atualizarUsuario(data);
+        setTelefone(data.telefone ?? '');
+        setEndereco(data.endereco ?? '');
+      })
+      .catch(() => undefined);
+  });
 
   if (!usuario) return null;
 
@@ -92,16 +105,31 @@ export function Perfil() {
 
     setErroContato('');
     setSucessoContato('');
+
+    // Mesmos limites de AtualizarTutorDTO.
+    if (telefone.trim().length > 30) {
+      setErroContato('O telefone deve ter até 30 caracteres.');
+      return;
+    }
+
+    if (endereco.trim().length > 250) {
+      setErroContato('O endereço deve ter até 250 caracteres.');
+      return;
+    }
+
     setSalvandoContato(true);
 
     try {
+      // Campo esvaziado vai como texto vazio: nulo significaria "manter o valor atual" para a API.
       await api.put(`/api/tutores/${usuario.tutorId}`, {
-        telefone: telefone.trim() || null,
-        endereco: endereco.trim() || null,
+        telefone: telefone.trim(),
+        endereco: endereco.trim(),
       });
 
       const { data } = await api.get<Usuario>('/api/usuarios/me');
       atualizarUsuario(data);
+      setTelefone(data.telefone ?? '');
+      setEndereco(data.endereco ?? '');
       setSucessoContato('Dados de contato atualizados.');
     } catch (falha) {
       setErroContato(mensagemDeErro(falha, 'Não foi possível atualizar o contato.'));
@@ -114,8 +142,24 @@ export function Perfil() {
     setErroSenha('');
     setSucessoSenha('');
 
+    // Mesmas regras da API (AlterarSenhaDTO), conferidas antes de pedir a confirmação.
+    if (!senhaAtual) {
+      setErroSenha('Informe a senha atual.');
+      return;
+    }
+
     if (novaSenha.length < 6) {
       setErroSenha('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (novaSenha.length > 64) {
+      setErroSenha('A nova senha deve ter no máximo 64 caracteres.');
+      return;
+    }
+
+    if (novaSenha === senhaAtual) {
+      setErroSenha('A nova senha precisa ser diferente da atual.');
       return;
     }
 
@@ -233,6 +277,7 @@ export function Perfil() {
             autoComplete="tel"
             placeholder="(00) 00000-0000"
             placeholderTextColor={cores.textoSuave}
+            maxLength={30}
             editable={!salvandoContato}
             accessibilityLabel="Telefone"
           />
@@ -245,6 +290,7 @@ export function Perfil() {
             autoComplete="street-address"
             placeholder="Rua, número, bairro, cidade"
             placeholderTextColor={cores.textoSuave}
+            maxLength={250}
             editable={!salvandoContato}
             accessibilityLabel="Endereço"
           />
@@ -275,6 +321,7 @@ export function Perfil() {
             secureTextEntry
             value={senhaAtual}
             onChangeText={setSenhaAtual}
+            maxLength={64}
             editable={!salvandoSenha}
             autoComplete="current-password"
             placeholderTextColor={cores.textoSuave}
@@ -287,6 +334,7 @@ export function Perfil() {
             secureTextEntry
             value={novaSenha}
             onChangeText={setNovaSenha}
+            maxLength={64}
             editable={!salvandoSenha}
             autoComplete="new-password"
             placeholder="Mínimo de 6 caracteres"
@@ -300,6 +348,7 @@ export function Perfil() {
             secureTextEntry
             value={confirmacao}
             onChangeText={setConfirmacao}
+            maxLength={64}
             editable={!salvandoSenha}
             autoComplete="new-password"
             placeholderTextColor={cores.textoSuave}

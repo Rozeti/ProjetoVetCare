@@ -24,6 +24,9 @@ namespace VetCare.API.Data
         Task<Pet?> ObterPorId(Guid id);
         Task<Pet?> ObterPorIdComTutor(Guid id);
         Task<PaginaDe<Pet>> Listar(Guid clinicaId, FiltroDePacientes filtro, ParametrosPagina parametros);
+
+        /// <summary>Pacientes ativos do recorte, sem paginação, para os seletores dos formulários.</summary>
+        Task<List<Pet>> ListarParaSelecao(Guid clinicaId, FiltroDePacientes filtro);
         void Atualizar(Pet pet);
 
         /// <summary>HU-003, CA-4: um paciente com registros clínicos não pode ser excluído.</summary>

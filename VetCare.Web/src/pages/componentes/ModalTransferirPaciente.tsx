@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRightLeft, Loader2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
+import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { ResultadoTransferencia, Veterinario } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
 
@@ -41,6 +42,7 @@ function Formulario({ paciente, aoFechar, aoTransferir }: Props & { paciente: Pa
   const [salvando, setSalvando] = useState(false);
 
   const temResponsavel = !!paciente.veterinarioResponsavelId;
+  const { confirmar } = useConfirmacao();
 
   useEffect(() => {
     let ativo = true;
@@ -70,12 +72,36 @@ function Formulario({ paciente, aoFechar, aoTransferir }: Props & { paciente: Pa
       return;
     }
 
+    const destino = veterinarios.find((v) => v.id === veterinarioId)?.nome ?? 'o novo veterinário';
+
+    // A transferência move tratamentos e sessões de agenda e não tem desfazer: confirma antes.
+    if (
+      !(await confirmar({
+        titulo: temResponsavel ? 'Confirmar transferência' : 'Confirmar responsável',
+        mensagem: temResponsavel ? (
+          <>
+            Transferir <strong>{paciente.nome}</strong> de {paciente.nomeVeterinarioResponsavel} para{' '}
+            <strong>{destino}</strong>? Os tratamentos em andamento e as sessões futuras vão junto, e o paciente
+            deixa de aparecer para o profissional atual.
+          </>
+        ) : (
+          <>
+            Definir <strong>{destino}</strong> como responsável por <strong>{paciente.nome}</strong>?
+          </>
+        ),
+        rotuloConfirmar: temResponsavel ? 'Transferir' : 'Definir responsável',
+        perigo: temResponsavel,
+      }))
+    ) {
+      return;
+    }
+
     setSalvando(true);
 
     try {
       const { data } = await api.patch<ResultadoTransferencia>(`/api/pets/${paciente.id}/veterinario-responsavel`, {
         veterinarioId,
-        motivo,
+        motivo: motivo.trim(),
       });
 
       aoTransferir(descrever(data));

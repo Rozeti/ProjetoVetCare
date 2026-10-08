@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -49,10 +50,26 @@ export function FormularioNovoPet({
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  function fechar() {
+  function descartar() {
     setForm(FORM_VAZIO);
     setErro('');
     aoFechar();
+  }
+
+  /** O botão "voltar" do aparelho também chega aqui: um formulário preenchido não some sem perguntar. */
+  function fechar() {
+    const preenchido =
+      form.nome.trim() || form.raca.trim() || form.pelagem.trim() || form.microchip.trim() || form.nascimento || form.peso;
+
+    if (!preenchido || salvando) {
+      descartar();
+      return;
+    }
+
+    Alert.alert('Descartar cadastro?', 'Os dados digitados serão perdidos.', [
+      { text: 'Continuar editando', style: 'cancel' },
+      { text: 'Descartar', style: 'destructive', onPress: descartar },
+    ]);
   }
 
   async function enviar() {
@@ -78,8 +95,9 @@ export function FormularioNovoPet({
 
     const peso = form.peso.trim().replace(',', '.');
 
-    if (peso && (Number.isNaN(Number(peso)) || Number(peso) <= 0)) {
-      setErro('Informe um peso válido, como 12,5.');
+    // Mesma faixa aceita pela API (CriarPetDoTutorDTO): entre 0,1 e 200 kg.
+    if (peso && (Number.isNaN(Number(peso)) || Number(peso) < 0.1 || Number(peso) > 200)) {
+      setErro('Informe um peso entre 0,1 e 200 kg, como 12,5.');
       return;
     }
 
@@ -134,6 +152,7 @@ export function FormularioNovoPet({
         >
           <ScrollView contentContainerStyle={estilos.conteudo} keyboardShouldPersistTaps="handled">
             <CampoTexto
+              desabilitado={salvando}
               rotulo="Nome do pet"
               obrigatorio
               valor={form.nome}
@@ -151,6 +170,7 @@ export function FormularioNovoPet({
             />
 
             <CampoTexto
+              desabilitado={salvando}
               rotulo="Raça"
               valor={form.raca}
               aoMudar={(raca) => setForm({ ...form, raca })}
@@ -166,6 +186,7 @@ export function FormularioNovoPet({
             />
 
             <CampoTexto
+              desabilitado={salvando}
               rotulo="Data de nascimento"
               obrigatorio
               valor={form.nascimento}
@@ -177,6 +198,7 @@ export function FormularioNovoPet({
             />
 
             <CampoTexto
+              desabilitado={salvando}
               rotulo="Peso atual (kg)"
               valor={form.peso}
               aoMudar={(peso) => setForm({ ...form, peso })}
@@ -186,6 +208,7 @@ export function FormularioNovoPet({
             />
 
             <CampoTexto
+              desabilitado={salvando}
               rotulo="Pelagem"
               valor={form.pelagem}
               aoMudar={(pelagem) => setForm({ ...form, pelagem })}
@@ -194,6 +217,7 @@ export function FormularioNovoPet({
             />
 
             <CampoTexto
+              desabilitado={salvando}
               rotulo="Microchip"
               valor={form.microchip}
               aoMudar={(microchip) => setForm({ ...form, microchip })}

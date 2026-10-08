@@ -30,13 +30,19 @@ Scripts disponíveis:
 
 ```
 src/
-├── components/     Layout com sidebar fixa, UI compartilhada e gráfico de evolução
-├── contexts/       AuthContext: sessão, perfil e permissões
+├── components/     Layout com sidebar fixa, alertas clínicos, paginação, seletor de
+│   │               veterinário, janela de confirmação e gráfico de evolução
+│   └── ui/         primitivos (Modal com foco preso, Campo, Loader, etiquetas)
+├── contexts/       AuthContext (sessão, perfil e permissões) e AtualizacoesContext
+│                   (long polling de GET /api/atualizacoes que acorda as telas)
+├── hooks/          useCarregamento (estado de carga e erro) e useConfirmacao
 ├── pages/          uma tela por História de Usuário
-│   └── componentes/ modais de agendamento, atendimento, avaliação e tratamento
+│   └── componentes/ carteira de vacinação, receituário, modais de agendamento,
+│                   atendimento, avaliação, tratamento, alerta clínico, bloqueios
+│                   de agenda e transferência de paciente
 ├── services/       cliente HTTP e tratamento de erros da API
 ├── types/          contratos compartilhados com a API
-└── utils/          formatação de datas, pesos e estilos de status
+└── utils/          formatação, validações compartilhadas, paginação e impressão
 ```
 
 ## Navegação por perfil
@@ -47,10 +53,10 @@ em vez de ver uma tela de erro.
 
 | Perfil | Páginas |
 |---|---|
-| Administrador | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações, Relatórios, Usuários, Configurações |
-| Veterinário | Painel, Agenda, Pacientes, Tutores, Mensagens, Notificações, Relatórios |
-| Apoio | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações |
-| Tutor | Meus pets, Minha agenda, Mensagens, Notificações |
+| Administrador | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações, Relatórios, Auditoria, Usuários, Configurações, Perfil |
+| Veterinário | Painel, Agenda (com bloqueios), Pacientes, Tutores, Mensagens, Notificações, Relatórios, Perfil |
+| Apoio | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações, Usuários (somente consulta), Perfil |
+| Tutor | Meus pets, Minha agenda, Mensagens, Notificações, Perfil |
 
 Esta é uma camada de conveniência de navegação. A defesa real está na API, que repete a
 verificação de perfil em cada endpoint.

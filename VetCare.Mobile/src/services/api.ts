@@ -51,6 +51,36 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
+/** Telas que funcionam sem sessão: um 401 nelas é resposta de negócio, não sessão expirada. */
+const ROTAS_PUBLICAS = ['/usuarios/login', '/usuarios/recuperar-senha', '/usuarios/redefinir-senha'];
+
+let aoPerderSessao: (() => void) | null = null;
+
+/**
+ * O AuthContext registra aqui o que fazer quando a API recusa a sessão (token expirado
+ * ou conta desativada): voltar ao login. Sem isso o tutor ficaria preso vendo "não foi
+ * possível carregar" em todas as abas.
+ */
+export function registrarPerdaDeSessao(acao: (() => void) | null) {
+  aoPerderSessao = acao;
+}
+
+api.interceptors.response.use(
+  (resposta) => resposta,
+  async (erro) => {
+    const naoAutenticado = axios.isAxiosError(erro) && erro.response?.status === 401;
+    const url = erro?.config?.url ?? '';
+    const emRotaPublica = ROTAS_PUBLICAS.some((rota) => url.includes(rota));
+
+    if (naoAutenticado && !emRotaPublica) {
+      await AsyncStorage.multiRemove([CHAVE_TOKEN, CHAVE_USUARIO]);
+      aoPerderSessao?.();
+    }
+
+    return Promise.reject(erro);
+  },
+);
+
 /** Extrai a mensagem que a API envia em `{ mensagem }`. */
 export function mensagemDeErro(erro: unknown, alternativa = 'Não foi possível concluir a operação.'): string {
   if (axios.isAxiosError(erro)) {

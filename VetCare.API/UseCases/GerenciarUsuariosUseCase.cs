@@ -169,7 +169,13 @@ namespace VetCare.API.UseCases
             usuario.Email = dto.Email.Trim().ToLowerInvariant();
 
             _usuarios.Atualizar(usuario);
-            await AtualizarVinculoDoPerfil(usuario, dto);
+
+            var conflitoDoVinculo = await AtualizarVinculoDoPerfil(usuario, dto);
+
+            if (conflitoDoVinculo != null)
+            {
+                return Resultado<UsuarioDTO>.Conflito(conflitoDoVinculo);
+            }
 
             // Usuário e vínculo profissional saem numa única gravação.
             await _usuarios.SalvarAlteracoes();
@@ -267,6 +273,14 @@ namespace VetCare.API.UseCases
                 return Resultado.Invalido("A nova senha precisa ser diferente da atual.");
             }
 
+            // A política de senha mora no PasswordHasher; o DTO só adianta a mensagem.
+            var senhaFraca = PasswordHasher.ValidarForca(dto.NovaSenha);
+
+            if (senhaFraca != null)
+            {
+                return Resultado.Invalido(senhaFraca);
+            }
+
             usuario.SenhaHash = _hasher.Gerar(dto.NovaSenha);
 
             _usuarios.Atualizar(usuario);
@@ -334,8 +348,11 @@ namespace VetCare.API.UseCases
             }
         }
 
-        /// <summary>Campos omitidos (nulos) mantêm o valor atual; só o que veio preenchido é alterado.</summary>
-        private async Task AtualizarVinculoDoPerfil(Usuario usuario, AtualizarUsuarioDTO dto)
+        /// <summary>
+        /// Campos omitidos (nulos) mantêm o valor atual; só o que veio preenchido é alterado.
+        /// Devolve a mensagem de conflito quando o novo CRMV já pertence a outro profissional.
+        /// </summary>
+        private async Task<string?> AtualizarVinculoDoPerfil(Usuario usuario, AtualizarUsuarioDTO dto)
         {
             switch (usuario.Perfil)
             {
@@ -345,7 +362,16 @@ namespace VetCare.API.UseCases
 
                     if (veterinario != null)
                     {
-                        veterinario.Crmv = dto.Crmv?.Trim() ?? veterinario.Crmv;
+                        var crmv = dto.Crmv?.Trim();
+
+                        // O CRMV identifica o profissional: a mesma regra do cadastro vale na edição.
+                        if (!string.IsNullOrWhiteSpace(crmv) && crmv != veterinario.Crmv &&
+                            await _veterinarios.CrmvExiste(crmv, veterinario.Id))
+                        {
+                            return "Já existe outro veterinário cadastrado com este CRMV.";
+                        }
+
+                        veterinario.Crmv = string.IsNullOrWhiteSpace(crmv) ? veterinario.Crmv : crmv;
                         veterinario.Especialidade = dto.Especialidade?.Trim() ?? veterinario.Especialidade;
                         _veterinarios.Atualizar(veterinario);
                     }
@@ -381,6 +407,8 @@ namespace VetCare.API.UseCases
                     break;
                 }
             }
+
+            return null;
         }
 
         private async Task<UsuarioDTO> MapearComVinculos(Usuario usuario)
@@ -393,10 +421,18 @@ namespace VetCare.API.UseCases
                 ? await _tutores.ObterPorUsuarioId(usuario.Id)
                 : null;
 
-            return MapearParaDTO(usuario, veterinario, tutor);
+            var apoio = usuario.Perfil == Perfis.Apoio
+                ? await _apoios.ObterPorUsuarioId(usuario.Id)
+                : null;
+
+            return MapearParaDTO(usuario, veterinario, tutor, apoio);
         }
 
-        public static UsuarioDTO MapearParaDTO(Usuario usuario, Veterinario? veterinario, Tutor? tutor)
+        public static UsuarioDTO MapearParaDTO(
+            Usuario usuario,
+            Veterinario? veterinario,
+            Tutor? tutor,
+            ApoioAdministrativo? apoio = null)
         {
             return new UsuarioDTO
             {
@@ -415,7 +451,8 @@ namespace VetCare.API.UseCases
                 TutorId = tutor?.Id,
                 Telefone = tutor?.Telefone,
                 Endereco = tutor?.Endereco,
-                Cpf = tutor?.Cpf
+                Cpf = tutor?.Cpf,
+                Setor = apoio?.Setor
             };
         }
     }

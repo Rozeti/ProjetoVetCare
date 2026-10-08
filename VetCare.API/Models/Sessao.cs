@@ -8,7 +8,7 @@ namespace VetCare.API.Models
         public DateTime DataHora { get; set; }
 
         /// <summary>Aguardando confirmação, Confirmada, Cancelada ou Concluída.</summary>
-        public string Status { get; set; } = "Aguardando confirmação";
+        public string Status { get; set; } = StatusSessao.AguardandoConfirmacao;
         public string Observacoes { get; set; } = string.Empty;
         public DateTime DataCriacao { get; set; } = DateTime.UtcNow;
 

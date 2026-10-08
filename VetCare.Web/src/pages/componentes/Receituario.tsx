@@ -11,6 +11,24 @@ import { imprimirReceita } from '../../utils/impressao';
 
 const VIAS = ['Oral', 'Tópica', 'Intramuscular', 'Subcutânea', 'Intravenosa', 'Oftálmica', 'Otológica'];
 
+/** Mesmos limites de CriarPrescricaoDTO e da validade aceita pela API. */
+const LIMITES = {
+  medicamento: 200,
+  dosagem: 120,
+  frequencia: 120,
+  duracao: 120,
+  observacao: 500,
+  orientacoes: 2000,
+};
+
+const VALIDADE_MAXIMA_EM_DIAS = 365;
+
+function validadeMaxima(): Date {
+  const data = new Date();
+  data.setDate(data.getDate() + VALIDADE_MAXIMA_EM_DIAS);
+  return data;
+}
+
 interface ItemFormulario {
   medicamento: string;
   dosagem: string;
@@ -33,7 +51,8 @@ interface Props {
   pacienteId: string;
   prescricoes: Prescricao[];
   nomeClinica: string;
-  aoAtualizar: () => void;
+  /** Recarrega o prontuário; a mensagem, quando vem, é exibida pela tela que o contém. */
+  aoAtualizar: (mensagem?: string) => void;
 }
 
 /** Receituário do paciente, com emissão, cancelamento e impressão. */
@@ -81,6 +100,42 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
       return;
     }
 
+    // Mesmos limites de CriarPrescricaoDTO: o erro aparece antes de a receita ir para a API.
+    const itemInvalido = preenchidos.find(
+      (i) =>
+        i.medicamento.trim().length < 2 ||
+        i.medicamento.trim().length > LIMITES.medicamento ||
+        i.dosagem.trim().length > LIMITES.dosagem ||
+        i.frequencia.trim().length > LIMITES.frequencia ||
+        i.duracao.trim().length > LIMITES.duracao ||
+        i.observacao.trim().length > LIMITES.observacao,
+    );
+
+    if (itemInvalido) {
+      setErro(
+        `Confira o item ${itemInvalido.medicamento || 'sem nome'}: medicamento com 2 a ${LIMITES.medicamento} caracteres, ` +
+          `dosagem, frequência e duração com até ${LIMITES.dosagem}, observação com até ${LIMITES.observacao}.`,
+      );
+      return;
+    }
+
+    if (orientacoes.length > LIMITES.orientacoes) {
+      setErro(`As orientações devem ter até ${LIMITES.orientacoes} caracteres.`);
+      return;
+    }
+
+    const hoje = paraValorInputData(new Date());
+
+    if (validaAte && validaAte <= hoje) {
+      setErro('A validade da receita deve ser uma data futura.');
+      return;
+    }
+
+    if (validaAte && validaAte > paraValorInputData(validadeMaxima())) {
+      setErro(`A validade da receita não pode passar de ${VALIDADE_MAXIMA_EM_DIAS} dias.`);
+      return;
+    }
+
     if (!ehVeterinario && !veterinarioId) {
       setErro('Selecione o veterinário responsável pela receita.');
       return;
@@ -93,12 +148,19 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
         pacienteId,
         veterinarioId: veterinarioId || null,
         validaAte: validaAte || null,
-        orientacoes,
-        itens: preenchidos,
+        orientacoes: orientacoes.trim(),
+        itens: preenchidos.map((i) => ({
+          medicamento: i.medicamento.trim(),
+          dosagem: i.dosagem.trim(),
+          frequencia: i.frequencia.trim(),
+          duracao: i.duracao.trim(),
+          via: i.via,
+          observacao: i.observacao.trim(),
+        })),
       });
 
       setModalAberto(false);
-      aoAtualizar();
+      aoAtualizar('Receita emitida com sucesso.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível emitir a receita.'));
     } finally {
@@ -108,13 +170,18 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
 
   const { perguntar } = useConfirmacao();
 
+  // Limite inferior do campo de validade, calculado uma vez: o lint pede funções puras na renderização.
+  const [amanha] = useState(() => paraValorInputData(new Date(Date.now() + 86_400_000)));
+
+  const [cancelando, setCancelando] = useState('');
+
   async function cancelar(prescricao: Prescricao) {
     const { confirmado, texto: motivo } = await perguntar({
       titulo: 'Cancelar receita',
       mensagem: (
         <>
           Cancelar a receita emitida em <strong>{formatarData(prescricao.dataEmissao)}</strong>? Ela continua no
-          prontuário como cancelada e não pode mais ser impressa.
+          prontuário como cancelada e, se for impressa, sai marcada como sem validade.
         </>
       ),
       rotuloConfirmar: 'Cancelar receita',
@@ -127,11 +194,21 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
       return;
     }
 
+    if (motivo.length > 300) {
+      setErro('O motivo do cancelamento deve ter até 300 caracteres.');
+      return;
+    }
+
+    setErro('');
+    setCancelando(prescricao.id);
+
     try {
       await api.patch(`/api/prescricoes/${prescricao.id}/cancelar`, { motivo });
-      aoAtualizar();
+      aoAtualizar('Receita cancelada. O registro permanece no histórico do paciente.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível cancelar a receita.'));
+    } finally {
+      setCancelando('');
     }
   }
 
@@ -198,6 +275,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                       onClick={() => imprimirReceita(prescricao, nomeClinica)}
                       className="rounded-lg p-2 text-slate-500 transition hover:bg-brand-100 hover:text-brand"
                       title="Imprimir receita"
+                      aria-label={`Imprimir a receita de ${formatarData(prescricao.dataEmissao)}`}
                     >
                       <Printer size={16} />
                     </button>
@@ -206,10 +284,12 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                       <button
                         type="button"
                         onClick={() => cancelar(prescricao)}
-                        className="rounded-lg p-2 text-slate-500 transition hover:bg-perigo-claro hover:text-perigo"
+                        disabled={cancelando === prescricao.id}
+                        className="rounded-lg p-2 text-slate-500 transition hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
                         title="Cancelar receita"
+                        aria-label={`Cancelar a receita de ${formatarData(prescricao.dataEmissao)}`}
                       >
-                        <Ban size={16} />
+                        {cancelando === prescricao.id ? <Loader2 className="animate-spin" size={16} /> : <Ban size={16} />}
                       </button>
                     )}
                   </div>
@@ -245,7 +325,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
         aoFechar={() => setModalAberto(false)}
         largura="max-w-3xl"
       >
-        <form onSubmit={aoEnviar} className="space-y-4">
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
           {itens.map((item, indice) => (
             <fieldset key={indice} className="rounded-xl border border-slate-200 p-4">
               <legend className="flex items-center gap-2 px-2 text-sm font-semibold text-slate-700">
@@ -269,6 +349,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                     value={item.medicamento}
                     onChange={(e) => atualizarItem(indice, 'medicamento', e.target.value)}
                     placeholder="Nome e concentração"
+                    maxLength={LIMITES.medicamento}
                   />
                 </Campo>
 
@@ -279,6 +360,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                       value={item.dosagem}
                       onChange={(e) => atualizarItem(indice, 'dosagem', e.target.value)}
                       placeholder="Ex.: 1 comprimido"
+                      maxLength={LIMITES.dosagem}
                     />
                   </Campo>
 
@@ -288,6 +370,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                       value={item.frequencia}
                       onChange={(e) => atualizarItem(indice, 'frequencia', e.target.value)}
                       placeholder="Ex.: a cada 12 horas"
+                      maxLength={LIMITES.frequencia}
                     />
                   </Campo>
 
@@ -297,6 +380,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                       value={item.duracao}
                       onChange={(e) => atualizarItem(indice, 'duracao', e.target.value)}
                       placeholder="Ex.: por 7 dias"
+                      maxLength={LIMITES.duracao}
                     />
                   </Campo>
 
@@ -319,6 +403,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                     value={item.observacao}
                     onChange={(e) => atualizarItem(indice, 'observacao', e.target.value)}
                     placeholder="Ex.: administrar junto com alimento"
+                    maxLength={LIMITES.observacao}
                   />
                 </Campo>
               </div>
@@ -337,23 +422,26 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
           <div className="grid gap-4 sm:grid-cols-2">
             <SeletorVeterinario valor={veterinarioId} aoMudar={setVeterinarioId} obrigatorio />
 
-            <Campo rotulo="Válida até">
+            <Campo rotulo="Válida até" dica={`Data futura, até ${VALIDADE_MAXIMA_EM_DIAS} dias. Em branco, 30 dias.`}>
               <input
                 type="date"
                 className="vc-campo"
+                min={amanha}
+                max={paraValorInputData(validadeMaxima())}
                 value={validaAte}
                 onChange={(e) => setValidaAte(e.target.value)}
               />
             </Campo>
           </div>
 
-          <Campo rotulo="Orientações gerais">
+          <Campo rotulo="Orientações gerais" dica={`${orientacoes.length}/${LIMITES.orientacoes} caracteres`}>
             <textarea
               className="vc-campo"
               rows={3}
               value={orientacoes}
               onChange={(e) => setOrientacoes(e.target.value)}
               placeholder="Cuidados, sinais de alerta e quando retornar à clínica."
+              maxLength={LIMITES.orientacoes}
             />
           </Campo>
 

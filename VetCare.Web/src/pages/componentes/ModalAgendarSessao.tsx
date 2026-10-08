@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
-import type { PaginaDe, Pet, Tratamento, Veterinario } from '../../types';
+import type { PetSelecao, Tratamento, Veterinario } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
 import { paraIsoLocal, paraValorInputData } from '../../utils/formato';
 
@@ -14,6 +14,9 @@ interface Props {
   aoFechar: () => void;
   aoSalvar: () => void;
 }
+
+/** Mesmo limite de AgendarSessaoDTO. */
+const TAMANHO_OBSERVACOES = 1000;
 
 /** HU-004, CA-1: reserva de horário para uma sessão de fisioterapia. */
 export function ModalAgendarSessao({ aberto, veterinarioId, pacienteId, aoFechar, aoSalvar }: Props) {
@@ -33,13 +36,15 @@ export function ModalAgendarSessao({ aberto, veterinarioId, pacienteId, aoFechar
 }
 
 function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
-  const [pets, setPets] = useState<Pet[]>([]);
+  const [pets, setPets] = useState<PetSelecao[]>([]);
   const [veterinarios, setVeterinarios] = useState<Veterinario[]>([]);
   const [tratamentos, setTratamentos] = useState<Tratamento[]>([]);
+  const [carregandoListas, setCarregandoListas] = useState(true);
 
   const [petSelecionado, setPetSelecionado] = useState(pacienteId ?? '');
   const [tratamentoId, setTratamentoId] = useState('');
   const [vetSelecionado, setVetSelecionado] = useState(veterinarioId ?? '');
+  const [buscaPaciente, setBuscaPaciente] = useState('');
 
   // A sessão entra na agenda de quem acompanha o paciente: escolhido o pet, o
   // veterinário responsável vem junto e a lista fica travada nele.
@@ -56,25 +61,23 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
 
     async function carregarListas() {
       try {
-        const requisicoes: Promise<unknown>[] = [
-          api.get<PaginaDe<Pet>>('/api/pets', { params: { ativo: true, tamanho: 100 } }),
-        ];
-
-        if (!veterinarioId) {
-          requisicoes.push(api.get<Veterinario[]>('/api/veterinarios'));
-        }
-
-        const [respostaPets, respostaVets] = await Promise.all(requisicoes);
+        // A lista de seleção traz todos os pacientes ativos do recorte de quem agenda,
+        // sem o teto de página da listagem principal.
+        const respostaPets = await api.get<PetSelecao[]>('/api/pets/selecao');
+        // Só profissionais ativos recebem sessões novas.
+        const respostaVets = veterinarioId ? null : await api.get<Veterinario[]>('/api/veterinarios');
 
         if (!ativo) return;
 
-        setPets((respostaPets as { data: PaginaDe<Pet> }).data.itens);
+        setPets(respostaPets.data);
 
         if (respostaVets) {
-          setVeterinarios((respostaVets as { data: Veterinario[] }).data);
+          setVeterinarios(respostaVets.data.filter((v) => v.ativo));
         }
       } catch (falha) {
         if (ativo) setErro(mensagemDeErro(falha, 'Não foi possível carregar os dados do agendamento.'));
+      } finally {
+        if (ativo) setCarregandoListas(false);
       }
     }
 
@@ -117,12 +120,27 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
     };
   }, [petSelecionado]);
 
+  const hoje = paraValorInputData(new Date());
+
+  // Com muitos pacientes, a busca reduz a lista; o selecionado nunca sai dela.
+  const termo = buscaPaciente.trim().toLowerCase();
+  const petsVisiveis = termo
+    ? pets.filter(
+        (p) => p.id === petSelecionado || p.nome.toLowerCase().includes(termo) || p.nomeTutor.toLowerCase().includes(termo),
+      )
+    : pets;
+
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
 
+    if (!petSelecionado) {
+      setErro('Selecione o paciente da sessão.');
+      return;
+    }
+
     if (!tratamentoId) {
-      setErro('Selecione o paciente e o tratamento em andamento para agendar a sessão.');
+      setErro('Selecione o tratamento em andamento para agendar a sessão.');
       return;
     }
 
@@ -133,6 +151,22 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
       return;
     }
 
+    if (!data || !hora) {
+      setErro('Informe a data e o horário da sessão.');
+      return;
+    }
+
+    // HU-004, CA-5: agendamento retroativo é bloqueado já aqui, antes da API.
+    if (new Date(`${data}T${hora}:00`).getTime() <= Date.now()) {
+      setErro('A sessão precisa ser agendada para uma data e um horário futuros.');
+      return;
+    }
+
+    if (observacoes.length > TAMANHO_OBSERVACOES) {
+      setErro(`As observações devem ter até ${TAMANHO_OBSERVACOES} caracteres.`);
+      return;
+    }
+
     setSalvando(true);
 
     try {
@@ -140,13 +174,13 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
         tratamentoId,
         veterinarioId: veterinarioDaSessao || null,
         dataHora: paraIsoLocal(data, hora),
-        observacoes,
+        observacoes: observacoes.trim(),
       });
 
       setObservacoes('');
       aoSalvar();
     } catch (falha) {
-      // Conflito de horário (RN-002) e agendamento retroativo (CA-5) chegam por aqui.
+      // Conflito de horário (RN-002), bloqueio de agenda e horário fora do expediente chegam por aqui.
       setErro(mensagemDeErro(falha, 'Não foi possível agendar a sessão.'));
     } finally {
       setSalvando(false);
@@ -160,16 +194,35 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
       descricao="A sessão é criada com o status Aguardando confirmação."
       aoFechar={aoFechar}
     >
-      <form onSubmit={aoEnviar} className="space-y-4">
-        <Campo rotulo="Paciente" obrigatorio>
+      <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+        {!pacienteId && pets.length > 8 && (
+          <Campo rotulo="Buscar paciente" dica="Filtra a lista abaixo pelo nome do pet ou do tutor.">
+            <input
+              className="vc-campo"
+              value={buscaPaciente}
+              onChange={(e) => setBuscaPaciente(e.target.value)}
+              placeholder="Ex.: Thor, Maria"
+            />
+          </Campo>
+        )}
+
+        <Campo
+          rotulo="Paciente"
+          obrigatorio
+          dica={
+            !carregandoListas && pets.length === 0
+              ? 'Nenhum paciente ativo disponível para agendamento.'
+              : undefined
+          }
+        >
           <select
             className="vc-campo"
             value={petSelecionado}
             onChange={(e) => setPetSelecionado(e.target.value)}
-            disabled={!!pacienteId}
+            disabled={!!pacienteId || carregandoListas}
           >
-            <option value="">Selecione o paciente</option>
-            {pets.map((pet) => (
+            <option value="">{carregandoListas ? 'Carregando pacientes...' : 'Selecione o paciente'}</option>
+            {petsVisiveis.map((pet) => (
               <option key={pet.id} value={pet.id}>
                 {pet.nome} — {pet.nomeTutor}
               </option>
@@ -225,21 +278,25 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Campo rotulo="Data" obrigatorio>
-            <input type="date" className="vc-campo" value={data} onChange={(e) => setData(e.target.value)} />
+            <input type="date" className="vc-campo" min={hoje} value={data} onChange={(e) => setData(e.target.value)} />
           </Campo>
 
-          <Campo rotulo="Horário" obrigatorio>
+          <Campo rotulo="Horário" obrigatorio dica="Dentro do expediente da clínica.">
             <input type="time" className="vc-campo" value={hora} onChange={(e) => setHora(e.target.value)} />
           </Campo>
         </div>
 
-        <Campo rotulo="Observações" dica="Orientações que o tutor deve seguir antes da sessão.">
+        <Campo
+          rotulo="Observações"
+          dica={`Orientações que o tutor deve seguir antes da sessão. ${observacoes.length}/${TAMANHO_OBSERVACOES}`}
+        >
           <textarea
             className="vc-campo"
             rows={2}
             value={observacoes}
             onChange={(e) => setObservacoes(e.target.value)}
             placeholder="Ex.: trazer o pet em jejum de duas horas."
+            maxLength={TAMANHO_OBSERVACOES}
           />
         </Campo>
 

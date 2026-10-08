@@ -67,6 +67,14 @@ namespace VetCare.API.Controllers
             return this.ResponderCriado(await _useCase.CadastrarComoTutor(dto));
         }
 
+        /// <summary>Pacientes ativos para os seletores dos formulários, no mesmo recorte da listagem e sem paginação.</summary>
+        [HttpGet("selecao")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
+        public async Task<IActionResult> ListarParaSelecao()
+        {
+            return this.Responder(await _useCase.ListarParaSelecao());
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> ObterPorId(Guid id)
         {

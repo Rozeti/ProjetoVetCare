@@ -19,6 +19,7 @@ namespace VetCare.Tests
             new ObservacaoInternaRepository(Contexto),
             new VersaoRegistroRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private RegistrarAtendimentoUseCase CriarCasoDeAtendimento(UsuarioAtual usuarioAtual) => new(
@@ -31,6 +32,7 @@ namespace VetCare.Tests
             new VersaoRegistroRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
             Dependencias.Assinador(),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private CriarAvaliacaoDTO AvaliacaoCompleta() => new()

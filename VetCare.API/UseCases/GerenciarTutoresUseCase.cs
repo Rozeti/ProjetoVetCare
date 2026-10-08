@@ -13,6 +13,7 @@ namespace VetCare.API.UseCases
         private readonly IUsuarioRepository _usuarios;
         private readonly PasswordHasher _hasher;
         private readonly ContasService _contas;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarTutoresUseCase(
@@ -20,12 +21,14 @@ namespace VetCare.API.UseCases
             IUsuarioRepository usuarios,
             PasswordHasher hasher,
             ContasService contas,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _tutores = tutores;
             _usuarios = usuarios;
             _hasher = hasher;
             _contas = contas;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -157,6 +160,10 @@ namespace VetCare.API.UseCases
                 await _contas.EnviarBoasVindas(usuario, senhaDefinidaPelaClinica);
             }
 
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "Tutor", tutor.Id,
+                $"Cadastro de {usuario.Nome}{(usuarioNovo ? " com conta nova" : " para conta existente")}");
+
             return Resultado<TutorDTO>.Ok(
                 MapearParaDTO(tutor),
                 usuarioNovo && !senhaDefinidaPelaClinica
@@ -187,6 +194,10 @@ namespace VetCare.API.UseCases
 
             _tutores.Atualizar(tutor);
             await _tutores.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, "Tutor", tutor.Id,
+                _usuarioAtual.EhTutor ? "Contato atualizado pelo próprio tutor" : $"Edição do tutor {tutor.Usuario?.Nome}");
 
             return Resultado<TutorDTO>.Ok(MapearParaDTO(tutor), "Tutor atualizado com sucesso.");
         }

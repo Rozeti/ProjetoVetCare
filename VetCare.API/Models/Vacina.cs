@@ -2,7 +2,9 @@ namespace VetCare.API.Models
 {
     /// <summary>
     /// Registro de vacina ou vermífugo aplicado ao paciente, com a data da próxima
-    /// dose usada para gerar lembretes de prevenção.
+    /// dose usada para gerar lembretes de prevenção. Um esquema com várias doses
+    /// (V10 em três aplicações, por exemplo) é registrado dose a dose, e a
+    /// recorrência diz de quanto em quanto tempo o reforço se repete.
     /// </summary>
     public class Vacina
     {
@@ -16,6 +18,19 @@ namespace VetCare.API.Models
         public string Nome { get; set; } = string.Empty;
         public string Fabricante { get; set; } = string.Empty;
         public string Lote { get; set; } = string.Empty;
+
+        /// <summary>Posição desta dose no esquema (1 para a primeira). Vazio numa aplicação avulsa.</summary>
+        public int? NumeroDose { get; set; }
+
+        /// <summary>Quantas doses o esquema prevê. Vazio numa aplicação avulsa.</summary>
+        public int? TotalDoses { get; set; }
+
+        /// <summary>
+        /// Nenhuma, Mensal, Trimestral, Semestral ou Anual: intervalo do reforço. Quando
+        /// a próxima dose não é informada, ela é calculada a partir daqui.
+        /// </summary>
+        public string Recorrencia { get; set; } = "Nenhuma";
+
         public DateTime DataAplicacao { get; set; }
         public DateTime? ProximaDose { get; set; }
         public string Observacoes { get; set; } = string.Empty;

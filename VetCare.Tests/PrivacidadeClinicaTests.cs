@@ -150,6 +150,7 @@ namespace VetCare.Tests
                 new ObservacaoInternaRepository(Contexto),
                 new ProntuarioRepository(Contexto),
                 new PetRepository(Contexto),
+                Dependencias.Auditoria(Contexto, usuarioAtual),
                 usuarioAtual);
 
             var leitura = await casoDeUso.ListarPorPaciente(Paciente.Id);

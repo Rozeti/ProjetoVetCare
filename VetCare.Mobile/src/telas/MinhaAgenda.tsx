@@ -50,11 +50,21 @@ export function MinhaAgenda() {
   );
 
   // Um reagendamento ou cancelamento feito na clínica aparece sem o tutor fazer nada.
-  useAtualizacao(['sessoes', 'tratamentos'], carregar);
+  // O prazo de cancelamento (RN-009) vem das configurações da clínica, por isso ela entra na lista.
+  useAtualizacao(['sessoes', 'tratamentos', 'clinica'], carregar);
 
-  /** HU-006, CA-1: confirmação de presença. */
-  async function confirmar(sessao: Sessao) {
-    await alterarStatus(sessao, 'Confirmada');
+  /** HU-006, CA-1: confirmação de presença, com confirmação explícita: a clínica é avisada na hora. */
+  function confirmar(sessao: Sessao) {
+    Alert.alert(
+      'Confirmar presença',
+      `Confirmar a presença de ${sessao.nomePaciente} em ${formatarDataExtensa(sessao.dataHora)} às ${formatarHora(
+        sessao.dataHora,
+      )}?`,
+      [
+        { text: 'Voltar', style: 'cancel' },
+        { text: 'Confirmar presença', onPress: () => alterarStatus(sessao, 'Confirmada') },
+      ],
+    );
   }
 
   /** HU-006, CA-2: cancelamento, com confirmação explícita antes de agir. */

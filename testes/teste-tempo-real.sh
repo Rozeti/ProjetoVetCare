@@ -53,7 +53,9 @@ TUTOR_DO_PET=$(val "$r" tutorId)
 
 # RN-001: o responsável sai do token, não do corpo da requisição.
 ME=$(get /api/usuarios/me "$TK_TUTOR")
-checa "RN-001 pet nasce vinculado ao tutor autenticado" "$(val "$ME" tutorId)" "$TUTOR_DO_PET"
+ID_TUTOR=$(val "$ME" tutorId)
+# Sem id extraído a comparação não pode passar por acaso (grep de padrão vazio casa com tudo).
+checa "RN-001 pet nasce vinculado ao tutor autenticado" "${ID_TUTOR:-sem-id-de-tutor}" "$TUTOR_DO_PET"
 
 r=$(get /api/pets/meus "$TK_TUTOR")
 checa "pet aparece em Meus pets" "$NOME_PET" "$r"

@@ -3,6 +3,7 @@ using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
 using VetCare.API.Security;
+using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
@@ -18,12 +19,18 @@ namespace VetCare.API.UseCases
 
         private readonly IAlergiaRepository _alergias;
         private readonly IPetRepository _pets;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
-        public GerenciarAlergiasUseCase(IAlergiaRepository alergias, IPetRepository pets, UsuarioAtual usuarioAtual)
+        public GerenciarAlergiasUseCase(
+            IAlergiaRepository alergias,
+            IPetRepository pets,
+            AuditoriaService auditoria,
+            UsuarioAtual usuarioAtual)
         {
             _alergias = alergias;
             _pets = pets;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -86,6 +93,10 @@ namespace VetCare.API.UseCases
 
             var salva = await _alergias.ObterPorId(alergia.Id);
 
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "AlergiaCondicao", alergia.Id,
+                $"{alergia.Tipo} ({alergia.Gravidade}) em {pet.Nome}: {alergia.Descricao}");
+
             return Resultado<AlergiaDTO>.Ok(
                 MapearParaDTO(salva ?? alergia),
                 "Alerta clínico registrado no prontuário do paciente.");
@@ -104,10 +115,28 @@ namespace VetCare.API.UseCases
                 return Resultado.NaoEncontrado("Registro não encontrado.");
             }
 
+            // Arquivar um alerta muda o que o próximo profissional vê antes de qualquer
+            // conduta: só o responsável pelo paciente e a administração podem fazê-lo.
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, alergia.Paciente))
+            {
+                return Resultado.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
+            if (alergia.Ativa == ativa)
+            {
+                return Resultado.Ok(ativa ? "O alerta já está ativo." : "O alerta já está arquivado.");
+            }
+
             alergia.Ativa = ativa;
 
             _alergias.Atualizar(alergia);
             await _alergias.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                ativa ? AuditoriaService.Acoes.Alteracao : AuditoriaService.Acoes.Inativacao,
+                "AlergiaCondicao",
+                alergia.Id,
+                $"{(ativa ? "Reativação" : "Arquivamento")} de {alergia.Tipo} em {alergia.Paciente?.Nome}: {alergia.Descricao}");
 
             return Resultado.Ok(ativa ? "Alerta reativado." : "Alerta arquivado no histórico do paciente.");
         }

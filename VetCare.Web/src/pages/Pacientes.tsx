@@ -19,7 +19,7 @@ import { ESPECIES, type PaginaDe, type Pet, type Tutor, type Veterinario } from 
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { Paginacao } from '../components/Paginacao';
-import { formatarData, formatarPeso, paraValorInputData } from '../utils/formato';
+import { formatarData, formatarPeso, paraValorInputData, validarDadosDoPet } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
@@ -109,7 +109,7 @@ export function Pacientes() {
   );
 
   // Um pet cadastrado pelo tutor pelo aplicativo aparece aqui assim que ele salva.
-  useAtualizacao(['pets', 'tutores', 'alergias', 'veterinarios'], recarregar);
+  useAtualizacao(['pets', 'tutores', 'alergias', 'veterinarios', 'usuarios', 'vacinas'], recarregar);
 
   const pagina = dados?.pagina ?? paginaVazia<Pet>();
   const tutores = dados?.tutores ?? [];
@@ -191,13 +191,22 @@ export function Pacientes() {
       return;
     }
 
-    if (!form.nome.trim() || !form.dataNascimento) {
-      setErroForm('Informe o nome e a data de nascimento do paciente.');
+    // As mesmas regras da API (CriarPetDTO / AtualizarPetDTO), conferidas antes do envio.
+    const problema = validarDadosDoPet(form);
+
+    if (problema) {
+      setErroForm(problema);
       return;
     }
 
     if (form.dataObito && form.dataObito < form.dataNascimento) {
       setErroForm('A data de óbito não pode ser anterior à data de nascimento.');
+      return;
+    }
+
+    // O óbito inativa o paciente e encerra os tratamentos: uma data futura faria isso antes da hora.
+    if (form.dataObito && form.dataObito > paraValorInputData(new Date())) {
+      setErroForm('A data de óbito não pode ser futura.');
       return;
     }
 
@@ -427,14 +436,14 @@ export function Pacientes() {
             <table className="vc-tabela">
               <thead>
                 <tr>
-                  <th>Paciente</th>
-                  <th>Espécie / Raça</th>
-                  <th>Idade</th>
-                  <th>Peso</th>
-                  <th>Tutor</th>
-                  {!ehVeterinario && <th>Veterinário</th>}
-                  <th>Status</th>
-                  <th className="text-right">Ações</th>
+                  <th scope="col">Paciente</th>
+                  <th scope="col">Espécie / Raça</th>
+                  <th scope="col">Idade</th>
+                  <th scope="col">Peso</th>
+                  <th scope="col">Tutor</th>
+                  {!ehVeterinario && <th scope="col">Veterinário</th>}
+                  <th scope="col">Status</th>
+                  <th scope="col" className="text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -447,11 +456,11 @@ export function Pacientes() {
                       {pet.microchip && (
                         <span className="block text-xs text-slate-400">Chip {pet.microchip}</span>
                       )}
-                      {pet.alertasClinicos.length > 0 && (
+                      {(pet.alertasClinicos.length > 0 || pet.vacinasVencidas > 0) && (
                         <div className="mt-1">
-                          <AlertasClinicos alertas={pet.alertasClinicos} compacto />
+                          <AlertasClinicos alertas={pet.alertasClinicos} vacinasVencidas={pet.vacinasVencidas} compacto />
                         </div>
-                      )}
+                        )}
                     </td>
                     <td>
                       {pet.especie}

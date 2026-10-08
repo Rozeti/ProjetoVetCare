@@ -162,6 +162,32 @@ export function MeusPets() {
                       {!!pet.nomeVeterinarioResponsavel && (
                         <Text style={estilos.detalhePet}>Dr(a). {pet.nomeVeterinarioResponsavel}</Text>
                       )}
+
+                      {/* Alergias ativas e vacinação em atraso aparecem já na lista, antes de abrir o prontuário. */}
+                      {(pet.alertasClinicos.length > 0 || pet.vacinasVencidas > 0) && (
+                        <View style={estilos.etiquetasPet}>
+                          {pet.alertasClinicos.length > 0 && (
+                            <Etiqueta
+                              texto={
+                                pet.alertasClinicos.length === 1
+                                  ? '1 alerta clínico'
+                                  : `${pet.alertasClinicos.length} alertas clínicos`
+                              }
+                              fundo={cores.perigoClaro}
+                              cor="#991b1b"
+                            />
+                          )}
+                          {pet.vacinasVencidas > 0 && (
+                            <Etiqueta
+                              texto={
+                                pet.vacinasVencidas === 1 ? 'Vacina em atraso' : `${pet.vacinasVencidas} vacinas em atraso`
+                              }
+                              fundo={cores.alertaClaro}
+                              cor="#92400e"
+                            />
+                          )}
+                        </View>
+                      )}
                     </View>
 
                     <Icone nome="seta" tamanho={26} cor={cores.textoSuave} />
@@ -287,6 +313,12 @@ const estilos = StyleSheet.create({
   detalhePet: {
     fontSize: 13,
     color: cores.textoSecundario,
+  },
+  etiquetasPet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
   },
   cartaoSessao: {
     flexDirection: 'row',

@@ -1,3 +1,4 @@
+using VetCare.API.Common;
 using VetCare.API.Data;
 using VetCare.API.Models;
 
@@ -105,7 +106,7 @@ namespace VetCare.API.Services
             DateTime proximaDose,
             Guid pacienteId)
         {
-            var dias = (proximaDose.Date - DateTime.UtcNow.Date).Days;
+            var dias = (proximaDose.Date - RelogioDaClinica.Padrao.Hoje).Days;
 
             var prazo = dias switch
             {
@@ -178,10 +179,7 @@ namespace VetCare.API.Services
             _sinal.Acordar();
         }
 
-        private static string FormatarDataHora(DateTime dataHora)
-        {
-            var local = dataHora.Kind == DateTimeKind.Utc ? dataHora.ToLocalTime() : dataHora;
-            return local.ToString("dd/MM/yyyy 'às' HH:mm");
-        }
+        /// <summary>Horários dos avisos no fuso da clínica, como na agenda — nunca no fuso do servidor.</summary>
+        private static string FormatarDataHora(DateTime dataHora) => RelogioDaClinica.Padrao.Formatar(dataHora);
     }
 }

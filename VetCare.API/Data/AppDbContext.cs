@@ -196,6 +196,12 @@ namespace VetCare.API.Data
                 entidade.Property(v => v.Lote).HasMaxLength(60);
                 entidade.Property(v => v.Observacoes).HasMaxLength(500);
 
+                // Nenhuma, Mensal, Trimestral, Semestral ou Anual.
+                entidade.Property(v => v.Recorrencia).HasMaxLength(20).IsRequired().HasDefaultValue("Nenhuma");
+
+                // A sequência de um esquema e a situação da dose são conferidas por produto.
+                entidade.HasIndex(v => new { v.PacienteId, v.Nome });
+
                 entidade.HasIndex(v => v.PacienteId);
 
                 // Consulta do serviço que avisa sobre doses a vencer.

@@ -18,6 +18,7 @@ namespace VetCare.API.UseCases
         private readonly IObservacaoInternaRepository _observacoes;
         private readonly IVersaoRegistroRepository _versoes;
         private readonly NotificacaoService _notificacoes;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public RegistrarAvaliacaoUseCase(
@@ -27,6 +28,7 @@ namespace VetCare.API.UseCases
             IObservacaoInternaRepository observacoes,
             IVersaoRegistroRepository versoes,
             NotificacaoService notificacoes,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _avaliacoes = avaliacoes;
@@ -35,6 +37,7 @@ namespace VetCare.API.UseCases
             _observacoes = observacoes;
             _versoes = versoes;
             _notificacoes = notificacoes;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
@@ -103,6 +106,11 @@ namespace VetCare.API.UseCases
 
             await AtualizarProntuario(prontuario);
 
+            // Quem escreveu o diagnóstico fica na trilha, não só quem o consultou.
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, TipoRegistro, avaliacao.Id,
+                $"Avaliação clínica de {tratamento.Paciente?.Nome}: {avaliacao.QueixaPrincipal}");
+
             var usuarioTutor = tratamento.Paciente?.Tutor?.UsuarioId;
 
             if (usuarioTutor.HasValue)
@@ -165,6 +173,18 @@ namespace VetCare.API.UseCases
             _avaliacoes.Atualizar(avaliacao);
             await _avaliacoes.SalvarAlteracoes();
 
+            // A correção também conta como movimentação do prontuário.
+            var prontuario = await _prontuarios.ObterPorId(avaliacao.ProntuarioId);
+
+            if (prontuario != null)
+            {
+                await AtualizarProntuario(prontuario);
+            }
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, TipoRegistro, avaliacao.Id,
+                $"Correção da avaliação clínica de {avaliacao.Tratamento?.Paciente?.Nome}");
+
             return Resultado<AvaliacaoDTO>.Ok(
                 MapearParaDTO(avaliacao),
                 "Avaliação atualizada. A versão anterior foi preservada no histórico.");
@@ -191,12 +211,16 @@ namespace VetCare.API.UseCases
             return Resultado<List<HistoricoVersaoDTO>>.Ok(HistoricoVersaoDTO.MapearLista(versoes));
         }
 
-        /// <summary>Qualquer leitura ou edição passa por aqui: registro de outra clínica não existe para quem pede.</summary>
+        /// <summary>
+        /// Qualquer leitura ou edição passa por aqui: registro de outra clínica, ou de um
+        /// paciente fora da responsabilidade de quem pede, não existe para quem pede.
+        /// </summary>
         private async Task<AvaliacaoClinica?> ObterDaClinica(Guid id)
         {
             var avaliacao = await _avaliacoes.ObterPorId(id);
+            var paciente = avaliacao?.Tratamento?.Paciente;
 
-            return avaliacao?.Tratamento?.Paciente?.ClinicaId == _usuarioAtual.ClinicaId
+            return paciente?.ClinicaId == _usuarioAtual.ClinicaId && AcessoAoPaciente.Permitido(_usuarioAtual, paciente)
                 ? avaliacao
                 : null;
         }

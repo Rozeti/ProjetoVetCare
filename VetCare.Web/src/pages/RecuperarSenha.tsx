@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, KeyRound, Loader2, Mail, MailCheck, Stethoscope } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
+import { emailValido } from '../utils/formato';
 import type { RespostaRecuperacao } from '../types';
 import { Alerta } from '../components/ui';
 
@@ -41,8 +42,8 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
     setErro('');
     setAviso('');
 
-    if (!email.trim()) {
-      setErro('Informe o e-mail da sua conta.');
+    if (!emailValido(email)) {
+      setErro('Informe um e-mail válido.');
       return;
     }
 

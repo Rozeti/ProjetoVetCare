@@ -85,6 +85,60 @@ checa "tipo inválido é recusado" "Tipo inválido" "$r"
 r=$(get "/api/vacinas/paciente/$PET" "$TUTOR")
 checa "tutor consulta a carteira do próprio pet" "Antirrábica" "$r"
 
+echo "== Carteira: filtro, paginação, esquema de doses e justificativa =="
+r=$(get "/api/vacinas/paciente/$PET?situacao=Vencida&tamanho=5" "$ADMIN")
+checa "carteira devolve envelope paginado" '"totalDePaginas"' "$r"
+checa "filtro por situação traz só a dose vencida" "Antirrábica" "$r"
+if grep -q '"nome":"V10' <<<"$r"; then
+  echo "  FALHA filtro por situação deixou passar dose em dia"; falhou=$((falhou+1))
+else
+  echo "  OK   filtro por situação exclui as demais doses"; ok=$((ok+1))
+fi
+
+r=$(get "/api/vacinas/paciente/$PET?tipo=Vermifugo" "$ADMIN")
+checa "filtro por tipo" "amplo espectro" "$r"
+
+r=$(get "/api/vacinas/paciente/$PET?situacao=Atrasada" "$ADMIN")
+checa "situação desconhecida é recusada" "Situação inválida" "$r"
+
+r=$(get "/api/vacinas/paciente/$PET?situacao=Conclu%C3%ADda" "$ADMIN")
+checa "doses 1 e 2 da V10 ficam concluídas depois da dose 3" '"descricaoDose":"Dose 2 de 3"' "$r"
+
+r=$(envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Vacina\",\"nome\":\"Giardia E2E\",\"numeroDose\":2,\"totalDoses\":3,\"dataAplicacao\":\"$(dias -5)\",\"proximaDose\":\"$(dias 20)\"}")
+checa "dose 2 sem a dose 1 é recusada" "dose 1" "$r"
+
+r=$(envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Vacina\",\"nome\":\"Giardia E2E\",\"numeroDose\":1,\"totalDoses\":3,\"recorrencia\":\"Mensal\",\"dataAplicacao\":\"$(dias -40)\"}")
+checa "dose 1 de 3 com recorrência mensal calcula a próxima dose" '"descricaoDose":"Dose 1 de 3"' "$r"
+D1=$(val "$r" id)
+
+r=$(envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Vacina\",\"nome\":\"giardia e2e\",\"numeroDose\":2,\"totalDoses\":3,\"dataAplicacao\":\"$(dias -10)\",\"proximaDose\":\"$(dias 20)\"}")
+checa "dose 2 de 3 entra depois da dose 1 (sem diferenciar maiúsculas)" '"descricaoDose":"Dose 2 de 3"' "$r"
+D2=$(val "$r" id)
+
+r=$(envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Vacina\",\"nome\":\"Giardia E2E\",\"numeroDose\":2,\"totalDoses\":3,\"dataAplicacao\":\"$(dias -1)\",\"proximaDose\":\"$(dias 30)\"}")
+checa "dose repetida é recusada" "dose 3" "$r"
+
+r=$(envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Vacina\",\"nome\":\"Giardia E2E\",\"numeroDose\":3,\"totalDoses\":2,\"dataAplicacao\":\"$(dias -1)\"}")
+checa "dose maior que o total do esquema é recusada" "entre 1 e" "$r"
+
+r=$(envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Antipulgas\",\"nome\":\"Teste recorrência\",\"recorrencia\":\"Quinzenal\",\"dataAplicacao\":\"$(dias -1)\"}")
+checa "recorrência desconhecida é recusada" "Recorrência inválida" "$r"
+
+r=$(get "/api/vacinas/paciente/$PET?busca=Giardia" "$ADMIN")
+checa "dose 1 fica concluída depois da dose 2" '"Concluída"' "$r"
+
+r=$(envia DELETE "/api/vacinas/$D2" "$ADMIN" '{"justificativa":""}')
+checa "exclusão sem justificativa é recusada" "justificativa" "$r"
+
+r=$(envia DELETE "/api/vacinas/$D2" "$ADMIN" '{"justificativa":"Lançada em duplicidade no roteiro"}')
+checa "exclusão com justificativa remove o registro" "removido" "$r"
+
+r=$(envia DELETE "/api/vacinas/$D1" "$ADMIN" '{"justificativa":"Limpeza do roteiro de verificação"}')
+checa "segunda exclusão com justificativa" "removido" "$r"
+
+r=$(get "/api/auditoria?entidade=Vacina&tamanho=5" "$ADMIN")
+checa "justificativa da exclusão fica na auditoria" "duplicidade no roteiro" "$r"
+
 echo "== Receituário =="
 r=$(get "/api/prescricoes/paciente/$PET" "$ADMIN")
 checa "receitas do paciente listadas" "Meloxicam" "$r"

@@ -3,12 +3,14 @@ using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
 using VetCare.API.Security;
+using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
     /// <summary>
     /// Tratamento é o processo terapêutico que agrupa avaliação, sessões e atendimentos
-    /// de um paciente, conforme a definição do DAS.
+    /// de um paciente, conforme a definição do DAS. Um tratamento concluído é
+    /// definitivo; um interrompido pode ser retomado.
     /// </summary>
     public class GerenciarTratamentosUseCase
     {
@@ -17,6 +19,7 @@ namespace VetCare.API.UseCases
         private readonly IVeterinarioRepository _veterinarios;
         private readonly IProntuarioRepository _prontuarios;
         private readonly ISessaoRepository _sessoes;
+        private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
         public GerenciarTratamentosUseCase(
@@ -25,6 +28,7 @@ namespace VetCare.API.UseCases
             IVeterinarioRepository veterinarios,
             IProntuarioRepository prontuarios,
             ISessaoRepository sessoes,
+            AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
             _tratamentos = tratamentos;
@@ -32,11 +36,17 @@ namespace VetCare.API.UseCases
             _veterinarios = veterinarios;
             _prontuarios = prontuarios;
             _sessoes = sessoes;
+            _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
         public async Task<Resultado<TratamentoDTO>> Cadastrar(CriarTratamentoDTO dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.ObjetivoTerapeutico))
+            {
+                return Resultado<TratamentoDTO>.Invalido("Descreva o objetivo terapêutico do tratamento.");
+            }
+
             var pet = await _pets.ObterPorIdComTutor(dto.PacienteId);
 
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
@@ -49,10 +59,10 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
-            if (!pet.Ativo)
+            if (!pet.EmAcompanhamento)
             {
                 return Resultado<TratamentoDTO>.Invalido(
-                    "Este paciente está inativo. Reative o cadastro antes de iniciar um tratamento.");
+                    "Este paciente está inativo ou tem óbito registrado; não é possível iniciar um tratamento.");
             }
 
             // O tratamento é conduzido pelo veterinário responsável pelo paciente. Sem ninguém
@@ -81,16 +91,22 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
             }
 
+            // Sem data o tratamento começa agora; com data, ela não pode estar no futuro.
+            var dataInicio = dto.DataInicio == default
+                ? DateTime.UtcNow
+                : AgendarSessaoUseCase.NormalizarParaUtc(dto.DataInicio);
+
+            if (RelogioDaClinica.Padrao.DiaDaClinica(dataInicio) > RelogioDaClinica.Padrao.Hoje)
+            {
+                return Resultado<TratamentoDTO>.Invalido("A data de início do tratamento não pode ser futura.");
+            }
+
             if (!pet.VeterinarioResponsavelId.HasValue)
             {
                 pet.VeterinarioResponsavelId = veterinario.Id;
                 pet.VeterinarioResponsavel = veterinario;
                 _pets.Atualizar(pet);
             }
-
-            var dataInicio = dto.DataInicio == default
-                ? DateTime.UtcNow
-                : AgendarSessaoUseCase.NormalizarParaUtc(dto.DataInicio);
 
             var tratamento = new Tratamento
             {
@@ -110,6 +126,10 @@ namespace VetCare.API.UseCases
 
             tratamento.Paciente = pet;
             tratamento.Veterinario = veterinario;
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Criacao, "Tratamento", tratamento.Id,
+                $"Tratamento de {pet.Nome} com {veterinario.Usuario?.Nome}: {tratamento.ObjetivoTerapeutico}");
 
             return Resultado<TratamentoDTO>.Ok(
                 MapearParaDTO(tratamento, new ContagemDeSessoes(0, 0)),
@@ -176,9 +196,10 @@ namespace VetCare.API.UseCases
                 return Resultado<TratamentoDTO>.NaoEncontrado("Tratamento não encontrado.");
             }
 
-            if (_usuarioAtual.EhVeterinario && tratamento.VeterinarioId != _usuarioAtual.VeterinarioId)
+            // A mesma regra do restante do prontuário: o veterinário responsável e a administração.
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
             {
-                return Resultado<TratamentoDTO>.NaoAutorizado("Você só pode alterar os seus próprios tratamentos.");
+                return Resultado<TratamentoDTO>.NaoAutorizado("Você não tem acesso a este tratamento.");
             }
 
             string? novoStatus = null;
@@ -192,6 +213,26 @@ namespace VetCare.API.UseCases
                     return Resultado<TratamentoDTO>.Invalido(
                         $"Status inválido. Use um destes: {string.Join(", ", StatusTratamento.Todos)}.");
                 }
+
+                // Concluído é definitivo: o histórico do tratamento se encerra ali. Um tratamento
+                // interrompido pode voltar a andar.
+                if (tratamento.Status == StatusTratamento.Concluido && novoStatus != StatusTratamento.Concluido)
+                {
+                    return Resultado<TratamentoDTO>.Conflito(
+                        "Um tratamento concluído não pode ser reaberto. Inicie um novo tratamento para o paciente.");
+                }
+
+                if (novoStatus == StatusTratamento.EmAndamento && tratamento.Status != StatusTratamento.EmAndamento
+                    && !tratamento.Paciente!.EmAcompanhamento)
+                {
+                    return Resultado<TratamentoDTO>.Conflito(
+                        "O paciente está inativo ou tem óbito registrado; o tratamento não pode ser retomado.");
+                }
+            }
+
+            if (dto.ObjetivoTerapeutico != null && string.IsNullOrWhiteSpace(dto.ObjetivoTerapeutico))
+            {
+                return Resultado<TratamentoDTO>.Invalido("O objetivo terapêutico não pode ficar em branco.");
             }
 
             if (!string.IsNullOrWhiteSpace(dto.ObjetivoTerapeutico))
@@ -203,6 +244,8 @@ namespace VetCare.API.UseCases
             {
                 tratamento.ObservacoesGerais = dto.ObservacoesGerais.Trim();
             }
+
+            var statusAnterior = tratamento.Status;
 
             if (novoStatus != null)
             {
@@ -226,8 +269,19 @@ namespace VetCare.API.UseCases
                 tratamento.DataFim = AgendarSessaoUseCase.NormalizarParaUtc(dto.DataFim.Value);
             }
 
+            if (tratamento.DataFim.HasValue && tratamento.DataFim.Value < tratamento.DataInicio)
+            {
+                return Resultado<TratamentoDTO>.Invalido("A data de encerramento não pode ser anterior ao início do tratamento.");
+            }
+
             _tratamentos.Atualizar(tratamento);
             await _tratamentos.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, "Tratamento", tratamento.Id,
+                statusAnterior != tratamento.Status
+                    ? $"Tratamento de {tratamento.Paciente?.Nome}: {statusAnterior} → {tratamento.Status}"
+                    : $"Alteração do tratamento de {tratamento.Paciente?.Nome}");
 
             return Resultado<TratamentoDTO>.Ok(
                 MapearParaDTO(tratamento, await ContarSessoes(id)),

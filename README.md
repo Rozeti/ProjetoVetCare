@@ -38,9 +38,13 @@ docker compose up -d
 | Portal web | http://localhost:8080 |
 | API | http://localhost:5265 |
 | PostgreSQL | localhost:5432 |
+| Adminer (interface do banco) | http://localhost:8082 (porta em `ADMINER_PORT`) |
 
 A pilha sobe em `Production`, onde a documentação interativa fica desligada. Para
-consultá-la, defina `ASPNETCORE_ENVIRONMENT=Development` no `.env`.
+consultá-la sem mudar o ambiente, defina `API_DOCS=true` no `.env`. Trocar para
+`ASPNETCORE_ENVIRONMENT=Development` também funciona, mas abre o CORS para qualquer origem e
+faz a API devolver o código de recuperação de senha na própria resposta — serve só para
+desenvolvimento.
 
 O banco é criado e migrado automaticamente na primeira subida. Os volumes
 `dados-postgres`, `arquivos-api` e `emails-api` preservam dados, mídias e e-mails gravados
@@ -102,8 +106,8 @@ npx expo start
 ```
 
 Leia o QR Code com o Expo Go. O aplicativo descobre sozinho o endereço da API a partir do
-host do Metro, então normalmente não é preciso configurar IP. Para apontar para outro
-servidor, defina `EXPO_PUBLIC_API_URL`.
+host do Metro, então normalmente não é preciso configurar IP. Se a API estiver em outra
+porta, defina `EXPO_PUBLIC_API_PORT`; para apontar para outro servidor, `EXPO_PUBLIC_API_URL`.
 
 Requisito: o celular precisa estar na mesma rede do computador que roda a API. O
 [guia passo a passo](COMO-USAR.md) traz o diagnóstico dos casos em que a conexão não
@@ -147,7 +151,17 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - Alertas clínicos (alergias, condições crônicas, cirurgias) exibidos em destaque no
   prontuário e visíveis também ao tutor.
 - Carteira de vacinação com fabricante, lote, veterinário aplicador e classificação
-  automática da dose em **em dia**, **a vencer**, **vencida** ou **dose única**.
+  automática da dose em **em dia**, **a vencer**, **vencida**, **dose única** ou **concluída**
+  (quando a dose seguinte do mesmo produto já foi aplicada).
+- **Esquemas com várias doses** (V8, V10, giárdia): cada aplicação registra "dose N de M", e
+  a API confere a sequência — a dose 2 só entra depois da dose 1, com o mesmo total.
+- **Recorrência** mensal, trimestral, semestral ou anual: sem a data da próxima dose, o
+  sistema a calcula pela recorrência; um esquema em aberto não fica sem a próxima dose.
+- Carteira com **busca, filtro por tipo e por situação e paginação**; a exclusão de um
+  registro exige **justificativa**, que fica na auditoria.
+- **Vacinação em atraso** entra nos alertas clínicos do prontuário e nas listas de pacientes,
+  ao lado das alergias e comorbidades; o painel inicial lista as doses vencidas e a vencer
+  nos próximos 30 dias.
 - Registro de óbito, que inativa o paciente e encerra os tratamentos em aberto.
 - **Cadastro feito pelo próprio tutor**, na web e no aplicativo, para o animal recém-adquirido
   que a clínica ainda não conhece — sem precisar ir até o balcão só para isso. O vínculo com o
@@ -185,7 +199,7 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - Atendimentos fisioterapêuticos com técnicas, sinais vitais e escala de dor.
 - Observações internas restritas à equipe clínica.
 - Receituário com múltiplos medicamentos, via, posologia e orientações.
-- Impressão de receita e de prontuário, e exportação de listagens em CSV.
+- Impressão de receita e de prontuário, e exportação da trilha de auditoria em CSV.
 
 ### Comunicação
 - Mensagens entre tutor e clínica, com histórico e contagem de não lidas.
@@ -295,9 +309,10 @@ controller traduz isso no status correto (400, 401, 403, 404, 409 ou 423).
 
 ### Banco de dados
 
-O esquema tem **25 tabelas, 42 chaves estrangeiras e 77 índices**, criado por duas
-migrações (a segunda acrescenta os canais de entrega das notificações, os aparelhos
-registrados para push e o código de recuperação de senha). Nenhum relacionamento do domínio apaga em cascata: excluir um registro clínico
+O esquema tem **25 tabelas, 42 chaves estrangeiras e 77 índices**, criado por quatro
+migrações: a inicial; os canais de entrega das notificações, os aparelhos registrados para
+push e o código de recuperação de senha; o veterinário responsável por paciente; e o esquema
+de doses e a recorrência da carteira de vacinação. Nenhum relacionamento do domínio apaga em cascata: excluir um registro clínico
 precisa ser uma decisão explícita, o que preserva a integridade do histórico (RN-004).
 
 ### Armazenamento de arquivos
@@ -358,20 +373,22 @@ clínica (`Aplicacao:FusoHorario`, padrão `America/Sao_Paulo`), e não o do ser
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 131 testes unitários
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 179 testes unitários; o critério é "Falhou: 0"
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de
 negócio pela API, os endpoints do aplicativo, as funcionalidades clínicas e a interface
-web em um navegador real — **159 a 165 verificações**, conforme o ambiente.
+web em um navegador real. A quantidade de verificações de cada roteiro está em
+[`testes/README.md`](testes/README.md), que é a referência; o critério de aprovação é
+"FALHAS: 0".
 
 ```bash
 bash testes/criar-dados-demonstracao.sh     # cenário de avaliação
-bash testes/teste-regras-negocio.sh         # 46
-bash testes/teste-api-mobile.sh             # 26
-bash testes/teste-funcionalidades-novas.sh  # 40 a 46
-bash testes/teste-tempo-real.sh            # 27
-node testes/teste-navegador.mjs ./capturas  # 20
+bash testes/teste-regras-negocio.sh
+bash testes/teste-api-mobile.sh
+bash testes/teste-funcionalidades-novas.sh
+bash testes/teste-tempo-real.sh
+node testes/teste-navegador.mjs ./capturas
 ```
 
 ---
@@ -385,10 +402,12 @@ O sistema está funcional, mas alguns itens dependem de decisões de infraestrut
    `ConnectionStrings__DefaultConnection`) ou um cofre de segredos. O `docker-compose.yml`
    já lê ambos do `.env`.
 2. **HTTPS** — a pilha do compose serve HTTP; coloque um proxy reverso com certificado à
-   frente antes de expor à internet.
+   frente antes de expor à internet. Se a própria API escutar em HTTPS, ligue o
+   redirecionamento com `Seguranca__RedirecionarParaHttps=true`.
 3. **Armazenamento de mídias** — trocar o disco local por S3/MinIO antes de escalar.
-4. **Tempo real** — o chat e as notificações usam consulta periódica. O DAS prevê
-   WebSocket; a troca afeta apenas a camada de transporte, não as regras já implementadas.
+4. **Tempo real** — as telas se atualizam por long polling em `GET /api/atualizacoes`
+   (veja "Sincronia entre as telas"). O DAS prevê WebSocket; a troca afeta apenas a camada
+   de transporte, não as regras já implementadas.
 5. **E-mail e push** — sem `SMTP_HOST` os e-mails ficam em `emails-enviados` e, em
    `Development`, o link e o código de recuperação voltam na própria resposta da API para
    permitir a demonstração. Em produção configure o SMTP e gere o `projectId` do Expo

@@ -51,6 +51,8 @@ namespace VetCare.API.Controllers
         }
 
         [HttpPut("me/senha")]
+        // Recebe a senha atual: a mesma limitação do login, contra adivinhação e exaustão do hash.
+        [EnableRateLimiting(LimitesDeRequisicao.Autenticacao)]
         public async Task<IActionResult> AlterarPropriaSenha(AlterarSenhaDTO dto)
         {
             return this.Responder(await _gerenciar.AlterarPropriaSenha(dto));

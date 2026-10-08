@@ -62,10 +62,15 @@ envia POST /api/alergias "$ADMIN" "{\"pacienteId\":\"$PET\",\"tipo\":\"Cirurgia\
 echo "  2 alertas registrados para Thor"
 
 echo "== Carteira de vacinação =="
-envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vacina\",\"nome\":\"V10 (múltipla canina)\",\"fabricante\":\"Zoetis\",\"lote\":\"A2291\",\"dataAplicacao\":\"$(dias -330)\",\"proximaDose\":\"$(dias 20)\"}" > /dev/null
-envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vacina\",\"nome\":\"Antirrábica\",\"fabricante\":\"MSD\",\"lote\":\"R8842\",\"dataAplicacao\":\"$(dias -400)\",\"proximaDose\":\"$(dias -35)\"}" > /dev/null
-envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vermifugo\",\"nome\":\"Vermífugo de amplo espectro\",\"dataAplicacao\":\"$(dias -60)\",\"proximaDose\":\"$(dias 120)\"}" > /dev/null
-echo "  3 registros (uma dose vencida, uma a vencer, uma em dia)"
+# Esquema da V10 em três doses (registrado dose a dose), reforço anual já a vencer; antirrábica
+# vencida; vermífugo semestral em dia; antipulgas mensal a vencer.
+envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vacina\",\"nome\":\"V10 (múltipla canina)\",\"fabricante\":\"Zoetis\",\"lote\":\"A2291\",\"numeroDose\":1,\"totalDoses\":3,\"dataAplicacao\":\"$(dias -405)\",\"proximaDose\":\"$(dias -375)\"}" > /dev/null
+envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vacina\",\"nome\":\"V10 (múltipla canina)\",\"fabricante\":\"Zoetis\",\"lote\":\"A2305\",\"numeroDose\":2,\"totalDoses\":3,\"dataAplicacao\":\"$(dias -375)\",\"proximaDose\":\"$(dias -345)\"}" > /dev/null
+envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vacina\",\"nome\":\"V10 (múltipla canina)\",\"fabricante\":\"Zoetis\",\"lote\":\"A2318\",\"numeroDose\":3,\"totalDoses\":3,\"recorrencia\":\"Anual\",\"dataAplicacao\":\"$(dias -345)\"}" > /dev/null
+envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vacina\",\"nome\":\"Antirrábica\",\"fabricante\":\"MSD\",\"lote\":\"R8842\",\"recorrencia\":\"Anual\",\"dataAplicacao\":\"$(dias -400)\"}" > /dev/null
+envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Vermifugo\",\"nome\":\"Vermífugo de amplo espectro\",\"recorrencia\":\"Semestral\",\"dataAplicacao\":\"$(dias -60)\"}" > /dev/null
+envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Antipulgas\",\"nome\":\"Antipulgas mensal\",\"recorrencia\":\"Mensal\",\"dataAplicacao\":\"$(dias -10)\"}" > /dev/null
+echo "  6 registros: V10 em três doses (reforço anual a vencer), antirrábica vencida, vermífugo em dia, antipulgas a vencer"
 
 echo "== Tratamento e histórico clínico =="
 

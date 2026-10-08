@@ -15,5 +15,11 @@ namespace VetCare.API.Security
 
         /// <summary>Envio de arquivos, naturalmente mais custoso que as demais rotas.</summary>
         public const string Upload = "upload";
+
+        /// <summary>
+        /// Mural de atualizações (long polling): cada requisição fica pendurada por até 30 s,
+        /// então o que se limita é quantas um mesmo usuário mantém abertas ao mesmo tempo.
+        /// </summary>
+        public const string TempoReal = "tempo-real";
     }
 }

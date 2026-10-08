@@ -31,6 +31,10 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<List<BloqueioAgendaDTO>>> Listar(Guid? veterinarioId, DateTime inicio, DateTime fim)
         {
+            // Datas vindas da URL chegam sem fuso; o banco compara em UTC.
+            inicio = AgendarSessaoUseCase.NormalizarParaUtc(inicio);
+            fim = AgendarSessaoUseCase.NormalizarParaUtc(fim);
+
             var id = veterinarioId ?? _usuarioAtual.VeterinarioId;
 
             if (id == null)

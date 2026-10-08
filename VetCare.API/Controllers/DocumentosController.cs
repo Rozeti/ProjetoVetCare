@@ -48,9 +48,9 @@ namespace VetCare.API.Controllers
             }
 
             var (caminho, nomeArquivo) = resultado.Dados;
-            var conteudo = await System.IO.File.ReadAllBytesAsync(caminho);
 
-            return File(conteudo, "application/octet-stream", nomeArquivo);
+            // Servido direto do disco, com suporte a intervalos: um PDF de 10 MB não passa pela memória.
+            return PhysicalFile(caminho, "application/octet-stream", nomeArquivo, enableRangeProcessing: true);
         }
     }
 }

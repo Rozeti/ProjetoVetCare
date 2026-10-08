@@ -70,6 +70,18 @@ namespace VetCare.API.UseCases
                 return Resultado<SessaoDTO>.NaoAutorizado("Este tratamento pertence a outra clínica.");
             }
 
+            // A mesma regra de acesso do prontuário: o veterinário só agenda para os seus pacientes.
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
+            {
+                return Resultado<SessaoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
+            if (!tratamento.Paciente!.EmAcompanhamento)
+            {
+                return Resultado<SessaoDTO>.Conflito(
+                    "O paciente está inativo ou tem óbito registrado; não é possível agendar sessões.");
+            }
+
             if (tratamento.Status != StatusTratamento.EmAndamento)
             {
                 return Resultado<SessaoDTO>.Invalido(

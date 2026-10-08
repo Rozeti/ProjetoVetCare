@@ -1,15 +1,19 @@
-# Os containers ficam como vetcare-postgres-1, vetcare-api-1 e vetcare-web-1.
+# Os containers ficam como vetcare-postgres-1, vetcare-api-1, vetcare-web-1 e vetcare-adminer-1.
 # Não fixamos container_name para não conflitar com bancos avulsos do mesmo nome.
 name: vetcare
 
 services:
+  # Interface do banco pelo navegador. A porta padrão é 8082 para não brigar com o
+  # Metro do Expo (8081) quando o aplicativo roda na mesma máquina.
   adminer:
     image: adminer
     restart: unless-stopped
     depends_on:
       - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
     ports:
-      - "8081:8080"
+      - "${ADMINER_PORT:-8082}:8080"
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -73,6 +77,11 @@ services:
 
       # Documentação interativa (/scalar) fora de desenvolvimento.
       Documentacao__Habilitada: ${API_DOCS:-false}
+
+      # Sessão (horas de validade do token) e chaves de segurança da hospedagem. Veja o .env.example.
+      Jwt__HorasValidade: ${JWT_HORAS_VALIDADE:-8}
+      Seguranca__RedirecionarParaHttps: ${REDIRECIONAR_PARA_HTTPS:-false}
+      Cors__PermitirQualquerOrigem: ${CORS_ABERTO:-false}
     ports:
       - "${API_PORT:-5265}:5265"
     volumes:

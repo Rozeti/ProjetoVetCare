@@ -32,6 +32,32 @@ const ESTADO_INICIAL = {
 
 type Estado = typeof ESTADO_INICIAL;
 
+/** Faixas clínicas aceitas pela API (CriarAtendimentoDTO), usadas nos campos e na validação. */
+const FAIXAS_DE_SINAIS = {
+  pesoKg: { min: 0.1, max: 200, passo: 0.1, rotulo: 'o peso', unidade: 'kg' },
+  temperaturaCelsius: { min: 30, max: 45, passo: 0.1, rotulo: 'a temperatura', unidade: '°C' },
+  frequenciaCardiaca: { min: 10, max: 400, passo: 1, rotulo: 'a frequência cardíaca', unidade: 'bpm' },
+  frequenciaRespiratoria: { min: 5, max: 200, passo: 1, rotulo: 'a frequência respiratória', unidade: 'mpm' },
+} as const;
+
+/** Devolve a primeira faixa desrespeitada, ou null quando todos os sinais informados são válidos. */
+function validarSinaisVitais(form: Pick<Estado, keyof typeof FAIXAS_DE_SINAIS>): string | null {
+  for (const campo of Object.keys(FAIXAS_DE_SINAIS) as (keyof typeof FAIXAS_DE_SINAIS)[]) {
+    const texto = form[campo].trim();
+
+    if (!texto) continue;
+
+    const valor = Number(texto.replace(',', '.'));
+    const faixa = FAIXAS_DE_SINAIS[campo];
+
+    if (!Number.isFinite(valor) || valor < faixa.min || valor > faixa.max) {
+      return `Informe ${faixa.rotulo} entre ${faixa.min} e ${faixa.max} ${faixa.unidade}.`;
+    }
+  }
+
+  return null;
+}
+
 /**
  * HU-008: formulário rápido de registro do atendimento fisioterapêutico, com correção
  * posterior preservando a versão anterior (RN-004).
@@ -131,6 +157,15 @@ function Formulario({
 
     if (!form.tecnicasAplicadas.trim() || !form.evolucaoClinica.trim()) {
       setErro('Informe as técnicas aplicadas e a evolução clínica.');
+      return;
+    }
+
+    // Os sinais vitais alimentam o gráfico de evolução: um valor fora da faixa clínica
+    // é recusado aqui, com a mesma faixa que a API aplica (CriarAtendimentoDTO).
+    const sinalForaDaFaixa = validarSinaisVitais(form);
+
+    if (sinalForaDaFaixa) {
+      setErro(sinalForaDaFaixa);
       return;
     }
 
@@ -329,39 +364,57 @@ function Formulario({
             <legend className="px-2 text-sm font-semibold text-slate-700">Sinais vitais</legend>
 
             <div className="grid gap-3 sm:grid-cols-4">
-              <Campo rotulo="Peso (kg)">
+              <Campo rotulo="Peso (kg)" dica={`${FAIXAS_DE_SINAIS.pesoKg.min} a ${FAIXAS_DE_SINAIS.pesoKg.max}`}>
                 <input
                   type="number"
-                  step="0.1"
-                  min="0.1"
+                  step={FAIXAS_DE_SINAIS.pesoKg.passo}
+                  min={FAIXAS_DE_SINAIS.pesoKg.min}
+                  max={FAIXAS_DE_SINAIS.pesoKg.max}
                   className="vc-campo"
                   value={form.pesoKg}
                   onChange={(e) => atualizar('pesoKg', e.target.value)}
                 />
               </Campo>
 
-              <Campo rotulo="Temp. (°C)">
+              <Campo
+                rotulo="Temp. (°C)"
+                dica={`${FAIXAS_DE_SINAIS.temperaturaCelsius.min} a ${FAIXAS_DE_SINAIS.temperaturaCelsius.max}`}
+              >
                 <input
                   type="number"
-                  step="0.1"
+                  step={FAIXAS_DE_SINAIS.temperaturaCelsius.passo}
+                  min={FAIXAS_DE_SINAIS.temperaturaCelsius.min}
+                  max={FAIXAS_DE_SINAIS.temperaturaCelsius.max}
                   className="vc-campo"
                   value={form.temperaturaCelsius}
                   onChange={(e) => atualizar('temperaturaCelsius', e.target.value)}
                 />
               </Campo>
 
-              <Campo rotulo="FC (bpm)">
+              <Campo
+                rotulo="FC (bpm)"
+                dica={`${FAIXAS_DE_SINAIS.frequenciaCardiaca.min} a ${FAIXAS_DE_SINAIS.frequenciaCardiaca.max}`}
+              >
                 <input
                   type="number"
+                  step={FAIXAS_DE_SINAIS.frequenciaCardiaca.passo}
+                  min={FAIXAS_DE_SINAIS.frequenciaCardiaca.min}
+                  max={FAIXAS_DE_SINAIS.frequenciaCardiaca.max}
                   className="vc-campo"
                   value={form.frequenciaCardiaca}
                   onChange={(e) => atualizar('frequenciaCardiaca', e.target.value)}
                 />
               </Campo>
 
-              <Campo rotulo="FR (mpm)">
+              <Campo
+                rotulo="FR (mpm)"
+                dica={`${FAIXAS_DE_SINAIS.frequenciaRespiratoria.min} a ${FAIXAS_DE_SINAIS.frequenciaRespiratoria.max}`}
+              >
                 <input
                   type="number"
+                  step={FAIXAS_DE_SINAIS.frequenciaRespiratoria.passo}
+                  min={FAIXAS_DE_SINAIS.frequenciaRespiratoria.min}
+                  max={FAIXAS_DE_SINAIS.frequenciaRespiratoria.max}
                   className="vc-campo"
                   value={form.frequenciaRespiratoria}
                   onChange={(e) => atualizar('frequenciaRespiratoria', e.target.value)}

@@ -16,6 +16,7 @@ namespace VetCare.Tests
             new SessaoRepository(Contexto),
             new ClinicaRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private async Task<Sessao> CriarSessao(DateTime quando, string status = "Aguardando confirmação")

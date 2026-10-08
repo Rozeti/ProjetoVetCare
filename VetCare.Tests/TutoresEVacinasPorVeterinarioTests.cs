@@ -78,6 +78,7 @@ namespace VetCare.Tests
             new UsuarioRepository(Contexto),
             new PasswordHasher(),
             Dependencias.Contas(Contexto, new FilaDeEmails()),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private GerenciarVacinasUseCase CasoDeVacinas(UsuarioAtual usuarioAtual) => new(
@@ -219,7 +220,7 @@ namespace VetCare.Tests
             correcao.Sucesso.Should().BeTrue(correcao.Mensagem);
             correcao.Dados!.Nome.Should().Be("V10 (lote corrigido)");
 
-            var exclusao = await CasoDeVacinas(ComoVeterinario()).Remover(vacina.Id);
+            var exclusao = await CasoDeVacinas(ComoVeterinario()).Remover(vacina.Id, "Lançada no paciente errado");
 
             exclusao.Sucesso.Should().BeTrue(exclusao.Mensagem);
             Contexto.Vacinas.Should().NotContain(v => v.Id == vacina.Id);
@@ -237,7 +238,7 @@ namespace VetCare.Tests
                 Nome = "Outra",
                 DataAplicacao = vacina.DataAplicacao
             });
-            var exclusao = await CasoDeVacinas(ComoOutroVeterinario()).Remover(vacina.Id);
+            var exclusao = await CasoDeVacinas(ComoOutroVeterinario()).Remover(vacina.Id, "Lançada no paciente errado");
 
             correcao.Falha.Should().Be(TipoFalha.NaoAutorizado);
             exclusao.Falha.Should().Be(TipoFalha.NaoAutorizado);

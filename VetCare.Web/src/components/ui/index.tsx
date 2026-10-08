@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useId, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from 'react';
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
 import { iniciais } from '../../utils/formato';
 
@@ -122,20 +122,58 @@ export function Modal({
   aoFechar: () => void;
   largura?: string;
 }) {
-  // Fechar com Esc é o atalho que o usuário espera de um diálogo.
+  const dialogo = useRef<HTMLDivElement>(null);
+
+  // Fechar com Esc é o atalho que o usuário espera de um diálogo; o foco entra na
+  // janela ao abrir, não sai dela com Tab e volta para onde estava ao fechar (RNF-001).
   useEffect(() => {
     if (!aberto) return;
 
+    const focoAnterior = document.activeElement as HTMLElement | null;
+
+    function focaveis(): HTMLElement[] {
+      return Array.from(
+        dialogo.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    }
+
     function aoTeclar(evento: KeyboardEvent) {
-      if (evento.key === 'Escape') aoFechar();
+      if (evento.key === 'Escape') {
+        aoFechar();
+        return;
+      }
+
+      if (evento.key !== 'Tab') return;
+
+      const elementos = focaveis();
+      if (elementos.length === 0) return;
+
+      const primeiro = elementos[0];
+      const ultimo = elementos[elementos.length - 1];
+      const atual = document.activeElement;
+
+      if (evento.shiftKey && (atual === primeiro || !dialogo.current?.contains(atual))) {
+        evento.preventDefault();
+        ultimo.focus();
+      } else if (!evento.shiftKey && (atual === ultimo || !dialogo.current?.contains(atual))) {
+        evento.preventDefault();
+        primeiro.focus();
+      }
     }
 
     document.addEventListener('keydown', aoTeclar);
     document.body.style.overflow = 'hidden';
 
+    // O primeiro campo recebe o foco; sem campos, a própria janela.
+    const primeiroCampo = focaveis().find((el) => !el.hasAttribute('data-fechar')) ?? dialogo.current;
+    primeiroCampo?.focus();
+
     return () => {
       document.removeEventListener('keydown', aoTeclar);
       document.body.style.overflow = '';
+      focoAnterior?.focus?.();
     };
   }, [aberto, aoFechar]);
 
@@ -144,7 +182,9 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:p-8">
       <div
-        className={`w-full ${largura} vc-card my-auto`}
+        ref={dialogo}
+        tabIndex={-1}
+        className={`w-full ${largura} vc-card my-auto outline-none`}
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
@@ -187,22 +227,47 @@ export function Campo({
   children: ReactNode;
 }) {
   const idGerado = useId();
+  const idDaMensagem = `${idGerado}-mensagem`;
 
-  const filho = isValidElement<{ id?: string }>(children)
-    ? cloneElement(children, { id: children.props.id ?? idGerado })
+  // Só um controle de formulário recebe o id do rótulo; um <div> com vários controles
+  // dentro vira um grupo rotulado, para que cada controle mantenha o próprio nome.
+  const CONTROLES = ['input', 'select', 'textarea'];
+  const ehControle = isValidElement<{ id?: string }>(children) && CONTROLES.includes(String(children.type));
+  const idDoCampo = ehControle ? (children.props.id ?? idGerado) : undefined;
+  const descritoPor = dica || erro ? idDaMensagem : undefined;
+
+  // `required` e os atributos aria acompanham o rótulo: o asterisco visual não basta (RNF-001).
+  const filho = ehControle
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id: idDoCampo,
+        required: obrigatorio || undefined,
+        'aria-required': obrigatorio || undefined,
+        'aria-invalid': erro ? true : undefined,
+        'aria-describedby': descritoPor,
+      })
     : children;
 
-  const idDoCampo = isValidElement<{ id?: string }>(children) ? (children.props.id ?? idGerado) : undefined;
-
   return (
-    <div>
-      <label className="vc-rotulo" htmlFor={idDoCampo}>
+    <div role={ehControle ? undefined : 'group'} aria-labelledby={ehControle ? undefined : `${idGerado}-rotulo`}>
+      <label className="vc-rotulo" htmlFor={idDoCampo} id={`${idGerado}-rotulo`}>
         {rotulo}
-        {obrigatorio && <span className="ml-0.5 text-perigo">*</span>}
+        {obrigatorio && (
+          <span className="ml-0.5 text-perigo" aria-hidden="true">
+            *
+          </span>
+        )}
       </label>
       {filho}
-      {dica && !erro && <p className="mt-1 text-xs text-slate-500">{dica}</p>}
-      {erro && <p className="mt-1 text-xs text-perigo">{erro}</p>}
+      {dica && !erro && (
+        <p className="mt-1 text-xs text-slate-500" id={idDaMensagem}>
+          {dica}
+        </p>
+      )}
+      {erro && (
+        <p className="mt-1 text-xs text-perigo" id={idDaMensagem} role="alert">
+          {erro}
+        </p>
+      )}
     </div>
   );
 }

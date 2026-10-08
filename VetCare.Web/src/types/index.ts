@@ -29,6 +29,8 @@ export interface Usuario {
   notificarPorEmail: boolean;
   notificarPorPush: boolean;
   veterinarioId?: string | null;
+  /** Preenchido quando o usuário é Apoio administrativo. */
+  setor?: string | null;
   crmv?: string | null;
   especialidade?: string | null;
   tutorId?: string | null;
@@ -108,6 +110,18 @@ export interface ResultadoTransferencia {
   sessoesTransferidas: number;
 }
 
+/** Paciente ativo na lista de seleção dos formulários (agendamento, mensagens), sem paginação. */
+export interface PetSelecao {
+  id: string;
+  nome: string;
+  especie: string;
+  nomeTutor: string;
+  tutorId: string;
+  /** Usuário de acesso do tutor, para ligar o paciente a uma conversa. */
+  tutorUsuarioId: string;
+  veterinarioResponsavelId?: string | null;
+}
+
 export type TipoAlerta = 'Alergia' | 'Comorbidade' | 'Restricao' | 'Cirurgia';
 export type Gravidade = 'Leve' | 'Moderada' | 'Grave';
 
@@ -124,7 +138,10 @@ export interface AlergiaCondicao {
 }
 
 export type TipoVacina = 'Vacina' | 'Vermifugo' | 'Antipulgas' | 'Outro';
-export type SituacaoDose = 'Em dia' | 'A vencer' | 'Vencida' | 'Dose única';
+export type SituacaoDose = 'Em dia' | 'A vencer' | 'Vencida' | 'Dose única' | 'Concluída';
+
+/** Intervalo do reforço; a API calcula a próxima dose a partir dele quando a data não é informada. */
+export type RecorrenciaVacina = 'Nenhuma' | 'Mensal' | 'Trimestral' | 'Semestral' | 'Anual';
 
 /** Item da carteira de vacinação e vermifugação. */
 export interface Vacina {
@@ -136,9 +153,15 @@ export interface Vacina {
   nome: string;
   fabricante: string;
   lote: string;
+  /** Posição e total do esquema ("Dose 2 de 3"); vazios numa aplicação avulsa. */
+  numeroDose?: number | null;
+  totalDoses?: number | null;
+  descricaoDose: string;
+  recorrencia: RecorrenciaVacina;
   dataAplicacao: string;
   proximaDose?: string | null;
   observacoes: string;
+  veterinarioId?: string | null;
   aplicadaPor: string;
   situacaoDose: SituacaoDose;
   diasParaProximaDose?: number | null;
@@ -397,7 +420,8 @@ export type TipoNotificacao =
   | 'StatusSessao'
   | 'NovoRegistroProntuario'
   | 'NovaMensagem'
-  | 'DoseDeVacina';
+  | 'DoseDeVacina'
+  | 'PacienteTransferido';
 
 export interface Notificacao {
   id: string;

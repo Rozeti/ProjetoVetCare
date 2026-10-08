@@ -8,13 +8,15 @@ em execução, comprovando o comportamento ponta a ponta.
 |---|---|---|
 | `teste-regras-negocio.sh` | 47 | API em `http://localhost:5265` |
 | `teste-api-mobile.sh` | 26 | API + dados de demonstração |
-| `teste-funcionalidades-novas.sh` | 41 a 47 | API + dados de demonstração |
+| `teste-funcionalidades-novas.sh` | 56 a 63 | API + dados de demonstração |
 | `teste-tempo-real.sh` | 27 | API + dados de demonstração |
-| `teste-navegador.mjs` | 20 | API + front-end em `http://localhost:5173` + Microsoft Edge |
+| `teste-navegador.mjs` | 28 | API + front-end em `http://localhost:5173` + Microsoft Edge |
 | `criar-dados-demonstracao.sh` | — | API |
 
 `comum.sh` não é executável: reúne as funções que os roteiros de shell compartilham
 (extração de campos JSON e login resiliente à limitação de requisições).
+
+As contagens acima são as de hoje; o que importa ao final de cada roteiro é `FALHAS: 0`.
 
 Suba a aplicação antes de rodar:
 
@@ -59,8 +61,9 @@ bash testes/teste-api-mobile.sh
 
 ## 3. Funcionalidades clínicas e de plataforma
 
-Carteira de vacinação e classificação das doses, receituário, alertas clínicos,
-bloqueios de agenda, trilha de auditoria, paginação (RNF-004), preferências de notificação
+Carteira de vacinação (classificação das doses, esquema com várias doses, recorrência,
+edição, exclusão com justificativa, filtro e paginação), receituário, alertas clínicos,
+bloqueios de agenda, transferência de paciente, trilha de auditoria, paginação (RNF-004), preferências de notificação
 por e-mail e push, registro do aparelho do tutor, conta criada sem senha (primeiro acesso),
 recuperação de senha pelo código de 6 dígitos (aplicativo) e pelo link (portal), e
 limitação de requisições nos endpoints de autenticação.
@@ -120,7 +123,8 @@ WEB_URL=http://localhost:8080 PACIENTE_DEMO=Nina \
 
 `criar-dados-demonstracao.sh` monta, a partir da conta de administrador, um cenário
 coerente com a documentação: veterinária, recepção, tutor, dois pacientes, alertas
-clínicos, carteira de vacinação com uma dose vencida e outra a vencer, tratamento
+clínicos, carteira de vacinação com um esquema de três doses e reforço anual a vencer,
+antirrábica vencida e vermífugo e antipulgas recorrentes, tratamento
 pós-cirúrgico, avaliação clínica, três atendimentos com evolução de peso e dor, duas
 sessões futuras aguardando confirmação, receita com dois medicamentos e observações
 internas restritas.
