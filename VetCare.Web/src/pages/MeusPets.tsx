@@ -7,7 +7,7 @@ import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Pet } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
-import { formatarData, formatarPeso, paraValorInputData, validarDadosDoPet } from '../utils/formato';
+import { formatarDia, formatarPeso, paraValorInputData, validarDadosDoPet } from '../utils/formato';
 
 const FORM_VAZIO = {
   nome: '',
@@ -170,7 +170,7 @@ export function MeusPets() {
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Nascimento</dt>
-                  <dd className="text-sm font-semibold text-slate-800">{formatarData(pet.dataNascimento)}</dd>
+                  <dd className="text-sm font-semibold text-slate-800">{formatarDia(pet.dataNascimento)}</dd>
                 </div>
               </dl>
 

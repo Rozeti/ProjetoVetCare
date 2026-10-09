@@ -688,7 +688,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Falhou: 0` (são 179 testes hoje; o número cresce a cada regra nova).
+Esperado: `Falhou: 0` (são 184 testes hoje; o número cresce a cada regra nova).
 
 ---
 

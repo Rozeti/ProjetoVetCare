@@ -19,7 +19,7 @@ import { Icone } from '../componentes/Icone';
 import { GraficoBarras } from '../componentes/GraficoBarras';
 import { AlertasClinicos } from '../componentes/AlertasClinicos';
 import { cores, espacos, estiloEscalaDor, raios } from '../tema';
-import { formatarData, formatarDataHora, formatarPeso } from '../utils/formato';
+import { formatarData, formatarDataHora, formatarDia, formatarPeso } from '../utils/formato';
 
 type Aba = 'historico' | 'evolucao' | 'vacinas' | 'receitas' | 'tratamentos' | 'documentos';
 
@@ -421,14 +421,14 @@ function Carteira({ vacinas }: { vacinas: Vacina[] }) {
               {ROTULO_TIPO_VACINA[vacina.tipo] ?? vacina.tipo}
               {vacina.descricaoDose ? ` · ${vacina.descricaoDose}` : ''}
               {' · aplicada em '}
-              {formatarData(vacina.dataAplicacao)}
+              {formatarDia(vacina.dataAplicacao)}
               {vacina.aplicadaPor ? ` · ${vacina.aplicadaPor}` : ''}
             </Text>
 
             {vacina.proximaDose ? (
               <Text style={estilos.itemDescricao}>
                 {vacina.situacaoDose === 'Concluída' ? 'Dose seguinte já aplicada · prevista para ' : 'Próxima dose em '}
-                {formatarData(vacina.proximaDose)}
+                {formatarDia(vacina.proximaDose)}
                 {vacina.diasParaProximaDose != null &&
                   (vacina.diasParaProximaDose < 0
                     ? ` (${Math.abs(vacina.diasParaProximaDose)} dia(s) em atraso)`
@@ -477,7 +477,7 @@ function Receitas({ prescricoes }: { prescricoes: Prescricao[] }) {
           <Text style={estilos.detalheSuave}>
             {prescricao.nomeVeterinario}
             {prescricao.crmv ? ` · ${prescricao.crmv}` : ''}
-            {prescricao.validaAte ? ` · válida até ${formatarData(prescricao.validaAte)}` : ''}
+            {prescricao.validaAte ? ` · válida até ${formatarDia(prescricao.validaAte)}` : ''}
           </Text>
 
           {prescricao.itens.map((item) => (

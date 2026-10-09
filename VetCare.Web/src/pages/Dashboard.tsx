@@ -15,7 +15,13 @@ import { useAtualizacao } from '../contexts/atualizacoes';
 import { useAuth } from '../contexts/auth';
 import type { Indicadores, Vacina } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Estatistica, Etiqueta, SemDados } from '../components/ui';
-import { estiloSituacaoDose, estiloStatusSessao, formatarData, formatarDataExtensa, formatarHora } from '../utils/formato';
+import {
+  estiloSituacaoDose,
+  estiloStatusSessao,
+  formatarDataExtensa,
+  formatarDia,
+  formatarHora,
+} from '../utils/formato';
 
 /** Janela do painel de prevenção, igual à da classificação "A vencer" da carteira. */
 const DIAS_DE_PREVENCAO = 30;
@@ -196,7 +202,7 @@ export function Dashboard() {
                         </div>
 
                         <div className="text-right text-xs text-slate-500">
-                          {dose.proximaDose && <p>{formatarData(dose.proximaDose)}</p>}
+                          {dose.proximaDose && <p>{formatarDia(dose.proximaDose)}</p>}
                           {dose.diasParaProximaDose != null && (
                             <p>
                               {dose.diasParaProximaDose < 0

@@ -44,15 +44,19 @@ namespace VetCare.API.Data
                 consulta = consulta.Where(r => r.Entidade == entidade);
             }
 
+            // O filtro é em dias da clínica: uma ação às 22h de Brasília pertence àquele dia, e
+            // não ao seguinte, como aconteceria cortando o dia à meia-noite UTC.
+            var relogio = RelogioDaClinica.Padrao;
+
             if (inicio.HasValue)
             {
-                var inicioUtc = DateTime.SpecifyKind(inicio.Value.Date, DateTimeKind.Utc);
+                var inicioUtc = relogio.ParaUtc(relogio.DiaDaClinica(inicio.Value));
                 consulta = consulta.Where(r => r.DataHora >= inicioUtc);
             }
 
             if (fim.HasValue)
             {
-                var fimUtc = DateTime.SpecifyKind(fim.Value.Date.AddDays(1), DateTimeKind.Utc);
+                var fimUtc = relogio.ParaUtc(relogio.DiaDaClinica(fim.Value).AddDays(1));
                 consulta = consulta.Where(r => r.DataHora < fimUtc);
             }
 

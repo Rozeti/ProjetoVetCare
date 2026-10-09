@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using VetCare.API.Common;
 
 namespace VetCare.API.DTOs
 {
@@ -54,6 +55,7 @@ namespace VetCare.API.DTOs
         public string NomeVeterinario { get; set; } = string.Empty;
         public string Crmv { get; set; } = string.Empty;
         public DateTime DataEmissao { get; set; }
+        [DataDeCalendario]
         public DateTime? ValidaAte { get; set; }
         public string Orientacoes { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;

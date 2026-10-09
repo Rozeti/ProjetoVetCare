@@ -9,7 +9,13 @@ import type { PaginaDe, RecorrenciaVacina, SituacaoDose, TipoVacina, Vacina } fr
 import { Alerta, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { Paginacao } from '../../components/Paginacao';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
-import { estiloSituacaoDose, formatarData, paraValorInputData, rotuloTipoVacina } from '../../utils/formato';
+import {
+  estiloSituacaoDose,
+  formatarDia,
+  paraValorInputData,
+  paraValorInputDia,
+  rotuloTipoVacina,
+} from '../../utils/formato';
 import { paginaVazia } from '../../utils/paginacao';
 
 const TIPOS: TipoVacina[] = ['Vacina', 'Vermifugo', 'Antipulgas', 'Outro'];
@@ -193,8 +199,8 @@ export function CarteiraVacinacao({ pacienteId, vacinas, somenteLeitura = false,
       numeroDose: String(vacina.numeroDose ?? 1),
       totalDoses: String(vacina.totalDoses ?? 3),
       recorrencia: vacina.recorrencia ?? 'Nenhuma',
-      dataAplicacao: paraValorInputData(vacina.dataAplicacao),
-      proximaDose: vacina.proximaDose ? paraValorInputData(vacina.proximaDose) : '',
+      dataAplicacao: paraValorInputDia(vacina.dataAplicacao),
+      proximaDose: vacina.proximaDose ? paraValorInputDia(vacina.proximaDose) : '',
       veterinarioId: vacina.veterinarioId ?? '',
       observacoes: vacina.observacoes,
     });
@@ -279,7 +285,7 @@ export function CarteiraVacinacao({ pacienteId, vacinas, somenteLeitura = false,
       mensagem: (
         <>
           Excluir a aplicação de <strong>{vacina.nome}</strong>
-          {vacina.descricaoDose && ` (${vacina.descricaoDose.toLowerCase()})`} de {formatarData(vacina.dataAplicacao)}{' '}
+          {vacina.descricaoDose && ` (${vacina.descricaoDose.toLowerCase()})`} de {formatarDia(vacina.dataAplicacao)}{' '}
           da carteira? O registro some da carteira do paciente e a exclusão fica na auditoria com a
           justificativa.
         </>
@@ -455,11 +461,11 @@ export function CarteiraVacinacao({ pacienteId, vacinas, somenteLeitura = false,
                         {vacina.lote && <span className="block text-xs text-slate-400">Lote {vacina.lote}</span>}
                       </td>
                       <td>{rotuloTipoVacina[vacina.tipo] ?? vacina.tipo}</td>
-                      <td>{formatarData(vacina.dataAplicacao)}</td>
+                      <td>{formatarDia(vacina.dataAplicacao)}</td>
                       <td>
                         {vacina.proximaDose ? (
                           <>
-                            {formatarData(vacina.proximaDose)}
+                            {formatarDia(vacina.proximaDose)}
                             {vacina.situacaoDose === 'Concluída' ? (
                               <span className="block text-xs text-slate-400">dose seguinte já aplicada</span>
                             ) : (

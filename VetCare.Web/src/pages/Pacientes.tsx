@@ -19,7 +19,7 @@ import { ESPECIES, type PaginaDe, type Pet, type Tutor, type Veterinario } from 
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { Paginacao } from '../components/Paginacao';
-import { formatarData, formatarPeso, paraValorInputData, validarDadosDoPet } from '../utils/formato';
+import { formatarDia, formatarPeso, paraValorInputData, paraValorInputDia, validarDadosDoPet } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
@@ -156,11 +156,11 @@ export function Pacientes() {
       pelagem: pet.pelagem,
       microchip: pet.microchip,
       castrado: pet.castrado,
-      dataNascimento: paraValorInputData(pet.dataNascimento),
+      dataNascimento: paraValorInputDia(pet.dataNascimento),
       pesoAtualKg: pet.pesoAtualKg?.toString() ?? '',
       tutorId: pet.tutorId,
       veterinarioResponsavelId: pet.veterinarioResponsavelId ?? '',
-      dataObito: pet.dataObito ? paraValorInputData(pet.dataObito) : '',
+      dataObito: pet.dataObito ? paraValorInputDia(pet.dataObito) : '',
     });
     setErroForm('');
     setModalAberto(true);
@@ -483,7 +483,7 @@ export function Pacientes() {
                     )}
                     <td>
                       {pet.dataObito ? (
-                        <span title={`Óbito em ${formatarData(pet.dataObito)}`}>
+                        <span title={`Óbito em ${formatarDia(pet.dataObito)}`}>
                           <Etiqueta className="bg-slate-200 text-slate-600">Falecido</Etiqueta>
                         </span>
                       ) : (

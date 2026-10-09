@@ -7,6 +7,26 @@ export function formatarData(valor: string | Date): string {
   return paraData(valor).toLocaleDateString('pt-BR');
 }
 
+/**
+ * Nascimento, óbito, aplicação e próxima dose de vacina e validade da receita são dias de
+ * calendário, sem hora nem fuso: a API os envia como "AAAA-MM-DD". Lidos com `new Date`,
+ * virariam meia-noite UTC — que no fuso de Brasília ainda é o dia anterior. O dia é montado
+ * no fuso do aparelho a partir dos números; vale também para o formato antigo
+ * ("2018-03-14T00:00:00Z"), cujo dia é o que vem antes do "T".
+ */
+export function paraDia(valor: string | Date): Date {
+  if (valor instanceof Date) return valor;
+
+  const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(valor);
+
+  return partes ? new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3])) : new Date(valor);
+}
+
+/** Exibe um dia de calendário (ver `paraDia`) sem deslocá-lo pelo fuso. */
+export function formatarDia(valor: string | Date): string {
+  return paraDia(valor).toLocaleDateString('pt-BR');
+}
+
 export function formatarHora(valor: string | Date): string {
   return paraData(valor).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }

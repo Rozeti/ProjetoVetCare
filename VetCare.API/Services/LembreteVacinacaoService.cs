@@ -1,3 +1,4 @@
+using VetCare.API.Common;
 using VetCare.API.Data;
 
 namespace VetCare.API.Services
@@ -57,7 +58,11 @@ namespace VetCare.API.Services
             var vacinas = escopo.ServiceProvider.GetRequiredService<IVacinaRepository>();
             var notificacoes = escopo.ServiceProvider.GetRequiredService<NotificacaoService>();
 
-            var pendentes = await vacinas.ObterPendentesDeLembrete(DateTime.UtcNow.Date.Add(JanelaLembrete));
+            // A próxima dose é um dia de calendário gravado como meia-noite UTC; o "hoje" que se
+            // compara com ela é o da clínica, no mesmo formato. Com DateTime.UtcNow.Date, entre 21h
+            // e meia-noite de Brasília a janela já começava no dia seguinte.
+            var hoje = DateTime.SpecifyKind(RelogioDaClinica.Padrao.Hoje, DateTimeKind.Utc);
+            var pendentes = await vacinas.ObterPendentesDeLembrete(hoje.Add(JanelaLembrete));
 
             if (pendentes.Count == 0)
             {

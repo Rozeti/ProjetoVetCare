@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using VetCare.API.Common;
 
 namespace VetCare.API.DTOs
 {
@@ -101,7 +102,9 @@ namespace VetCare.API.DTOs
         public string DescricaoDose { get; set; } = string.Empty;
 
         public string Recorrencia { get; set; } = string.Empty;
+        [DataDeCalendario]
         public DateTime DataAplicacao { get; set; }
+        [DataDeCalendario]
         public DateTime? ProximaDose { get; set; }
         public string Observacoes { get; set; } = string.Empty;
         public Guid? VeterinarioId { get; set; }

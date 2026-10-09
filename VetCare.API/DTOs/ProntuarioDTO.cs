@@ -1,3 +1,5 @@
+using VetCare.API.Common;
+
 namespace VetCare.API.DTOs
 {
     public class ProntuarioDTO
@@ -11,6 +13,7 @@ namespace VetCare.API.DTOs
         public string Pelagem { get; set; } = string.Empty;
         public string Microchip { get; set; } = string.Empty;
         public bool Castrado { get; set; }
+        [DataDeCalendario]
         public DateTime DataNascimento { get; set; }
         public int IdadeAnos { get; set; }
         public string IdadeDescritiva { get; set; } = string.Empty;
@@ -20,6 +23,7 @@ namespace VetCare.API.DTOs
         public string NomeVeterinarioResponsavel { get; set; } = string.Empty;
         public DateTime DataCriacao { get; set; }
         public DateTime UltimaAtualizacao { get; set; }
+        [DataDeCalendario]
         public DateTime? DataObito { get; set; }
 
         /// <summary>Indica se o solicitante enxerga observações internas (RN-003).</summary>

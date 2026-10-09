@@ -373,7 +373,7 @@ clínica (`Aplicacao:FusoHorario`, padrão `America/Sao_Paulo`), e não o do ser
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 179 testes unitários; o critério é "Falhou: 0"
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 184 testes unitários; o critério é "Falhou: 0"
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de

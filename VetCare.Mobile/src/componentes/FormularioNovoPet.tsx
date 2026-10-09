@@ -16,7 +16,7 @@ import { ESPECIES, type Pet } from '../tipos';
 import { Alerta, Botao, CampoDeMarcacao, CampoTexto, SeletorDeOpcao } from './ui';
 import { Icone } from './Icone';
 import { cores, espacos } from '../tema';
-import { dataDigitadaParaIso, mascaraDeData } from '../utils/formato';
+import { dataDigitadaParaIso, mascaraDeData, paraDia } from '../utils/formato';
 
 const SEXOS = ['Macho', 'Fêmea'] as const;
 
@@ -88,7 +88,7 @@ export function FormularioNovoPet({
     }
 
     // A API também recusa datas futuras; avisar aqui evita uma ida ao servidor.
-    if (new Date(nascimento) > new Date()) {
+    if (paraDia(nascimento) > new Date()) {
       setErro('A data de nascimento não pode ser futura.');
       return;
     }

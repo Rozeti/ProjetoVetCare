@@ -1,3 +1,5 @@
+using VetCare.API.Common;
+
 namespace VetCare.API.DTOs
 {
     public class PetDTO
@@ -10,6 +12,7 @@ namespace VetCare.API.DTOs
         public string Pelagem { get; set; } = string.Empty;
         public string Microchip { get; set; } = string.Empty;
         public bool Castrado { get; set; }
+        [DataDeCalendario]
         public DateTime DataNascimento { get; set; }
         public int IdadeAnos { get; set; }
 
@@ -27,6 +30,7 @@ namespace VetCare.API.DTOs
         public string NomeVeterinarioResponsavel { get; set; } = string.Empty;
 
         public bool Ativo { get; set; }
+        [DataDeCalendario]
         public DateTime? DataObito { get; set; }
 
         /// <summary>Alergias e comorbidades ativas, exibidas em destaque no atendimento.</summary>

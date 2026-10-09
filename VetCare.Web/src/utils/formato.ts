@@ -36,6 +36,31 @@ export function paraValorInputData(valor: string | Date): string {
 }
 
 /**
+ * Nascimento, óbito, aplicação e próxima dose de vacina e validade da receita são dias de
+ * calendário, sem hora nem fuso: a API os envia como "AAAA-MM-DD". Passá-los por `new Date`
+ * os leria como meia-noite UTC — que no fuso de Brasília ainda é o dia anterior. Aqui o dia
+ * é montado no fuso local a partir dos números, e vale também para o formato antigo
+ * ("2018-03-14T00:00:00Z"), cujo dia é o que vem antes do "T".
+ */
+export function paraDia(valor: string | Date): Date {
+  if (valor instanceof Date) return valor;
+
+  const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(valor);
+
+  return partes ? new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3])) : new Date(valor);
+}
+
+/** Exibe um dia de calendário (ver `paraDia`) sem deslocá-lo pelo fuso. */
+export function formatarDia(valor: string | Date): string {
+  return paraDia(valor).toLocaleDateString('pt-BR');
+}
+
+/** Preenche um <input type="date"> com um dia de calendário (ver `paraDia`). */
+export function paraValorInputDia(valor: string | Date): string {
+  return paraValorInputData(paraDia(valor));
+}
+
+/**
  * Junta data e hora locais e devolve em ISO. O horário digitado pelo usuário é
  * local; o `toISOString` faz a conversão para UTC que a API espera.
  */

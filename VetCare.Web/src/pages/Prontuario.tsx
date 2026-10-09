@@ -42,6 +42,7 @@ import {
   estiloStatusTratamento,
   formatarData,
   formatarDataHora,
+  formatarDia,
   formatarPeso,
   formatarTamanho,
 } from '../utils/formato';
@@ -323,7 +324,7 @@ export function Prontuario() {
       {prontuario.dataObito && (
         <div className="mb-4">
           <Alerta tipo="aviso">
-            Paciente registrado como falecido em {formatarData(prontuario.dataObito)}. O prontuário
+            Paciente registrado como falecido em {formatarDia(prontuario.dataObito)}. O prontuário
             permanece disponível apenas para consulta.
           </Alerta>
         </div>

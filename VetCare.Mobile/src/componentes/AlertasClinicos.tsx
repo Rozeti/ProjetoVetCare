@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { cores, espacos, raios } from '../tema';
 import type { AlergiaCondicao, Gravidade, Vacina } from '../tipos';
-import { formatarData } from '../utils/formato';
+import { formatarDia } from '../utils/formato';
 
 const PALETA: Record<Gravidade, { fundo: string; borda: string; texto: string }> = {
   Grave: { fundo: cores.perigoClaro, borda: cores.perigo, texto: '#991b1b' },
@@ -68,7 +68,7 @@ export function AlertasClinicos({ alertas, dosesVencidas = [] }: Props) {
             <Text style={estilos.descricao}>
               {dose.nome}
               {dose.descricaoDose ? ` (${dose.descricaoDose.toLowerCase()})` : ''}
-              {dose.proximaDose ? ` — prevista para ${formatarData(dose.proximaDose)}` : ''}
+              {dose.proximaDose ? ` — prevista para ${formatarDia(dose.proximaDose)}` : ''}
               {dose.diasParaProximaDose != null && dose.diasParaProximaDose < 0
                 ? `, ${Math.abs(dose.diasParaProximaDose)} dia(s) em atraso`
                 : ''}

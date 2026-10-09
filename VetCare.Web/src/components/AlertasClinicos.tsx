@@ -1,7 +1,7 @@
 import { AlertTriangle, ShieldAlert, Syringe } from 'lucide-react';
 import type { AlergiaCondicao, Vacina } from '../types';
 import { Etiqueta } from './ui';
-import { estiloGravidade, formatarData, rotuloTipoAlerta } from '../utils/formato';
+import { estiloGravidade, formatarDia, rotuloTipoAlerta } from '../utils/formato';
 
 const ESTILO_DOSE_ATRASADA = 'bg-alerta-claro text-amber-800 border-amber-300';
 
@@ -104,7 +104,7 @@ export function AlertasClinicos({
               <p className="text-sm font-medium text-slate-800">
                 {dose.nome}
                 {dose.descricaoDose && ` (${dose.descricaoDose.toLowerCase()})`}
-                {dose.proximaDose && ` — prevista para ${formatarData(dose.proximaDose)}`}
+                {dose.proximaDose && ` — prevista para ${formatarDia(dose.proximaDose)}`}
                 {dose.diasParaProximaDose != null &&
                   dose.diasParaProximaDose < 0 &&
                   `, ${Math.abs(dose.diasParaProximaDose)} dia(s) em atraso`}

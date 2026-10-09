@@ -6,7 +6,7 @@ import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { Prescricao } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
-import { formatarData, paraValorInputData } from '../../utils/formato';
+import { formatarData, formatarDia, paraValorInputData } from '../../utils/formato';
 import { imprimirReceita } from '../../utils/impressao';
 
 const VIAS = ['Oral', 'Tópica', 'Intramuscular', 'Subcutânea', 'Intravenosa', 'Oftálmica', 'Otológica'];
@@ -265,7 +265,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                     <p className="mt-0.5 text-xs text-slate-500">
                       {prescricao.nomeVeterinario}
                       {prescricao.crmv && ` · ${prescricao.crmv}`}
-                      {prescricao.validaAte && ` · Válida até ${formatarData(prescricao.validaAte)}`}
+                      {prescricao.validaAte && ` · Válida até ${formatarDia(prescricao.validaAte)}`}
                     </p>
                   </div>
 

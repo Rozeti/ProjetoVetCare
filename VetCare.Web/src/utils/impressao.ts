@@ -1,5 +1,5 @@
 import type { Prescricao, Prontuario } from '../types';
-import { formatarData, formatarDataHora } from './formato';
+import { formatarData, formatarDataHora, formatarDia } from './formato';
 
 /**
  * Geração de documentos para impressão. Abrimos uma janela com HTML próprio em vez
@@ -115,7 +115,7 @@ export function imprimirReceita(prescricao: Prescricao, nomeClinica: string) {
       <div><span>Espécie / Raça</span>${escapar([prescricao.especie, prescricao.raca].filter(Boolean).join(' · '))}</div>
       <div><span>Tutor</span>${escapar(prescricao.nomeTutor)}</div>
       <div><span>Emissão</span>${escapar(formatarData(prescricao.dataEmissao))}</div>
-      ${prescricao.validaAte ? `<div><span>Válida até</span>${escapar(formatarData(prescricao.validaAte))}</div>` : ''}
+      ${prescricao.validaAte ? `<div><span>Válida até</span>${escapar(formatarDia(prescricao.validaAte))}</div>` : ''}
     </div>
 
     ${prescricao.status === 'Cancelada' ? '<div class="alerta"><strong>Receita cancelada.</strong> Este documento não tem validade.</div>' : ''}
@@ -174,8 +174,8 @@ export function imprimirProntuario(prontuario: Prontuario, nomeClinica: string) 
                 <td>${escapar(v.nome)}</td>
                 <td>${escapar(v.descricaoDose || 'Avulsa')}</td>
                 <td>${escapar(v.tipo)}</td>
-                <td>${escapar(formatarData(v.dataAplicacao))}</td>
-                <td>${v.proximaDose ? escapar(formatarData(v.proximaDose)) : '—'}</td>
+                <td>${escapar(formatarDia(v.dataAplicacao))}</td>
+                <td>${v.proximaDose ? escapar(formatarDia(v.proximaDose)) : '—'}</td>
                 <td>${escapar(v.situacaoDose)}</td>
               </tr>`,
             )
