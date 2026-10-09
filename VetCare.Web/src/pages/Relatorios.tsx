@@ -1,11 +1,16 @@
-import { useCallback, useState } from 'react';
-import { Activity, BarChart3, ClipboardList, Loader2, Users } from 'lucide-react';
-import { api } from '../services/api';
-import { useCarregamento } from '../hooks/useCarregamento';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Activity, BarChart3, ClipboardList, HelpCircle, Loader2, Users } from 'lucide-react';
+import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import type { RelatorioProdutividade } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Estatistica, SemDados } from '../components/ui';
 import { formatarData, paraValorInputData, trintaDiasAtras } from '../utils/formato';
+import { ModalComoGerarRelatorio } from './componentes/ModalComoGerarRelatorio';
+
+interface Periodo {
+  inicio: string;
+  fim: string;
+}
 
 /** HU-017: relatórios de produtividade por período. */
 export function Relatorios() {
@@ -13,24 +18,59 @@ export function Relatorios() {
   const [fim, setFim] = useState(paraValorInputData(new Date()));
   const [erroPeriodo, setErroPeriodo] = useState('');
 
-  const buscar = useCallback(async () => {
-    const { data } = await api.get<RelatorioProdutividade>('/api/dashboard/relatorio-produtividade', {
-      params: { inicio, fim },
-    });
+  const [relatorio, setRelatorio] = useState<RelatorioProdutividade | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  // Relatório sem atendimentos gerado pelo botão: abre a janela que explica o que falta registrar.
+  const [relatorioSemDados, setRelatorioSemDados] = useState<RelatorioProdutividade | null>(null);
 
-    return data;
-  }, [inicio, fim]);
+  // O relatório exibido segue o último período gerado, não o que está sendo digitado nos campos.
+  const periodoGerado = useRef<Periodo>({ inicio, fim });
+  // Só a resposta da busca mais recente vale: uma resposta lenta não sobrescreve a seguinte.
+  const ultimaBusca = useRef(0);
 
-  const {
-    dados: relatorio,
-    carregando,
-    erro,
-    setErro,
-    recarregar,
-  } = useCarregamento(buscar, 'Não foi possível gerar o relatório.');
+  const carregar = useCallback(
+    async (periodo: Periodo, { pedidoDoUsuario = false, silencioso = false } = {}) => {
+      const busca = ++ultimaBusca.current;
+      periodoGerado.current = periodo;
+
+      if (!silencioso) setCarregando(true);
+
+      try {
+        const { data } = await api.get<RelatorioProdutividade>('/api/dashboard/relatorio-produtividade', {
+          params: periodo,
+        });
+
+        if (busca !== ultimaBusca.current) return;
+
+        setRelatorio(data);
+        setErro('');
+
+        // Sem atendimentos, os quadros por veterinário e de técnicas ficam vazios: quem
+        // clicou em "Gerar relatório" é orientado sobre o que precisa ser registrado antes.
+        if (pedidoDoUsuario && data.totalAtendimentos === 0) {
+          setRelatorioSemDados(data);
+        }
+      } catch (falha) {
+        if (busca === ultimaBusca.current) {
+          setErro(mensagemDeErro(falha, 'Não foi possível gerar o relatório.'));
+        }
+      } finally {
+        if (busca === ultimaBusca.current) setCarregando(false);
+      }
+    },
+    [],
+  );
+
+  // Ao abrir a tela, o relatório dos últimos 30 dias já aparece.
+  useEffect(() => {
+    carregar(periodoGerado.current);
+  }, [carregar]);
 
   // Um atendimento registrado agora entra no relatório do período sem recarregar a página.
-  useAtualizacao(['atendimentos', 'avaliacoes'], recarregar);
+  useAtualizacao(['atendimentos', 'avaliacoes'], () => carregar(periodoGerado.current, { silencioso: true }));
+
+  const fecharAjuda = useCallback(() => setRelatorioSemDados(null), []);
 
   /** Os campos de data ficam fora de um <form>: a ordem do período é conferida aqui. */
   function gerar() {
@@ -51,7 +91,7 @@ export function Relatorios() {
       return;
     }
 
-    recarregar();
+    carregar({ inicio, fim }, { pedidoDoUsuario: true });
   }
 
   const maiorOcorrencia = relatorio?.tecnicasMaisAplicadas[0]?.ocorrencias ?? 0;
@@ -129,6 +169,12 @@ export function Relatorios() {
             descricao={`Não há avaliações nem atendimentos entre ${formatarData(relatorio.inicio)} e ${formatarData(
               relatorio.fim,
             )}. Escolha outro intervalo de datas.`}
+            acao={
+              <button type="button" className="vc-botao-sutil" onClick={() => setRelatorioSemDados(relatorio)}>
+                <HelpCircle size={16} />
+                Como gerar dados para o relatório
+              </button>
+            }
           />
         </Card>
       ) : (
@@ -229,6 +275,8 @@ export function Relatorios() {
           </p>
         </>
       )}
+
+      <ModalComoGerarRelatorio relatorio={relatorioSemDados} aoFechar={fecharAjuda} />
     </>
   );
 }
