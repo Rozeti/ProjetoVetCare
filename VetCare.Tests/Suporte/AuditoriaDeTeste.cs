@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -52,32 +51,14 @@ namespace VetCare.Tests.Suporte
 
         /// <summary>
         /// Serviço de contas ligado a uma fila que o teste pode inspecionar, em ambiente
-        /// "Development", sem SMTP e com o pedido vindo da própria máquina — ou seja, as
-        /// credenciais voltam na resposta.
+        /// "Development" e sem SMTP — ou seja, as credenciais voltam na resposta.
         /// </summary>
-        public static ContasService Contas(
-            AppDbContext contexto,
-            FilaDeEmails fila,
-            string ambiente = "Development",
-            IPAddress? origem = null) =>
+        public static ContasService Contas(AppDbContext contexto, FilaDeEmails fila, string ambiente = "Development") =>
             new(new TokenRedefinicaoRepository(contexto),
                 fila,
                 ModelosDeEmail(),
                 Options.Create(new OpcoesDeEmail()),
-                new AmbienteDeTeste(ambiente),
-                new OrigemDoPedido(origem ?? IPAddress.Loopback));
-
-        /// <summary>
-        /// Acessor próprio, fora do AsyncLocal do <see cref="HttpContextAccessor"/>: só informa
-        /// de onde veio o pedido, sem apagar as claims que o teste publicou.
-        /// </summary>
-        private sealed class OrigemDoPedido : IHttpContextAccessor
-        {
-            public OrigemDoPedido(IPAddress origem) =>
-                HttpContext = new DefaultHttpContext { Connection = { RemoteIpAddress = origem } };
-
-            public HttpContext? HttpContext { get; set; }
-        }
+                new AmbienteDeTeste(ambiente));
 
         private sealed class AmbienteDeTeste : IWebHostEnvironment
         {

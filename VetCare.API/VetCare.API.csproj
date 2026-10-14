@@ -4,8 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- Senha do banco e chave JWT de desenvolvimento ficam no "dotnet user-secrets", fora do repositório. -->
-    <UserSecretsId>7c1e9f52-4b3d-4a8e-9d61-2f5a0c3b8e17</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

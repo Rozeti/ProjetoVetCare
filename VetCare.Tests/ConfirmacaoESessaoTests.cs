@@ -62,24 +62,6 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Sessao_cancelada_nao_volta_para_a_agenda()
-        {
-            // O horário liberado pode já ter outro paciente; reconfirmar a sessão antiga
-            // pularia a verificação de conflito feita no agendamento.
-            var sessao = await CriarSessao(DateTime.UtcNow.AddDays(3), StatusSessao.Cancelada);
-
-            foreach (var usuario in new[] { ComoTutor(), ComoVeterinario(), ComoAdministrador() })
-            {
-                var resultado = await CriarCasoDeUso(usuario)
-                    .Executar(sessao.Id, new AtualizarStatusSessaoDTO { Status = "Confirmada" });
-
-                resultado.Falha.Should().Be(TipoFalha.Conflito);
-            }
-
-            (await Contexto.Sessoes.FindAsync(sessao.Id))!.Status.Should().Be(StatusSessao.Cancelada);
-        }
-
-        [Fact]
         public async Task Cancelamento_fora_do_prazo_e_sinalizado()
         {
             var sessao = await CriarSessao(DateTime.UtcNow.AddHours(2));

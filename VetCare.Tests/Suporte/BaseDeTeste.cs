@@ -15,10 +15,6 @@ namespace VetCare.Tests.Suporte
     public abstract class BaseDeTeste : IDisposable
     {
         protected AppDbContext Contexto { get; }
-
-        /// <summary>Abre outro contexto sobre o mesmo banco, como faria uma segunda requisição.</summary>
-        protected DbContextOptions<AppDbContext> OpcoesDoBanco { get; }
-
         protected Clinica Clinica { get; }
         protected Usuario UsuarioAdministrador { get; }
         protected Usuario UsuarioVeterinario { get; }
@@ -31,11 +27,11 @@ namespace VetCare.Tests.Suporte
 
         protected BaseDeTeste()
         {
-            OpcoesDoBanco = new DbContextOptionsBuilder<AppDbContext>()
+            var opcoes = new DbContextOptionsBuilder<AppDbContext>()
                 .UseInMemoryDatabase($"vetcare-{Guid.NewGuid()}")
                 .Options;
 
-            Contexto = new AppDbContext(OpcoesDoBanco);
+            Contexto = new AppDbContext(opcoes);
 
             Clinica = new Clinica { Nome = "Clínica de Teste" };
 

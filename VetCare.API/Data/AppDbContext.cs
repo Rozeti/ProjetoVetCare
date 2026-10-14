@@ -122,7 +122,6 @@ namespace VetCare.API.Data
                 entidade.Property(t => t.TokenHash).HasMaxLength(128).IsRequired();
                 entidade.Property(t => t.CodigoHash).HasMaxLength(128).IsRequired();
                 entidade.Property(t => t.Finalidade).HasMaxLength(20).IsRequired();
-                entidade.Property(t => t.TentativasDeCodigo).IsConcurrencyToken();
                 entidade.Ignore(t => t.Valido);
 
                 entidade.HasIndex(t => t.TokenHash).IsUnique();

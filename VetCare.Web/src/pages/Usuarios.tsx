@@ -131,8 +131,8 @@ export function Usuarios() {
       return;
     }
 
-    if (!emEdicao && form.senha && (form.senha.length < 8 || form.senha.length > 64)) {
-      setErroForm('A senha inicial deve ter entre 8 e 64 caracteres, ou ficar em branco.');
+    if (!emEdicao && form.senha && (form.senha.length < 6 || form.senha.length > 64)) {
+      setErroForm('A senha inicial deve ter entre 6 e 64 caracteres, ou ficar em branco.');
       return;
     }
 

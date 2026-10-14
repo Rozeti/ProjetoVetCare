@@ -148,8 +148,8 @@ export function Perfil() {
       return;
     }
 
-    if (novaSenha.length < 8) {
-      setErroSenha('A nova senha deve ter no mínimo 8 caracteres.');
+    if (novaSenha.length < 6) {
+      setErroSenha('A nova senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
@@ -337,7 +337,7 @@ export function Perfil() {
             maxLength={64}
             editable={!salvandoSenha}
             autoComplete="new-password"
-            placeholder="Mínimo de 8 caracteres"
+            placeholder="Mínimo de 6 caracteres"
             placeholderTextColor={cores.textoSuave}
             accessibilityLabel="Nova senha"
           />

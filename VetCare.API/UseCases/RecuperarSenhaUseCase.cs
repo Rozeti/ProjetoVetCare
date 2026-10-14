@@ -18,9 +18,6 @@ namespace VetCare.API.UseCases
         private const string MensagemNeutra =
             "Se houver uma conta ativa com este e-mail, enviaremos as instruções de redefinição.";
 
-        /// <summary>Pedidos por conta numa hora. Com cinco tentativas de código cada, o teto é de 25 chutes por hora.</summary>
-        public const int MaximoDePedidosPorHora = 5;
-
         private readonly IUsuarioRepository _usuarios;
         private readonly ITokenRedefinicaoRepository _tokens;
         private readonly PasswordHasher _hasher;
@@ -51,13 +48,6 @@ namespace VetCare.API.UseCases
             var usuario = await _usuarios.ObterPorEmail(dto.Email);
 
             if (usuario == null || !usuario.Ativo)
-            {
-                return Resultado<RespostaRecuperacaoDTO>.Ok(resposta);
-            }
-
-            // Passado o teto, a resposta continua a mesma (não revela nada); só não sai outro
-            // pedido, e o último enviado segue valendo.
-            if (await _contas.PedidosRecentes(usuario) >= MaximoDePedidosPorHora)
             {
                 return Resultado<RespostaRecuperacaoDTO>.Ok(resposta);
             }
@@ -159,15 +149,12 @@ namespace VetCare.API.UseCases
                 return (null, Resultado.Invalido("Código inválido ou expirado. Solicite um novo."));
             }
 
-            // A tentativa é gasta antes de o código ser conferido: requisições simultâneas
-            // não podem chutar todas com o mesmo saldo.
-            if (!await _tokens.ReservarTentativaDeCodigo(aberto))
-            {
-                return (null, Resultado.Invalido("Código inválido ou expirado. Solicite um novo."));
-            }
-
             if (!CredenciaisTemporarias.CodigoConfere(aberto.Id, dto.Codigo, aberto.CodigoHash))
             {
+                aberto.TentativasDeCodigo++;
+                _tokens.Atualizar(aberto);
+                await _tokens.SalvarAlteracoes();
+
                 var restantes = TokenRedefinicaoSenha.MaximoTentativasDeCodigo - aberto.TentativasDeCodigo;
 
                 return (null, Resultado.Invalido(restantes > 0

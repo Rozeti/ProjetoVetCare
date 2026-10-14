@@ -194,17 +194,10 @@ copy .env.example .env
 ```
 
 Isso cria um arquivo novo chamado `.env`. **Abra o `.env`** — e não o `.env.example` — no
-Bloco de Notas e preencha quatro linhas, que vêm em branco de propósito:
+Bloco de Notas e troque duas linhas:
 
 - `POSTGRES_PASSWORD=` — coloque uma senha sua para o banco
-- `JWT_CHAVE=` — coloque uma frase longa, **com pelo menos 32 caracteres**, inventada por você
-- `ADMIN_EMAIL=` — o seu e-mail; ele será o login do administrador
-- `ADMIN_SENHA=` — a senha do administrador, **com pelo menos 8 caracteres**
-
-Sem as duas primeiras a pilha não sobe; sem as duas últimas a API não consegue criar o primeiro
-administrador e também não sobe (o log explica o que falta). O sistema **não tem conta nem
-senha padrão**: tudo que estivesse escrito no código ou neste guia seria público junto com o
-repositório, e qualquer pessoa entraria como administrador.
+- `JWT_CHAVE=` — coloque uma frase longa, **com pelo menos 32 caracteres**
 
 Salve e feche. O `.env` nunca vai para o Git: ele guarda as senhas desta máquina. Já o
 `.env.example` é o modelo que vai para o repositório — por isso ele não pode ter senha de
@@ -257,13 +250,15 @@ docker compose logs api
 
 ### Passo 7 — Entre no sistema
 
-Abra o navegador em **http://localhost:8080** e entre com o `ADMIN_EMAIL` e a `ADMIN_SENHA`
-que você colocou no `.env`.
+Abra o navegador em **http://localhost:8080**
+
+| Campo | Valor |
+|---|---|
+| E-mail | `admin@vetcare.com` |
+| Senha | `vetcare123` |
 
 **Troque essa senha agora.** Clique no seu nome, no rodapé da barra lateral esquerda, e depois
-em "Alterar senha". Em seguida apague o valor de `ADMIN_SENHA` do `.env` (deixe só
-`ADMIN_SENHA=`): ele só é lido enquanto o banco não tem administrador, e não precisa ficar
-guardado em texto puro.
+em "Alterar senha". Essa senha inicial existe só para destravar o primeiro acesso.
 
 Quando cadastrar a equipe e os tutores, **não precisa inventar senha para eles**: deixe o campo
 em branco e cada pessoa recebe por e-mail um convite para criar a própria senha. E quem
@@ -298,20 +293,6 @@ docker start vetcare-postgres
 ```
 
 **Janela 2 — a API:**
-
-Na primeira vez, guarde os segredos da API no *user-secrets* do .NET. Eles ficam no seu perfil
-do Windows, fora da pasta do projeto, e por isso nunca vão para o Git. Troque os valores em
-maiúsculas pelos seus (a senha do banco é a mesma do `POSTGRES_PASSWORD` do `.env`):
-
-```
-cd VetCare.API
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=vetcare_db;Username=postgres;Password=SENHA-DO-BANCO"
-dotnet user-secrets set "Jwt:Chave" "UMA FRASE LONGA SÓ SUA COM PELO MENOS 32 CARACTERES"
-dotnet user-secrets set "Seed:EmailAdministrador" "SEU-EMAIL"
-dotnet user-secrets set "Seed:SenhaAdministrador" "SENHA-DO-ADMINISTRADOR"
-```
-
-Depois, e em todas as outras vezes:
 
 ```
 cd VetCare.API
@@ -524,9 +505,9 @@ passo com o Gmail:
    corrigir (senha de app errada, porta trocada etc.). A partir daí, use "Esqueci minha
    senha" com uma conta que tenha e-mail de verdade: a mensagem chega em segundos.
 
-Os e-mails só chegam a endereços que existem. Se o `ADMIN_EMAIL` for um endereço inventado,
-tudo que for enviado a ele volta com "endereço não encontrado"; cadastre os usuários de
-verdade com os e-mails deles.
+Os e-mails só chegam a endereços que existem. A conta inicial `admin@vetcare.com` é
+inventada, então tudo que for enviado a ela volta com "endereço não encontrado"; cadastre
+os usuários de verdade com os e-mails deles.
 
 Outros provedores funcionam do mesmo jeito, só mudando o servidor: Outlook/Hotmail
 (`smtp.office365.com`, também com senha de app), Brevo (`smtp-relay.brevo.com`, gratuito até
@@ -678,16 +659,6 @@ então **rode num banco de teste, não no que você já começou a usar de verda
 Precisa do Git Bash (vem junto com o Git). Clique com o botão direito na pasta do projeto →
 "Open Git Bash here".
 
-Os roteiros não guardam senha nenhuma: eles leem do terminal a conta de administrador (a
-mesma do `.env`) e a senha que as contas de demonstração vão receber. Informe as três antes
-de rodar, na mesma janela:
-
-```bash
-export ADMIN_EMAIL='o ADMIN_EMAIL do .env'
-export ADMIN_SENHA='a senha atual do administrador'
-export SENHA_DEMO='uma senha para as contas de demonstração (mínimo de 8 caracteres)'
-```
-
 ```bash
 bash testes/criar-dados-demonstracao.sh
 bash testes/teste-regras-negocio.sh
@@ -717,7 +688,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Falhou: 0` (são 188 testes hoje; o número cresce a cada regra nova).
+Esperado: `Falhou: 0` (são 184 testes hoje; o número cresce a cada regra nova).
 
 ---
 
@@ -805,16 +776,13 @@ docker compose exec -T postgres psql -U postgres -d vetcare_db < backup-vetcare.
 | `/health/pronto` diz `Unhealthy` no banco | Contêiner do banco parado | `docker compose start postgres` |
 | A API fica **para sempre** em `health: starting` e `docker compose logs api` mostra `28P01: password authentication failed` | Você trocou `POSTGRES_PASSWORD` no `.env` depois que o banco já existia | Veja o quadro "A senha do banco não bate com o `.env`" abaixo |
 | A API fica em `Restarting` e o log diz "Jwt:Chave com pelo menos 32 bytes" | A chave no `.env` tem um `$`, que o Docker apagou junto com o resto | Troque `JWT_CHAVE` por uma frase longa sem `$` e rode `docker compose up -d` |
-| A API fica em `Restarting` e o log diz "chave JWT configurada já foi publicada" | O `JWT_CHAVE` é um exemplo que circulou no repositório: quem o conhece entra como qualquer usuário | Troque `JWT_CHAVE` por uma frase só sua e rode `docker compose up -d` (todos precisam entrar de novo) |
-| A API fica em `Restarting` e o log diz "Não há administrador ativo no banco" | Banco novo (ou sem administrador ativo) e `ADMIN_EMAIL`/`ADMIN_SENHA` em branco no `.env` | Preencha os dois no `.env` e rode `docker compose up -d` |
-| `docker compose up` diz "Defina POSTGRES_PASSWORD" ou "Defina JWT_CHAVE" | O `.env` não existe ou ficou com esses campos em branco | Veja o Passo 4 da Parte 3 |
 | "port is already allocated" ao subir | Outro programa usa a porta 5432, 8080 ou 8082 | `docker stop vetcare-postgres`, ou mude `POSTGRES_PORT` / `WEB_PORT` / `ADMINER_PORT` no `.env` |
 | "Muitas tentativas" no login | Proteção contra ataque de senha | Espere 1 minuto |
 | "Conta bloqueada" no login | 5 senhas erradas seguidas (RN-006) | Espere 15 minutos, ou peça a um administrador para redefinir |
 | O celular não acha a API | Celular em outra rede | Conecte no mesmo Wi-Fi do computador |
 | "Esqueci minha senha" não manda e-mail | `SMTP_HOST` vazio no `.env` | O e-mail está em `emails-enviados` (Parte 5½); ou configure o servidor de e-mail |
 | O log da API diz que o servidor de e-mail recusou usuário ou senha | Senha normal da conta no lugar da "senha de app" | Gere a senha de app (Parte 5½) e rode `docker compose up -d api` |
-| O Gmail devolve "Endereço não encontrado" | O destinatário é um e-mail inventado | Cadastre o usuário com um e-mail que exista |
+| O Gmail devolve "Endereço não encontrado" | O destinatário é um e-mail inventado, como `admin@vetcare.com` | Cadastre o usuário com um e-mail que exista |
 | O celular não recebe notificações com o app fechado | Expo Go no Android, ou `projectId` ausente | Veja "Notificações no celular do tutor" na Parte 5½ |
 | Foto ou documento não abre e a API responde 403 | O link assinado expirou (dura 4 horas) | Recarregue a página do prontuário: os links são gerados de novo |
 | Tudo travou e você quer recomeçar | — | `docker compose down` e depois `docker compose up -d` (**sem** `-v`, senão apaga os dados) |
@@ -909,8 +877,8 @@ taskkill /PID 1234 /F
 | Portal web (desenvolvimento) | http://localhost:5173 |
 | API | http://localhost:5265 |
 | Saúde da API e do banco | http://localhost:5265/health/pronto |
-| Banco de dados | localhost:5432 — banco `vetcare_db`, usuário `postgres` (só nesta máquina) |
-| Adminer (ver o banco pelo navegador) | http://localhost:8082 — sistema PostgreSQL, servidor `postgres`, usuário e senha do `.env` (só nesta máquina) |
+| Banco de dados | localhost:5432 — banco `vetcare_db`, usuário `postgres` |
+| Adminer (ver o banco pelo navegador) | http://localhost:8082 — sistema PostgreSQL, servidor `postgres`, usuário e senha do `.env` |
 | Aplicativo (Expo/Metro) | http://localhost:8081 — no celular, use o QR Code |
 | E-mails gravados localmente | `docker compose exec api ls /app/emails-enviados` (ou `VetCare.API/emails-enviados` no modo desenvolvimento) |
 

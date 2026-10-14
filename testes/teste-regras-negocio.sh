@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Verificação ponta a ponta das regras de negócio do VetCare.
 source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
-exigir_variaveis ADMIN_EMAIL ADMIN_SENHA
 ok=0; falhou=0
 
 jsonval() { extrair "$1" "$2"; }
@@ -28,10 +27,10 @@ get()  { curl -s "$API$1" -H "Authorization: Bearer $2"; }
 
 echo "== Autenticação =="
 aguardar_limitador
-ADMIN=$(entrar "$ADMIN_EMAIL" "$ADMIN_SENHA")
+ADMIN=$(entrar admin@vetcare.com vetcare123)
 checa "HU-001 login do administrador" "." "$ADMIN"
 
-r=$(curl -s -X POST $API/api/usuarios/login -H 'Content-Type: application/json' -d "{\"email\":\"$ADMIN_EMAIL\",\"senha\":\"xxx\"}")
+r=$(curl -s -X POST $API/api/usuarios/login -H 'Content-Type: application/json' -d '{"email":"admin@vetcare.com","senha":"xxx"}')
 checa "HU-001 CA-2 mensagem genérica" "E-mail ou senha inválidos" "$r"
 
 r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/pets")

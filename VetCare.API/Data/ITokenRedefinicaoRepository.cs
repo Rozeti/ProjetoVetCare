@@ -13,14 +13,6 @@ namespace VetCare.API.Data
         /// <summary>Invalida pedidos anteriores para que apenas o último link e código funcionem.</summary>
         Task InvalidarAnteriores(Guid usuarioId);
 
-        Task<int> ContarCriadosDesde(Guid usuarioId, DateTime desde);
-
-        /// <summary>
-        /// Gasta uma tentativa de código antes da conferência. Devolve false quando outro
-        /// pedido gravou o contador ao mesmo tempo: só um dos dois pode seguir.
-        /// </summary>
-        Task<bool> ReservarTentativaDeCodigo(TokenRedefinicaoSenha token);
-
         void Atualizar(TokenRedefinicaoSenha token);
         Task SalvarAlteracoes();
     }

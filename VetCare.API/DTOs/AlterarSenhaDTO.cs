@@ -9,7 +9,7 @@ namespace VetCare.API.DTOs
         public string SenhaAtual { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Informe a nova senha.")]
-        [StringLength(64, MinimumLength = 8, ErrorMessage = "A nova senha deve ter no mínimo 8 caracteres.")]
+        [StringLength(64, MinimumLength = 6, ErrorMessage = "A nova senha deve ter no mínimo 6 caracteres.")]
         public string NovaSenha { get; set; } = string.Empty;
     }
 }

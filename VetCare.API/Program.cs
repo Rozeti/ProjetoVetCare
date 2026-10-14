@@ -80,18 +80,8 @@ builder.Services.AddCors(options =>
     });
 });
 
-// A string de conexão leva a senha do banco, então não fica no appsettings.json versionado.
-var conexaoDoBanco = builder.Configuration.GetConnectionString("DefaultConnection");
-
-if (string.IsNullOrWhiteSpace(conexaoDoBanco))
-{
-    throw new InvalidOperationException(
-        "Configure ConnectionStrings:DefaultConnection com dotnet user-secrets (desenvolvimento) " +
-        "ou na variável de ambiente ConnectionStrings__DefaultConnection.");
-}
-
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(conexaoDoBanco));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // RNF-005: o monitoramento precisa distinguir a aplicação no ar do banco acessível.
 builder.Services.AddHealthChecks()
@@ -108,9 +98,10 @@ builder.Services.AddHostedService<EntregadorDeNotificacoes>();
 
 var chaveJwt = builder.Configuration["Jwt:Chave"];
 
-if (TokenService.ValidarChave(chaveJwt) is { } erroDaChave)
+if (string.IsNullOrWhiteSpace(chaveJwt) || Encoding.UTF8.GetByteCount(chaveJwt) < 32)
 {
-    throw new InvalidOperationException(erroDaChave);
+    throw new InvalidOperationException(
+        "Configure Jwt:Chave com pelo menos 32 bytes em appsettings.json ou na variável de ambiente Jwt__Chave.");
 }
 
 var emissorJwt = builder.Configuration["Jwt:Emissor"] is { Length: > 0 } emissor ? emissor : TokenService.EmissorPadrao;
@@ -128,7 +119,7 @@ builder.Services.AddAuthentication(x =>
     x.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(chaveJwt!)),
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(chaveJwt)),
         ValidateIssuer = true,
         ValidIssuer = emissorJwt,
         ValidateAudience = true,
@@ -262,9 +253,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Toda ação exige login, a menos que declare [AllowAnonymous]: um controller novo que
-// esqueça o [Authorize] fica fechado em vez de aberto.
-app.MapControllers().RequireAuthorization();
+app.MapControllers();
 
 // Verificação superficial: a aplicação respondeu.
 app.MapHealthChecks("/health", new HealthCheckOptions
@@ -421,12 +410,13 @@ static async Task PrepararBancoDeDados(WebApplication aplicacao)
 
     const int tentativasMaximas = 10;
 
-    for (var tentativa = 1; ; tentativa++)
+    for (var tentativa = 1; tentativa <= tentativasMaximas; tentativa++)
     {
         try
         {
             await contexto.Database.MigrateAsync();
-            break;
+            await SeedInicial.Executar(aplicacao.Services);
+            return;
         }
         catch (Exception excecao) when (tentativa < tentativasMaximas)
         {
@@ -436,20 +426,14 @@ static async Task PrepararBancoDeDados(WebApplication aplicacao)
 
             await Task.Delay(TimeSpan.FromSeconds(3));
         }
-        catch (Exception excecao)
-        {
-            logger.LogError(
-                "Não foi possível preparar o banco de dados após {Total} tentativas. " +
-                "Verifique se o PostgreSQL está acessível na connection string configurada.",
-                tentativasMaximas);
-
-            throw new InvalidOperationException("Banco de dados indisponível na inicialização da API.", excecao);
-        }
     }
 
-    // Fora das novas tentativas: com o banco no ar, uma falha aqui é de configuração (a conta
-    // inicial de administrador), e repeti-la só atrasaria a mensagem que diz o que corrigir.
-    await SeedInicial.Executar(aplicacao.Services);
+    logger.LogError(
+        "Não foi possível preparar o banco de dados após {Total} tentativas. " +
+        "Verifique se o PostgreSQL está acessível na connection string configurada.",
+        tentativasMaximas);
+
+    throw new InvalidOperationException("Banco de dados indisponível na inicialização da API.");
 }
 
 // Deixa claro no log, logo na subida, como e-mail, push e fuso estão configurados.

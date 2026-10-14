@@ -3,18 +3,11 @@
 # equipe completa, pacientes, tratamento, histórico clínico, carteira de
 # vacinação, receita e alertas clínicos.
 #
-# Use apenas em ambiente de avaliação: todas as contas criadas recebem a mesma senha.
-# Nenhuma senha fica no repositório: o administrador é o do .env (ADMIN_EMAIL e
-# ADMIN_SENHA) e SENHA_DEMO, a senha das contas de demonstração, vem do ambiente.
+# Use apenas em ambiente de avaliação: as contas criadas têm senha conhecida.
 set -u
-source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
-exigir_variaveis ADMIN_EMAIL ADMIN_SENHA SENHA_DEMO
 
-if [ "${#SENHA_DEMO}" -lt 8 ]; then
-  echo "SENHA_DEMO precisa ter pelo menos 8 caracteres." >&2
-  exit 1
-fi
-
+API="${API_URL:-http://localhost:5265}"
+SENHA_DEMO="${SENHA_DEMO:-vetcare123}"
 CORPO=$(mktemp)
 
 # O Git Bash corrompe bytes UTF-8 passados como argumento para o curl.exe, então
@@ -30,10 +23,10 @@ dias() { date -u -d "$1 days" +%Y-%m-%d; }
 quando() { date -u -d "$1 days $2" +%Y-%m-%dT%H:%M:%S; }
 
 ADMIN=$(val "$(curl -s -X POST "$API/api/usuarios/login" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$ADMIN_EMAIL\",\"senha\":\"$ADMIN_SENHA\"}")" token)
+  -d "{\"email\":\"admin@vetcare.com\",\"senha\":\"$SENHA_DEMO\"}")" token)
 
 if [ -z "$ADMIN" ]; then
-  echo "Falha ao autenticar $ADMIN_EMAIL. A API está no ar e ADMIN_SENHA é a senha atual do administrador?"
+  echo "Falha ao autenticar admin@vetcare.com. A API está no ar e a senha é '$SENHA_DEMO'?"
   exit 1
 fi
 
@@ -113,4 +106,4 @@ echo "  receita com 2 medicamentos emitida"
 
 echo
 echo "Dados de demonstração criados."
-echo "Acessos de demonstração (senha informada em SENHA_DEMO): veterinario@ / apoio@ / tutor@vetcare.com"
+echo "Acessos (senha '$SENHA_DEMO'): admin@ / veterinario@ / apoio@ / tutor@vetcare.com"

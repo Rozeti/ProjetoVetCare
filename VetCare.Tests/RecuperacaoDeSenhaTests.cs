@@ -1,6 +1,4 @@
-using System.Net;
 using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
 using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
@@ -79,70 +77,6 @@ namespace VetCare.Tests
             Contexto.TokensRedefinicaoSenha.Should().ContainSingle(t => t.UsuarioId == UsuarioTutor.Id,
                 "o pedido existe mesmo que só o e-mail o entregue");
             _fila.Pendentes.Should().Be(1);
-        }
-
-        [Fact]
-        public async Task Em_desenvolvimento_pedido_vindo_da_rede_nao_recebe_as_credenciais()
-        {
-            var casoDeUso = new RecuperarSenhaUseCase(
-                new UsuarioRepository(Contexto),
-                new TokenRedefinicaoRepository(Contexto),
-                _hasher,
-                Dependencias.Auditoria(Contexto, ComoAdministrador()),
-                Dependencias.Contas(Contexto, _fila, "Development", IPAddress.Parse("192.168.0.20")));
-
-            var resultado = await casoDeUso.Solicitar(new SolicitarRecuperacaoDTO { Email = UsuarioAdministrador.Email });
-
-            resultado.Dados!.TokenDesenvolvimento.Should().BeNull("outra máquina da rede redefiniria a senha de qualquer conta");
-            resultado.Dados.CodigoDesenvolvimento.Should().BeNull();
-            _fila.Pendentes.Should().Be(1, "o e-mail continua saindo normalmente");
-        }
-
-        [Fact]
-        public async Task Pedidos_alem_do_limite_por_hora_nao_geram_novo_codigo()
-        {
-            var casoDeUso = CriarCasoDeUso();
-
-            for (var pedido = 0; pedido < RecuperarSenhaUseCase.MaximoDePedidosPorHora; pedido++)
-            {
-                var aceito = await casoDeUso.Solicitar(new SolicitarRecuperacaoDTO { Email = UsuarioTutor.Email });
-                aceito.Dados!.CodigoDesenvolvimento.Should().NotBeNull();
-            }
-
-            var excedente = await casoDeUso.Solicitar(new SolicitarRecuperacaoDTO { Email = UsuarioTutor.Email });
-
-            excedente.Sucesso.Should().BeTrue("a resposta não pode revelar que o teto foi atingido");
-            excedente.Dados!.Mensagem.Should().Contain("Se houver uma conta");
-            excedente.Dados.CodigoDesenvolvimento.Should().BeNull();
-            Contexto.TokensRedefinicaoSenha.Count(t => t.UsuarioId == UsuarioTutor.Id)
-                .Should().Be(RecuperarSenhaUseCase.MaximoDePedidosPorHora);
-        }
-
-        [Fact]
-        public async Task Tentativa_simultanea_perde_a_vez_sem_ter_o_codigo_conferido()
-        {
-            var casoDeUso = CriarCasoDeUso();
-            var pedido = await casoDeUso.Solicitar(new SolicitarRecuperacaoDTO { Email = UsuarioTutor.Email });
-
-            // Outra requisição grava o contador entre a leitura e a gravação desta.
-            await using (var outraRequisicao = new AppDbContext(OpcoesDoBanco))
-            {
-                var registro = await outraRequisicao.TokensRedefinicaoSenha
-                    .SingleAsync(t => t.UsuarioId == UsuarioTutor.Id && t.UtilizadoEm == null);
-
-                registro.TentativasDeCodigo++;
-                await outraRequisicao.SaveChangesAsync();
-            }
-
-            var resultado = await casoDeUso.Redefinir(new RedefinirSenhaDTO
-            {
-                Email = UsuarioTutor.Email, Codigo = pedido.Dados!.CodigoDesenvolvimento, NovaSenha = "Simultanea1"
-            });
-
-            resultado.Sucesso.Should().BeFalse("quem perde a disputa pelo contador não chega a conferir o código");
-
-            var usuario = await Contexto.Usuarios.FindAsync(UsuarioTutor.Id);
-            _hasher.Verificar("Simultanea1", usuario!.SenhaHash, out _).Should().BeFalse();
         }
 
         [Fact]

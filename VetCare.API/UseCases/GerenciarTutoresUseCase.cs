@@ -101,13 +101,6 @@ namespace VetCare.API.UseCases
                     return Resultado<TutorDTO>.NaoEncontrado("Usuário informado não encontrado.");
                 }
 
-                // Sem isso, pets e avisos de tutor poderiam ser apontados para a conta de um
-                // administrador ou de um veterinário.
-                if (existente.Perfil != Perfis.Tutor)
-                {
-                    return Resultado<TutorDTO>.Invalido("O usuário informado não tem perfil de tutor.");
-                }
-
                 if (await _tutores.ObterPorUsuarioId(existente.Id) != null)
                 {
                     return Resultado<TutorDTO>.Conflito("Este usuário já possui um cadastro de tutor.");

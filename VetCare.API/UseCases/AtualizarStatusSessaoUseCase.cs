@@ -54,13 +54,9 @@ namespace VetCare.API.UseCases
                 return Resultado.NaoEncontrado("Sessão não encontrada.");
             }
 
-            // Uma sessão cancelada já liberou o horário: trazê-la de volta passaria por cima das
-            // verificações de conflito, bloqueio e veterinário responsável feitas no agendamento.
-            if (StatusSessao.Encerrada(sessao.Status))
+            if (sessao.Status == StatusSessao.Concluida)
             {
-                return Resultado.Conflito(sessao.Status == StatusSessao.Concluida
-                    ? "Esta sessão já foi concluída e não pode mais ser alterada."
-                    : "Esta sessão foi cancelada e não pode mais ser alterada. Agende uma nova sessão.");
+                return Resultado.Conflito("Esta sessão já foi concluída e não pode mais ser alterada.");
             }
 
             if (sessao.Status == novoStatus)

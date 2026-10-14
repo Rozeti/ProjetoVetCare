@@ -51,10 +51,6 @@ namespace VetCare.API.Controllers
             // Links assinados expiram, então o navegador pode guardar o arquivo por um tempo.
             Response.Headers.CacheControl = "private, max-age=3600";
 
-            // O tipo vem da extensão, que só admite imagem, vídeo e documento. Sem adivinhação
-            // do navegador, um arquivo disfarçado de .jpg nunca é aberto como página.
-            Response.Headers.XContentTypeOptions = "nosniff";
-
             return PhysicalFile(caminho, tipo, enableRangeProcessing: true);
         }
     }

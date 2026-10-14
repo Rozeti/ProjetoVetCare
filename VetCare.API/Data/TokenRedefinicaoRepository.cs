@@ -42,28 +42,6 @@ namespace VetCare.API.Data
             }
         }
 
-        public async Task<int> ContarCriadosDesde(Guid usuarioId, DateTime desde) =>
-            await _context.TokensRedefinicaoSenha.CountAsync(t => t.UsuarioId == usuarioId && t.DataCriacao >= desde);
-
-        public async Task<bool> ReservarTentativaDeCodigo(TokenRedefinicaoSenha token)
-        {
-            // TentativasDeCodigo é token de concorrência (AppDbContext): o UPDATE só passa se
-            // o contador ainda tiver o valor lido, então requisições simultâneas não chutam
-            // todas com o mesmo saldo de tentativas.
-            token.TentativasDeCodigo++;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return true;
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                _context.Entry(token).State = EntityState.Detached;
-                return false;
-            }
-        }
-
         public void Atualizar(TokenRedefinicaoSenha token) => _context.TokensRedefinicaoSenha.Update(token);
 
         public async Task SalvarAlteracoes() => await _context.SaveChangesAsync();

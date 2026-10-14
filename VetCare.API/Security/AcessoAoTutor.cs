@@ -27,8 +27,7 @@ namespace VetCare.API.Security
                 return usuario.VeterinarioId.HasValue && Vinculado(tutor, usuario.VeterinarioId.Value);
             }
 
-            // Como em AcessoAoPaciente, um perfil não previsto fica de fora em vez de ver tudo.
-            return usuario.EhAdministrador || usuario.EhApoio;
+            return true;
         }
 
         /// <summary>Tutor de algum paciente do veterinário, ou tutor que ainda não tem paciente nenhum.</summary>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, KeyRound, Loader2, Mail, MailCheck, Stethoscope } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
@@ -20,16 +20,8 @@ type Etapa = 'solicitar' | 'redefinir';
  * define a nova senha, uma única vez e dentro do prazo.
  */
 export function RecuperarSenha({ primeiroAcesso = false }: Props) {
-  const [parametros, setParametros] = useSearchParams();
-  const [tokenDaUrl] = useState(() => parametros.get('token') ?? '');
-
-  // O token vale como senha até ser usado: lido uma vez, sai da barra de endereço para
-  // não ficar no histórico do navegador de um computador compartilhado.
-  useEffect(() => {
-    if (parametros.has('token')) {
-      setParametros({}, { replace: true });
-    }
-  }, [parametros, setParametros]);
+  const [parametros] = useSearchParams();
+  const tokenDaUrl = parametros.get('token') ?? '';
 
   const [etapa, setEtapa] = useState<Etapa>(tokenDaUrl ? 'redefinir' : 'solicitar');
   const [email, setEmail] = useState('');
@@ -88,8 +80,8 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
       return;
     }
 
-    if (novaSenha.length < 8) {
-      setErro('A nova senha deve ter no mínimo 8 caracteres.');
+    if (novaSenha.length < 6) {
+      setErro('A nova senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
@@ -245,7 +237,7 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
                     autoComplete="new-password"
                     disabled={enviando}
                   />
-                  <p className="mt-1 text-xs text-slate-500">Mínimo de 8 caracteres.</p>
+                  <p className="mt-1 text-xs text-slate-500">Mínimo de 6 caracteres.</p>
                 </div>
 
                 <div>

@@ -211,14 +211,7 @@ export function imprimirProntuario(prontuario: Prontuario, nomeClinica: string) 
 /** Exportação de dados tabulares para planilha. */
 export function baixarCsv(nomeArquivo: string, cabecalhos: string[], linhas: (string | number)[][]) {
   const escaparCampo = (valor: string | number) => {
-    let texto = String(valor ?? '');
-
-    // Texto que começa com = + - @ vira fórmula no Excel: um nome cadastrado como
-    // =HIPERLINK(...) rodaria na planilha de quem exporta. O apóstrofo o mantém como texto.
-    if (typeof valor === 'string' && /^[=+\-@\t\r]/.test(texto)) {
-      texto = `'${texto}`;
-    }
-
+    const texto = String(valor ?? '');
     return /[";\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
   };
 
