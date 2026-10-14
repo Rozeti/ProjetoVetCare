@@ -23,7 +23,8 @@ namespace VetCare.API.Common
             set => _tamanho = value < 1 ? TamanhoPadrao : Math.Min(value, TamanhoMaximo);
         }
 
-        public int PaginaSegura => Pagina < 1 ? 1 : Pagina;
+        // O teto evita que (Pagina - 1) * Tamanho estoure o int e vire um OFFSET negativo.
+        public int PaginaSegura => Math.Clamp(Pagina, 1, 1_000_000);
 
         public int Pular => (PaginaSegura - 1) * Tamanho;
     }

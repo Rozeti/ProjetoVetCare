@@ -67,6 +67,14 @@ namespace VetCare.API.UseCases
                     "Tutores podem trocar mensagens apenas com a equipe da clínica.");
             }
 
+            // O veterinário fala com os tutores dos seus pacientes, os mesmos que aparecem nos
+            // contatos dele. Se o tutor escreveu primeiro, a resposta também é permitida.
+            if (_usuarioAtual.EhVeterinario && destinatario.Perfil == Perfis.Tutor && !await PodeEscreverAoTutor(destinatario.Id))
+            {
+                return Resultado<MensagemDTO>.NaoAutorizado(
+                    "Você só pode iniciar conversas com tutores dos pacientes sob sua responsabilidade.");
+            }
+
             var mensagem = new Mensagem
             {
                 RemetenteId = _usuarioAtual.Id,
@@ -82,6 +90,21 @@ namespace VetCare.API.UseCases
             await _notificacoes.NotificarNovaMensagem(dto.DestinatarioId, _usuarioAtual.Nome, mensagem.Conteudo);
 
             return Resultado<MensagemDTO>.Ok(MapearParaDTO(mensagem, _usuarioAtual.Id, _usuarioAtual.Nome));
+        }
+
+        private async Task<bool> PodeEscreverAoTutor(Guid usuarioDoTutorId)
+        {
+            if (_usuarioAtual.VeterinarioId.HasValue)
+            {
+                var tutores = await _tutores.ListarTodos(_usuarioAtual.ClinicaId, _usuarioAtual.VeterinarioId);
+
+                if (tutores.Any(t => t.UsuarioId == usuarioDoTutorId))
+                {
+                    return true;
+                }
+            }
+
+            return (await _mensagens.ObterConversa(_usuarioAtual.Id, usuarioDoTutorId)).Count > 0;
         }
 
         /// <summary>HU-014, CA-2: lista de conversas com status e contador de não lidas.</summary>

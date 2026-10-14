@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Microsoft.Extensions.Options;
 
@@ -35,8 +36,8 @@ namespace VetCare.API.Services.Email
 
             var conteudo = new StringBuilder()
                 .AppendLine("<!-- VetCare: e-mail gravado localmente porque nenhum servidor SMTP está configurado. -->")
-                .AppendLine($"<!-- Para: {mensagem.NomeDestinatario} <{mensagem.Destinatario}> -->")
-                .AppendLine($"<!-- Assunto: {mensagem.Assunto} -->")
+                .AppendLine($"<!-- Para: {ParaComentario(mensagem.NomeDestinatario)} <{ParaComentario(mensagem.Destinatario)}> -->")
+                .AppendLine($"<!-- Assunto: {ParaComentario(mensagem.Assunto)} -->")
                 .AppendLine($"<!-- Em: {DateTime.Now:dd/MM/yyyy HH:mm:ss} -->")
                 .Append(mensagem.CorpoHtml)
                 .ToString();
@@ -47,6 +48,13 @@ namespace VetCare.API.Services.Email
                 "E-mail \"{Assunto}\" para {Destinatario} gravado em {Caminho} (nenhum servidor SMTP configurado).",
                 mensagem.Assunto, mensagem.Destinatario, caminho);
         }
+
+        /// <summary>
+        /// Nome e assunto podem trazer texto digitado por usuários. Codificados e sem "--",
+        /// não fecham o comentário nem viram HTML ao abrir o arquivo no navegador.
+        /// </summary>
+        private static string ParaComentario(string? texto) =>
+            WebUtility.HtmlEncode(texto ?? string.Empty).Replace("--", "- -");
 
         private static string Simplificar(string texto)
         {

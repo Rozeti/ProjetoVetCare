@@ -19,6 +19,10 @@ FROM nginx:alpine AS final
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# A política de conteúdo (CSP) do nginx.conf só libera a API que entrou no bundle.
+ARG VITE_API_URL=http://localhost:5265
+RUN sed -i "s|__API_URL__|${VITE_API_URL}|g" /etc/nginx/conf.d/default.conf
+
 EXPOSE 80
 
 # O endereço vai literal em IPv4: o nginx escuta apenas em 0.0.0.0 e o wget do

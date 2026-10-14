@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Options;
 using VetCare.API.Data;
 using VetCare.API.Models;
@@ -28,27 +29,53 @@ namespace VetCare.API.Services
         private readonly ModelosDeEmail _modelos;
         private readonly OpcoesDeEmail _opcoesDeEmail;
         private readonly IWebHostEnvironment _ambiente;
+        private readonly IHttpContextAccessor _http;
 
         public ContasService(
             ITokenRedefinicaoRepository tokens,
             FilaDeEmails fila,
             ModelosDeEmail modelos,
             IOptions<OpcoesDeEmail> opcoesDeEmail,
-            IWebHostEnvironment ambiente)
+            IWebHostEnvironment ambiente,
+            IHttpContextAccessor http)
         {
             _tokens = tokens;
             _fila = fila;
             _modelos = modelos;
             _opcoesDeEmail = opcoesDeEmail.Value;
             _ambiente = ambiente;
+            _http = http;
         }
 
         /// <summary>
         /// Em desenvolvimento e sem servidor SMTP, as credenciais voltam na própria resposta
-        /// da API para o fluxo poder ser percorrido sem abrir a caixa de saída local. Em
-        /// produção isso nunca acontece: o único caminho é o e-mail.
+        /// da API para o fluxo poder ser percorrido sem abrir a caixa de saída local, mas só
+        /// para pedidos feitos da própria máquina: uma API de desenvolvimento acessível pela
+        /// rede entregaria a qualquer vizinho o link que redefine a senha de qualquer conta.
+        /// Em produção isso nunca acontece: o único caminho é o e-mail.
         /// </summary>
-        public bool ExporCredenciaisNaResposta => _ambiente.IsDevelopment() && !_opcoesDeEmail.SmtpConfigurado;
+        public bool ExporCredenciaisNaResposta =>
+            _ambiente.IsDevelopment() && !_opcoesDeEmail.SmtpConfigurado && PedidoDaPropriaMaquina();
+
+        private bool PedidoDaPropriaMaquina()
+        {
+            var origem = _http.HttpContext?.Connection.RemoteIpAddress;
+
+            if (origem is { IsIPv4MappedToIPv6: true })
+            {
+                origem = origem.MapToIPv4();
+            }
+
+            return origem != null && IPAddress.IsLoopback(origem);
+        }
+
+        /// <summary>
+        /// Pedidos de redefinição gerados para o usuário na última hora. Cada pedido traz
+        /// tentativas novas de código, então sem um teto pedir e chutar em ciclo acabaria
+        /// acertando os seis dígitos.
+        /// </summary>
+        public Task<int> PedidosRecentes(Usuario usuario) =>
+            _tokens.ContarCriadosDesde(usuario.Id, DateTime.UtcNow.AddHours(-1));
 
         public async Task<CredenciaisEmitidas> EnviarRecuperacaoDeSenha(Usuario usuario)
         {

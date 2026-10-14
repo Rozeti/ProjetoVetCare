@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "br.com.vetcare.tutor",
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

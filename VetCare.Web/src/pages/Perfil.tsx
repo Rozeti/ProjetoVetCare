@@ -318,7 +318,7 @@ export function Perfil() {
               />
             </Campo>
 
-            <Campo rotulo="Nova senha" obrigatorio dica="Mínimo de 6 caracteres.">
+            <Campo rotulo="Nova senha" obrigatorio dica="Mínimo de 8 caracteres.">
               <input
                 type="password"
                 className="vc-campo"

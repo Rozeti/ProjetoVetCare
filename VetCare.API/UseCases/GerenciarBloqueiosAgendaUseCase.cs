@@ -49,6 +49,13 @@ namespace VetCare.API.UseCases
                 return Resultado<List<BloqueioAgendaDTO>>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
             }
 
+            // RN-008: os bloqueios trazem o motivo da ausência; como a agenda, são do próprio
+            // veterinário, e os de um colega são assunto da administração e do apoio.
+            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != id)
+            {
+                return Resultado<List<BloqueioAgendaDTO>>.NaoAutorizado("Você só pode consultar os bloqueios da sua própria agenda.");
+            }
+
             var bloqueios = await _bloqueios.ObterPorPeriodo(id.Value, inicio, fim);
 
             return Resultado<List<BloqueioAgendaDTO>>.Ok(bloqueios.Select(b => MapearParaDTO(b, veterinario)).ToList());

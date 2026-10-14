@@ -9,6 +9,7 @@
 # acordar — em vez de confiar que "deve funcionar".
 set -u
 source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
+exigir_variaveis ADMIN_EMAIL ADMIN_SENHA SENHA_DEMO
 ok=0; falhou=0
 CORPO=$(mktemp)
 
@@ -37,10 +38,10 @@ versao_do_mural() {
 agora_ms() { date +%s%3N; }
 
 aguardar_limitador
-TK_ADMIN=$(entrar admin@vetcare.com vetcare123)
-TK_TUTOR=$(entrar tutor@vetcare.com vetcare123)
-TK_VET=$(entrar veterinario@vetcare.com vetcare123)
-TK_APOIO=$(entrar apoio@vetcare.com vetcare123)
+TK_ADMIN=$(entrar "$ADMIN_EMAIL" "$ADMIN_SENHA")
+TK_TUTOR=$(entrar tutor@vetcare.com "$SENHA_DEMO")
+TK_VET=$(entrar veterinario@vetcare.com "$SENHA_DEMO")
+TK_APOIO=$(entrar apoio@vetcare.com "$SENHA_DEMO")
 
 echo "== Cadastro de pet pelo próprio tutor =="
 

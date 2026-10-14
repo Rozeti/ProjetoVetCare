@@ -9,7 +9,7 @@ namespace VetCare.API.Security
     /// </summary>
     public class PasswordHasher
     {
-        public const int TamanhoMinimoDaSenha = 6;
+        public const int TamanhoMinimoDaSenha = 8;
         public const int TamanhoMaximoDaSenha = 64;
 
         private const int Iteracoes = 210_000;

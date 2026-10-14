@@ -124,14 +124,10 @@ namespace VetCare.API.Services
                 return string.Empty;
             }
 
-            // Atrás de proxy reverso o IP real chega no cabeçalho encaminhado.
-            var encaminhado = contexto.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-
-            if (!string.IsNullOrWhiteSpace(encaminhado))
-            {
-                return Limitar(encaminhado.Split(',')[0].Trim(), 60);
-            }
-
+            // Só o endereço da conexão: o cabeçalho X-Forwarded-For é escrito por quem faz a
+            // requisição, e aceitá-lo deixaria um atacante registrar o IP que quisesse na
+            // trilha de auditoria. Atrás de um proxy reverso, quem traduz o cabeçalho é o
+            // UseForwardedHeaders configurado com os proxies conhecidos.
             return Limitar(contexto.Connection.RemoteIpAddress?.ToString() ?? string.Empty, 60);
         }
 

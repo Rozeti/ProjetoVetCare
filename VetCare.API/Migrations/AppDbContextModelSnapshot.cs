@@ -872,6 +872,7 @@ namespace VetCare.API.Migrations
                         .HasColumnType("character varying(20)");
 
                     b.Property<int>("TentativasDeCodigo")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer");
 
                     b.Property<string>("TokenHash")

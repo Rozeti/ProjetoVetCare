@@ -28,7 +28,18 @@ cd VetCare.API && dotnet run
 cd VetCare.Web && npm run dev
 ```
 
-E, como o banco nasce apenas com a conta de Administrador, crie o cenário de avaliação:
+Os roteiros não guardam senha nenhuma. Antes de rodá-los, informe no mesmo terminal a conta
+de administrador (a do `.env`, em `ADMIN_EMAIL` e `ADMIN_SENHA`) e a senha que as contas de
+demonstração vão receber (`SENHA_DEMO`, com pelo menos 8 caracteres e sem aspas):
+
+```bash
+export ADMIN_EMAIL='o ADMIN_EMAIL do .env'
+export ADMIN_SENHA='a senha atual do administrador'
+export SENHA_DEMO='uma senha só para as contas de demonstração'
+```
+
+Sem elas, cada roteiro para logo no início dizendo qual falta. E, como o banco nasce apenas
+com a conta de Administrador, crie o cenário de avaliação:
 
 ```bash
 bash testes/criar-dados-demonstracao.sh
@@ -115,7 +126,7 @@ servido pelo Docker, ou para o IP da máquina na rede local:
 
 ```bash
 WEB_URL=http://localhost:8080 PACIENTE_DEMO=Nina \
-  EMAIL_TUTOR=outro@vetcare.com SENHA_TUTOR=senha \
+  EMAIL_TUTOR=outro@vetcare.com SENHA_TUTOR='a senha desse tutor' \
   node testes/teste-navegador.mjs ./capturas
 ```
 
@@ -129,7 +140,8 @@ pós-cirúrgico, avaliação clínica, três atendimentos com evolução de peso
 sessões futuras aguardando confirmação, receita com dois medicamentos e observações
 internas restritas.
 
-As contas criadas usam a senha `vetcare123` e servem apenas para avaliação do sistema.
+As contas criadas (`veterinario@`, `apoio@` e `tutor@vetcare.com`) usam a senha informada em
+`SENHA_DEMO` e servem apenas para avaliação do sistema.
 **Não execute este script em um ambiente real.**
 
 ## Testes unitários

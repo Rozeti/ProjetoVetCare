@@ -7,6 +7,23 @@
 
 API="${API_URL:-http://localhost:5265}"
 
+# Nenhuma senha fica no repositório. A conta de administrador é a do .env (ADMIN_EMAIL e
+# ADMIN_SENHA) e SENHA_DEMO é a senha que criar-dados-demonstracao.sh deu às contas de
+# demonstração; as três vêm do ambiente.
+# Uso: exigir_variaveis ADMIN_EMAIL ADMIN_SENHA SENHA_DEMO
+exigir_variaveis() {
+  local nome faltando=""
+
+  for nome in "$@"; do
+    [ -n "${!nome:-}" ] || faltando="$faltando $nome"
+  done
+
+  if [ -n "$faltando" ]; then
+    echo "Defina antes de rodar:$faltando (veja testes/README.md)." >&2
+    exit 1
+  fi
+}
+
 # Primeiro valor textual de uma chave JSON. Sem greediness: com envelope paginado, um
 # casamento guloso devolveria o campo de um objeto aninhado em vez do primeiro item.
 extrair() { grep -o "\"$2\":\"[^\"]*\"" <<<"$1" | head -1 | sed 's/.*":"//; s/"$//'; }

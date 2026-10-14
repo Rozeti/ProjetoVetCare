@@ -6,6 +6,12 @@
 
 @host = http://localhost:5265
 
+# A conta de administrador vem das variáveis de ambiente ADMIN_EMAIL e ADMIN_SENHA (as
+# mesmas do .env): nenhuma senha fica escrita no repositório. As contas criadas abaixo não
+# recebem senha; cada pessoa define a sua pelo convite de primeiro acesso enviado por e-mail.
+@adminEmail = {{$processEnv ADMIN_EMAIL}}
+@adminSenha = {{$processEnv ADMIN_SENHA}}
+
 # Datas relativas: o cliente REST calcula no momento da execução, então o arquivo não
 # envelhece. A sessão é marcada para daqui a 7 dias às 14h (dentro do expediente padrão).
 @diaDaSessao = {{$datetime "YYYY-MM-DD" 7 d}}
@@ -21,8 +27,8 @@ POST {{host}}/api/usuarios/login
 Content-Type: application/json
 
 {
-  "email": "admin@vetcare.com",
-  "senha": "vetcare123"
+  "email": "{{adminEmail}}",
+  "senha": "{{adminSenha}}"
 }
 
 @token = {{login.response.body.token}}
@@ -32,7 +38,7 @@ POST {{host}}/api/usuarios/login
 Content-Type: application/json
 
 {
-  "email": "admin@vetcare.com",
+  "email": "{{adminEmail}}",
   "senha": "senha-errada"
 }
 
@@ -60,7 +66,6 @@ Authorization: Bearer {{token}}
 {
   "nome": "Dr. Rafael Nunes",
   "email": "rafael@vetcare.com",
-  "senha": "senha123",
   "perfil": "Veterinario",
   "crmv": "CRMV-DF 55110",
   "especialidade": "Fisioterapia veterinária"
@@ -76,7 +81,6 @@ Authorization: Bearer {{token}}
 {
   "nome": "Duplicado",
   "email": "rafael@vetcare.com",
-  "senha": "senha123",
   "perfil": "Veterinario",
   "crmv": "CRMV-DF 00000"
 }
@@ -90,7 +94,6 @@ Authorization: Bearer {{token}}
 {
   "nome": "Joana Prado",
   "email": "joana@vetcare.com",
-  "senha": "senha123",
   "perfil": "Tutor",
   "telefone": "(61) 98888-7777",
   "endereco": "Taguatinga, Brasília - DF"

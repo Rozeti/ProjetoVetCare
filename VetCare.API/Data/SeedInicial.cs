@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using VetCare.API.Models;
 using VetCare.API.Security;
@@ -11,10 +12,6 @@ namespace VetCare.API.Data
     /// </summary>
     public static class SeedInicial
     {
-        /// <summary>Usados quando <c>Seed:EmailAdministrador</c> e <c>Seed:SenhaAdministrador</c> não estão configurados.</summary>
-        public const string EmailAdministradorPadrao = "admin@vetcare.com";
-        public const string SenhaAdministradorPadrao = "vetcare123";
-
         public static async Task Executar(IServiceProvider provedor)
         {
             using var escopo = provedor.CreateScope();
@@ -56,6 +53,9 @@ namespace VetCare.API.Data
         /// Sem um administrador ninguém consegue cadastrar usuários (HU-002), o que
         /// deixaria o sistema inacessível. Por isso a conta é recriada sempre que
         /// nenhuma existir, e não apenas no primeiro start.
+        /// O código não traz e-mail nem senha padrão: uma senha escrita aqui seria pública
+        /// junto com o repositório. Quem instala informa as duas em Seed:EmailAdministrador
+        /// e Seed:SenhaAdministrador (ADMIN_EMAIL e ADMIN_SENHA no .env do Docker).
         /// </summary>
         private static async Task GarantirAdministrador(
             AppDbContext context,
@@ -69,12 +69,28 @@ namespace VetCare.API.Data
                 return;
             }
 
-            var email = (configuracao["Seed:EmailAdministrador"] is { Length: > 0 } e ? e : EmailAdministradorPadrao)
-                .Trim()
-                .ToLowerInvariant();
+            var email = configuracao["Seed:EmailAdministrador"]?.Trim().ToLowerInvariant();
+            var senha = configuracao["Seed:SenhaAdministrador"];
 
-            var senha = configuracao["Seed:SenhaAdministrador"] is { Length: > 0 } s ? s : SenhaAdministradorPadrao;
-            var senhaEhPadrao = senha == SenhaAdministradorPadrao;
+            // Subir sem administrador deixaria o sistema no ar e inacessível; parar aqui
+            // põe no log o que falta configurar.
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(senha))
+            {
+                throw new InvalidOperationException(
+                    "Não há administrador ativo no banco e a conta inicial não foi configurada. Defina ADMIN_EMAIL e " +
+                    "ADMIN_SENHA no arquivo .env (Docker) ou Seed:EmailAdministrador e Seed:SenhaAdministrador " +
+                    "(dotnet user-secrets) e reinicie a API.");
+            }
+
+            if (!new EmailAddressAttribute().IsValid(email))
+            {
+                throw new InvalidOperationException($"ADMIN_EMAIL (Seed:EmailAdministrador) não é um e-mail válido: {email}.");
+            }
+
+            if (PasswordHasher.ValidarForca(senha) is { } erroDaSenha)
+            {
+                throw new InvalidOperationException($"ADMIN_SENHA (Seed:SenhaAdministrador) foi recusada. {erroDaSenha}");
+            }
 
             if (await context.Usuarios.AnyAsync(u => u.Email == email))
             {
@@ -97,12 +113,11 @@ namespace VetCare.API.Data
 
             await context.SaveChangesAsync();
 
-            // A senha nunca vai para o log: a padrão está na documentação, e a configurada
-            // só quem a definiu conhece.
+            // A senha nunca vai para o log: só quem a definiu a conhece.
             logger.LogWarning(
-                "Conta de administrador criada para {Email} {Origem}. Altere a senha no primeiro acesso.",
-                email,
-                senhaEhPadrao ? "com a senha padrão da documentação" : "com a senha definida em Seed:SenhaAdministrador");
+                "Conta de administrador criada para {Email} com a senha definida em Seed:SenhaAdministrador. " +
+                "Altere a senha no primeiro acesso e apague ADMIN_SENHA do .env.",
+                email);
         }
     }
 }

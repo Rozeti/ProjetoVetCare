@@ -84,8 +84,8 @@ export function RecuperarSenha() {
       return;
     }
 
-    if (novaSenha.length < 6) {
-      setErro('A nova senha deve ter no mínimo 6 caracteres.');
+    if (novaSenha.length < 8) {
+      setErro('A nova senha deve ter no mínimo 8 caracteres.');
       return;
     }
 
@@ -210,7 +210,7 @@ export function RecuperarSenha() {
                 <Text style={estilos.rotulo}>Nova senha</Text>
                 <TextInput
                   style={estilos.campo}
-                  placeholder="Mínimo de 6 caracteres"
+                  placeholder="Mínimo de 8 caracteres"
                   placeholderTextColor={cores.textoSuave}
                   value={novaSenha}
                   onChangeText={setNovaSenha}

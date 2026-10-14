@@ -29,22 +29,25 @@ por API REST sobre HTTPS, autenticação por JWT e controle de acesso por perfil
 Sobe PostgreSQL, API e portal web de uma vez:
 
 ```bash
-cp .env.example .env     # ajuste as senhas e a chave JWT
+cp .env.example .env     # preencha a senha do banco, a chave JWT e a conta de administrador
 docker compose up -d
 ```
+
+O `.env.example` traz as senhas em branco de propósito: sem `POSTGRES_PASSWORD` e `JWT_CHAVE`
+a pilha não sobe, e sem `ADMIN_EMAIL` e `ADMIN_SENHA` a API não cria o primeiro administrador
+(veja [Primeiro acesso](#primeiro-acesso)).
 
 | Serviço | Endereço |
 |---|---|
 | Portal web | http://localhost:8080 |
 | API | http://localhost:5265 |
-| PostgreSQL | localhost:5432 |
-| Adminer (interface do banco) | http://localhost:8082 (porta em `ADMINER_PORT`) |
+| PostgreSQL | localhost:5432 (só a própria máquina) |
+| Adminer (interface do banco) | http://localhost:8082 (porta em `ADMINER_PORT`; só a própria máquina) |
 
 A pilha sobe em `Production`, onde a documentação interativa fica desligada. Para
 consultá-la sem mudar o ambiente, defina `API_DOCS=true` no `.env`. Trocar para
-`ASPNETCORE_ENVIRONMENT=Development` também funciona, mas abre o CORS para qualquer origem e
-faz a API devolver o código de recuperação de senha na própria resposta — serve só para
-desenvolvimento.
+`ASPNETCORE_ENVIRONMENT=Development` também funciona, mas abre o CORS para qualquer origem —
+serve só para desenvolvimento.
 
 O banco é criado e migrado automaticamente na primeira subida. Os volumes
 `dados-postgres`, `arquivos-api` e `emails-api` preservam dados, mídias e e-mails gravados
@@ -69,14 +72,24 @@ Os dois canais funcionam sem configuração nenhuma, em modo de demonstração:
 
 ### Opção B — Execução local
 
-**1. Banco de dados.** É necessário um PostgreSQL acessível. A string de conexão fica em
-`VetCare.API/appsettings.json`:
+**1. Banco de dados e segredos.** É necessário um PostgreSQL acessível. A string de conexão,
+a chave JWT e a conta inicial de administrador **não ficam no repositório**: o
+`appsettings.json` traz esses campos vazios. Em desenvolvimento eles vão para o
+[user-secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) do .NET, guardado
+no perfil do seu usuário, fora da pasta do projeto:
 
-```json
-"DefaultConnection": "Host=localhost;Port=5432;Database=vetcare_db;Username=postgres;Password=admin"
+```bash
+cd VetCare.API
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=vetcare_db;Username=postgres;Password=SUA-SENHA-DO-BANCO"
+dotnet user-secrets set "Jwt:Chave" "uma frase longa só sua, com pelo menos 32 caracteres"
+dotnet user-secrets set "Seed:EmailAdministrador" "seu-email@exemplo.com"
+dotnet user-secrets set "Seed:SenhaAdministrador" "uma senha forte, com pelo menos 8 caracteres"
 ```
 
-Não é preciso criar tabelas manualmente: a API aplica as migrações pendentes ao iniciar.
+Fora de desenvolvimento, use as variáveis de ambiente equivalentes
+(`ConnectionStrings__DefaultConnection`, `Jwt__Chave`, `Seed__EmailAdministrador`,
+`Seed__SenhaAdministrador`). Sem a string de conexão ou a chave, a API não sobe e diz o que
+falta. Não é preciso criar tabelas manualmente: a API aplica as migrações pendentes ao iniciar.
 
 **2. API.**
 
@@ -115,15 +128,16 @@ acontece.
 
 ### Primeiro acesso
 
-Com o banco vazio, a API cria a clínica e **uma única conta de Administrador**:
+Com o banco vazio, a API cria a clínica e **uma única conta de Administrador**, com o e-mail e
+a senha que você definiu em `ADMIN_EMAIL` e `ADMIN_SENHA` (Docker) ou em
+`Seed:EmailAdministrador` e `Seed:SenhaAdministrador` (execução local). **Não existe conta nem
+senha padrão**: uma senha escrita no código ou na documentação seria pública junto com o
+repositório. Se o banco não tiver nenhum administrador ativo e esses valores estiverem em
+branco, a API não sobe e o log explica o que configurar.
 
-| E-mail | Senha |
-|---|---|
-| `admin@vetcare.com` | `vetcare123` |
-
-> **Troque essa senha no primeiro acesso.** Ela existe apenas para destravar a gestão de
-> usuários; todo o restante do cadastro (equipe, tutores e pacientes) é feito pelo próprio
-> sistema.
+> **Troque essa senha no primeiro acesso** e apague o valor de `ADMIN_SENHA` do `.env`: ele
+> só é lido enquanto não há administrador. Todo o restante do cadastro (equipe, tutores e
+> pacientes) é feito pelo próprio sistema.
 
 Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, use
 [`testes/criar-dados-demonstracao.sh`](testes/README.md).
@@ -220,7 +234,11 @@ mensagens. Detalhes do funcionamento em [Sincronia entre as telas](#sincronia-en
   o token ainda válido.
 - **Esqueci minha senha**: o usuário informa o e-mail cadastrado e recebe um link (para o
   portal) e um código de 6 dígitos (para o aplicativo), válidos por 30 minutos, de uso único,
-  com no máximo 5 tentativas de código. A resposta é a mesma para e-mails desconhecidos.
+  com no máximo 5 tentativas de código e 5 pedidos por conta a cada hora. A resposta é a
+  mesma para e-mails desconhecidos.
+- Senhas têm no mínimo 8 caracteres. Nenhuma credencial (conta inicial, chave JWT, senha do
+  banco) fica no repositório, e a API se recusa a subir com uma chave JWT que já tenha sido
+  publicada.
 - **Primeiro acesso**: contas criadas pela clínica sem senha recebem um convite por e-mail
   para defini-la (válido por 72 horas). Toda troca de senha gera um aviso de segurança.
 - Mídias e documentos clínicos são servidos apenas por URLs assinadas com prazo de validade,
@@ -273,7 +291,9 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 - **RNF-001 Usabilidade** — sidebar fixa no portal e navegação por abas no aplicativo.
 - **RNF-002 Segurança** — JWT com expiração, senhas com PBKDF2 (210 mil iterações e salt
   por usuário), limitação de requisições nos endpoints de autenticação e upload,
-  autorização por perfil em todas as rotas e trilha de auditoria.
+  autorização por perfil em todas as rotas (rota nova sem `[Authorize]` exige login por
+  padrão), trilha de auditoria, segredos fora do repositório e cabeçalhos de segurança
+  (CSP, `nosniff`, proteção contra enquadramento) no portal.
 - **RNF-003 Privacidade clínica** — observações internas isoladas em entidade própria e
   nunca serializadas para o perfil Tutor.
 - **RNF-004 Desempenho** — listagens paginadas com teto de 100 itens por página, índices
@@ -373,7 +393,7 @@ clínica (`Aplicacao:FusoHorario`, padrão `America/Sao_Paulo`), e não o do ser
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 184 testes unitários; o critério é "Falhou: 0"
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 188 testes unitários; o critério é "Falhou: 0"
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de
@@ -382,7 +402,12 @@ web em um navegador real. A quantidade de verificações de cada roteiro está e
 [`testes/README.md`](testes/README.md), que é a referência; o critério de aprovação é
 "FALHAS: 0".
 
+Os roteiros leem as credenciais do ambiente (nenhuma senha fica no repositório):
+`ADMIN_EMAIL` e `ADMIN_SENHA` são a conta de administrador do `.env`, e `SENHA_DEMO` é a
+senha que as contas de demonstração recebem.
+
 ```bash
+export ADMIN_EMAIL='...' ADMIN_SENHA='...' SENHA_DEMO='...'
 bash testes/criar-dados-demonstracao.sh     # cenário de avaliação
 bash testes/teste-regras-negocio.sh
 bash testes/teste-api-mobile.sh
@@ -397,10 +422,10 @@ node testes/teste-navegador.mjs ./capturas
 
 O sistema está funcional, mas alguns itens dependem de decisões de infraestrutura:
 
-1. **Segredos** — `Jwt:Chave` e a senha do banco estão em `appsettings.json` para
-   facilitar a execução local. Em produção, use variáveis de ambiente (`Jwt__Chave`,
-   `ConnectionStrings__DefaultConnection`) ou um cofre de segredos. O `docker-compose.yml`
-   já lê ambos do `.env`.
+1. **Segredos** — nada de senha ou chave no repositório: `Jwt:Chave`, a string de conexão
+   e a conta inicial vêm do `.env` (Docker), do user-secrets (desenvolvimento) ou de
+   variáveis de ambiente. Em produção, prefira um cofre de segredos. Banco e Adminer só
+   aceitam conexões da própria máquina; não publique essas portas na internet.
 2. **HTTPS** — a pilha do compose serve HTTP; coloque um proxy reverso com certificado à
    frente antes de expor à internet. Se a própria API escutar em HTTPS, ligue o
    redirecionamento com `Seguranca__RedirecionarParaHttps=true`.
@@ -410,7 +435,7 @@ O sistema está funcional, mas alguns itens dependem de decisões de infraestrut
    de transporte, não as regras já implementadas.
 5. **E-mail e push** — sem `SMTP_HOST` os e-mails ficam em `emails-enviados` e, em
    `Development`, o link e o código de recuperação voltam na própria resposta da API para
-   permitir a demonstração. Em produção configure o SMTP e gere o `projectId` do Expo
+   permitir a demonstração — só quando o pedido sai da mesma máquina da API. Em produção configure o SMTP e gere o `projectId` do Expo
    para o aplicativo (veja [E-mail e notificações no celular](#e-mail-e-notificações-no-celular)).
 6. **Backup** — o DAS exige backup diário com zero perda de registros confirmados; isso é
    configuração do servidor PostgreSQL.

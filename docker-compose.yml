@@ -5,6 +5,8 @@ name: vetcare
 services:
   # Interface do banco pelo navegador. A porta padrão é 8082 para não brigar com o
   # Metro do Expo (8081) quando o aplicativo roda na mesma máquina.
+  # Banco e Adminer só atendem esta máquina (127.0.0.1): ninguém na rede precisa deles, e
+  # publicá-los em todas as interfaces exporia o banco inteiro a quem adivinhar a senha.
   adminer:
     image: adminer
     restart: unless-stopped
@@ -13,18 +15,19 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: postgres
     ports:
-      - "${ADMINER_PORT:-8082}:8080"
+      - "127.0.0.1:${ADMINER_PORT:-8082}:8080"
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-vetcare_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      # Sem valor padrão: uma senha escrita aqui seria pública junto com o repositório.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
       # Locale brasileiro para que a ordenação de nomes respeite os acentos.
       LANG: pt_BR.utf8
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - dados-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -46,7 +49,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__DefaultConnection: >-
-        Host=postgres;Port=5432;Database=${POSTGRES_DB:-vetcare_db};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-admin}
+        Host=postgres;Port=5432;Database=${POSTGRES_DB:-vetcare_db};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
       # Sem valor a pilha não sobe: uma chave conhecida por todos assinaria qualquer sessão.
       Jwt__Chave: ${JWT_CHAVE:?Defina JWT_CHAVE no arquivo .env (mínimo de 32 caracteres)}
       Cors__OrigensPermitidas__0: ${WEB_URL:-http://localhost:8080}
@@ -71,7 +74,8 @@ services:
       Push__Habilitado: ${PUSH_HABILITADO:-true}
       Push__Expo__TokenDeAcesso: ${EXPO_ACCESS_TOKEN:-}
 
-      # Conta inicial de administrador (só usada quando o banco nasce vazio).
+      # Conta inicial de administrador. Obrigatória só enquanto o banco não tiver um
+      # administrador ativo; sem ela, nesse caso, a API não sobe.
       Seed__EmailAdministrador: ${ADMIN_EMAIL:-}
       Seed__SenhaAdministrador: ${ADMIN_SENHA:-}
 

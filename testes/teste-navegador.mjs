@@ -16,6 +16,18 @@ function registrar(nome, ok, detalhe = '') {
 
 const API = process.env.API_URL ?? 'http://localhost:5265';
 
+// Nenhuma senha fica no repositório: o administrador é o do .env e SENHA_DEMO é a senha que
+// criar-dados-demonstracao.sh deu às contas de demonstração (veja testes/README.md).
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_SENHA = process.env.ADMIN_SENHA;
+const EMAIL_TUTOR = process.env.EMAIL_TUTOR ?? 'tutor@vetcare.com';
+const SENHA_TUTOR = process.env.SENHA_TUTOR ?? process.env.SENHA_DEMO;
+
+if (!ADMIN_EMAIL || !ADMIN_SENHA || !SENHA_TUTOR) {
+  console.error('Defina ADMIN_EMAIL, ADMIN_SENHA e SENHA_DEMO antes de rodar (veja testes/README.md).');
+  process.exit(1);
+}
+
 // Os roteiros de API terminam esgotando a janela do limitador de requisições, de
 // propósito. Esperamos ela liberar para não confundir um 429 com credenciais inválidas.
 for (let tentativa = 0; tentativa < 10; tentativa += 1) {
@@ -106,7 +118,7 @@ try {
   // ---- Login inválido (HU-001, CA-2)
   await irPara(`/login`, 'networkidle2');
   await pagina.waitForSelector('#email');
-  await pagina.type('#email', 'admin@vetcare.com');
+  await pagina.type('#email', ADMIN_EMAIL);
   await pagina.type('#senha', 'senha-errada');
   await pagina.click('button[type="submit"]');
   await esperarTexto('inválidos');
@@ -114,7 +126,7 @@ try {
   await capturar('01-login-erro');
 
   // ---- Login do administrador
-  await entrar('admin@vetcare.com', 'vetcare123');
+  await entrar(ADMIN_EMAIL, ADMIN_SENHA);
   const urlAdmin = pagina.url();
   registrar('HU-001 CA-1 administrador entra no painel', !urlAdmin.includes('/login'), urlAdmin);
   await esperarTexto('Pacientes ativos');
@@ -259,7 +271,7 @@ try {
   await pagina.setViewport({ width: 1440, height: 900 });
 
   // ---- Perfil Tutor (HU-013 / RN-003)
-  await entrar(process.env.EMAIL_TUTOR ?? 'tutor@vetcare.com', process.env.SENHA_TUTOR ?? 'vetcare123');
+  await entrar(EMAIL_TUTOR, SENHA_TUTOR);
   const urlTutor = pagina.url();
   registrar('HU-001 tutor entra na própria área', urlTutor.includes('meus-pets'), urlTutor);
   await capturar('11-tutor-pets');

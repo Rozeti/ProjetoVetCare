@@ -2,6 +2,11 @@
 # A coleção completa, organizada por história de usuário, está em testes.http.
 @VetCare.API_HostAddress = http://localhost:5265
 
+# A conta de administrador vem das variáveis de ambiente ADMIN_EMAIL e ADMIN_SENHA (as
+# mesmas do .env): nenhuma senha fica escrita no repositório.
+@adminEmail = {{$processEnv ADMIN_EMAIL}}
+@adminSenha = {{$processEnv ADMIN_SENHA}}
+
 ### A API está no ar?
 GET {{VetCare.API_HostAddress}}/health
 
@@ -13,6 +18,6 @@ POST {{VetCare.API_HostAddress}}/api/usuarios/login
 Content-Type: application/json
 
 {
-  "email": "admin@vetcare.com",
-  "senha": "vetcare123"
+  "email": "{{adminEmail}}",
+  "senha": "{{adminSenha}}"
 }

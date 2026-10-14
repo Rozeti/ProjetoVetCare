@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using VetCare.API.Models;
@@ -10,6 +11,18 @@ namespace VetCare.API.Security
     {
         /// <summary>Emissor e público padrão do JWT; configuráveis em Jwt:Emissor e Jwt:Publico.</summary>
         public const string EmissorPadrao = "VetCare";
+
+        /// <summary>
+        /// SHA-256 das chaves que já circularam em versões públicas do repositório (o antigo
+        /// appsettings.json e o exemplo do .env). Quem as conhece assina tokens de qualquer
+        /// perfil, então a API se recusa a usá-las. Só o hash fica aqui, para o texto não
+        /// voltar a circular.
+        /// </summary>
+        private static readonly HashSet<string> ChavesPublicadas = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "EBC9A016E9BE58D35F237C2C8A2E7E1CAF53B3CDFDACF637F5DF17C0B47A2CE9",
+            "E44BD9A36607E0E67390F6F3BCD2978CCEA21B713284D87A79CEDA515C7EDB5D"
+        };
 
         private readonly IConfiguration _configuration;
 
@@ -73,14 +86,30 @@ namespace VetCare.API.Security
         {
             var chave = _configuration["Jwt:Chave"];
 
-            if (string.IsNullOrWhiteSpace(chave) || Encoding.UTF8.GetByteCount(chave) < 32)
+            if (ValidarChave(chave) is { } erro)
             {
-                throw new InvalidOperationException(
-                    "A chave JWT (Jwt:Chave) não está configurada ou tem menos de 32 bytes. " +
-                    "Defina um valor seguro em appsettings.json ou na variável de ambiente Jwt__Chave.");
+                throw new InvalidOperationException(erro);
             }
 
-            return chave;
+            return chave!;
+        }
+
+        /// <summary>Motivo pelo qual a chave não pode assinar tokens, ou null quando ela serve.</summary>
+        public static string? ValidarChave(string? chave)
+        {
+            if (string.IsNullOrWhiteSpace(chave) || Encoding.UTF8.GetByteCount(chave) < 32)
+            {
+                return "A chave JWT (Jwt:Chave) não está configurada ou tem menos de 32 bytes. Defina JWT_CHAVE no " +
+                    ".env (Docker), Jwt:Chave com dotnet user-secrets (desenvolvimento) ou a variável de ambiente Jwt__Chave.";
+            }
+
+            if (ChavesPublicadas.Contains(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(chave)))))
+            {
+                return "A chave JWT (Jwt:Chave) configurada já foi publicada no repositório e não protege nada. " +
+                    "Troque-a por uma frase longa só sua; as sessões abertas com a chave antiga deixam de valer.";
+            }
+
+            return null;
         }
     }
 }

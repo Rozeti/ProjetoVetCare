@@ -5,6 +5,7 @@
 set -u
 
 source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
+exigir_variaveis ADMIN_EMAIL ADMIN_SENHA SENHA_DEMO
 ok=0; falhou=0
 CORPO=$(mktemp)
 
@@ -20,9 +21,9 @@ checa() {
 
 aguardar_limitador
 
-ADMIN=$(entrar admin@vetcare.com vetcare123)
-TUTOR=$(entrar tutor@vetcare.com vetcare123)
-VETTK=$(entrar veterinario@vetcare.com vetcare123)
+ADMIN=$(entrar "$ADMIN_EMAIL" "$ADMIN_SENHA")
+TUTOR=$(entrar tutor@vetcare.com "$SENHA_DEMO")
+VETTK=$(entrar veterinario@vetcare.com "$SENHA_DEMO")
 
 if [ -z "$ADMIN" ]; then
   echo "Falha ao autenticar. A API está no ar e os dados de demonstração foram criados?"
@@ -205,11 +206,14 @@ aguardar_limitador
 r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"nao-existe@vetcare.com"}')
 checa "e-mail inexistente recebe resposta neutra" "Se houver uma conta" "$r"
 
-if [ "$AMBIENTE" = "Development" ]; then
-  # Fora de produção, e sem servidor de e-mail, o link e o código vêm na própria resposta,
-  # o que permite percorrer os dois caminhos (portal e aplicativo) sem caixa de entrada.
-  r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" "{\"email\":\"$NOVO_EMAIL\"}")
-  CODIGO=$(val "$r" codigoDesenvolvimento)
+# Em desenvolvimento, sem servidor de e-mail e com o roteiro na mesma máquina da API, o link
+# e o código vêm na própria resposta, o que permite percorrer os dois caminhos (portal e
+# aplicativo) sem caixa de entrada. Pedido vindo de outra máquina (inclusive de fora do
+# contêiner) só recebe pelo e-mail, como em produção.
+r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" "{\"email\":\"$NOVO_EMAIL\"}")
+CODIGO=$(val "$r" codigoDesenvolvimento)
+
+if [ "$AMBIENTE" = "Development" ] && [ -n "$CODIGO" ]; then
   checa "solicitação gera código de 6 dígitos (aplicativo)" '^[0-9]\{6\}$' "$CODIGO"
   checa "solicitação gera link (portal)" '"tokenDesenvolvimento":"' "$r"
 
@@ -234,7 +238,7 @@ if [ "$AMBIENTE" = "Development" ]; then
   r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"token\":\"$TOKEN\",\"novaSenha\":\"OutraSenha2026\"}")
   checa "link de uso único não é reaproveitado" "inválido ou expirado" "$r"
 
-  r=$(envia PUT /api/usuarios/me/senha "$NOVO" '{"senhaAtual":"NovaSenha2026","novaSenha":"vetcare123"}')
+  r=$(envia PUT /api/usuarios/me/senha "$NOVO" "{\"senhaAtual\":\"NovaSenha2026\",\"novaSenha\":\"$SENHA_DEMO\"}")
   checa "senha restaurada para o padrão de demonstração" "sucesso" "$r"
 else
   # Em produção o link e o código só saem por e-mail: a resposta não pode entregá-los a quem pediu.

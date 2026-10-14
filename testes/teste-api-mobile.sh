@@ -3,6 +3,7 @@
 # como as telas esperam. Roda contra a API em execução.
 set -u
 source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
+exigir_variaveis ADMIN_EMAIL ADMIN_SENHA SENHA_DEMO
 ok=0; falhou=0
 CORPO=$(mktemp)
 
@@ -18,7 +19,7 @@ checa() {
 echo "== Endpoints usados pelo app do tutor =="
 
 aguardar_limitador
-TK=$(entrar tutor@vetcare.com vetcare123)
+TK=$(entrar tutor@vetcare.com "$SENHA_DEMO")
 checa "POST /api/usuarios/login" "." "$TK"
 
 r=$(get /api/usuarios/me "$TK")
@@ -35,7 +36,7 @@ checa "GET /api/sessoes/minhas (tela Agenda)" "podeCancelar" "$r"
 # que continuam em aberto aceitam confirmação de presença.
 SESSAO=$(val "$(grep -o '{[^{}]*}' <<<"$r" | grep '"status":"Aguardando' | head -1)" id)
 # Execuções anteriores podem ter confirmado todas; a clínica agenda outra nesse caso.
-[ -n "$SESSAO" ] || SESSAO=$(garantir_sessao_em_aberto "$(entrar admin@vetcare.com vetcare123)")
+[ -n "$SESSAO" ] || SESSAO=$(garantir_sessao_em_aberto "$(entrar "$ADMIN_EMAIL" "$ADMIN_SENHA")")
 
 r=$(get "/api/prontuarios/paciente/$PET" "$TK")
 checa "GET /api/prontuarios/paciente (tela Prontuário)" "historico" "$r"
@@ -84,16 +85,16 @@ r=$(curl -s -X PATCH "$API/api/sessoes/$SESSAO/status" -H "Content-Type: applica
 checa "PATCH /api/sessoes/{id}/status (confirmar presença)" "Confirmada" "$r"
 
 # Troca de senha pelo próprio tutor e retorno ao valor original.
-r=$(envia PUT /api/usuarios/me/senha "$TK" '{"senhaAtual":"vetcare123","novaSenha":"novaSenha123"}')
+r=$(repetir_se_limitado envia PUT /api/usuarios/me/senha "$TK" "{\"senhaAtual\":\"$SENHA_DEMO\",\"novaSenha\":\"novaSenha123\"}")
 checa "PUT /api/usuarios/me/senha (tela Perfil)" "sucesso" "$r"
 
 TK2=$(entrar tutor@vetcare.com novaSenha123)
 checa "login com a nova senha" "." "$TK2"
 
-r=$(envia PUT /api/usuarios/me/senha "$TK2" '{"senhaAtual":"novaSenha123","novaSenha":"vetcare123"}')
+r=$(repetir_se_limitado envia PUT /api/usuarios/me/senha "$TK2" "{\"senhaAtual\":\"novaSenha123\",\"novaSenha\":\"$SENHA_DEMO\"}")
 checa "senha restaurada para o valor de demonstração" "sucesso" "$r"
 
-r=$(envia PUT /api/usuarios/me/senha "$TK2" '{"senhaAtual":"errada","novaSenha":"outra123"}')
+r=$(repetir_se_limitado envia PUT /api/usuarios/me/senha "$TK2" '{"senhaAtual":"errada","novaSenha":"outra123"}')
 checa "senha atual incorreta é recusada" "incorreta" "$r"
 
 echo
