@@ -46,7 +46,7 @@ echo "== Cadastro de pet pelo próprio tutor =="
 
 NOME_PET="Pipoca $RANDOM"
 r=$(envia POST /api/pets/meus "$TK_TUTOR" \
-  "{\"nome\":\"$NOME_PET\",\"especie\":\"Gato\",\"raca\":\"SRD\",\"sexo\":\"Fêmea\",\"pelagem\":\"rajada\",\"microchip\":\"\",\"castrado\":true,\"dataNascimento\":\"2024-06-15\",\"pesoAtualKg\":3.8}")
+  "{\"nome\":\"$NOME_PET\",\"especie\":\"Cachorro\",\"raca\":\"SRD\",\"sexo\":\"Fêmea\",\"pelagem\":\"caramelo\",\"microchip\":\"\",\"castrado\":true,\"dataNascimento\":\"2024-06-15\",\"pesoAtualKg\":3.8}")
 checa "tutor cadastra o próprio pet" "$NOME_PET" "$r"
 PET_NOVO=$(val "$r" id)
 TUTOR_DO_PET=$(val "$r" tutorId)
@@ -71,14 +71,14 @@ checa "auditoria registra que o cadastro veio do tutor" "feito pelo tutor" "$r"
 
 # A equipe usa o endpoint próprio; o do tutor é exclusivo dele.
 r=$(envia POST /api/pets/meus "$TK_ADMIN" \
-  "{\"nome\":\"Invasor\",\"especie\":\"Gato\",\"dataNascimento\":\"2024-01-01\"}")
+  "{\"nome\":\"Invasor\",\"especie\":\"Cachorro\",\"dataNascimento\":\"2024-01-01\"}")
 checa_diferente "RN-005 equipe não usa o cadastro do tutor" '"id":' "$r"
 
 r=$(envia POST /api/pets/meus "$TK_TUTOR" \
-  "{\"nome\":\"Futuro\",\"especie\":\"Gato\",\"dataNascimento\":\"2099-01-01\"}")
+  "{\"nome\":\"Futuro\",\"especie\":\"Cachorro\",\"dataNascimento\":\"2099-01-01\"}")
 checa "data de nascimento futura continua recusada" "futura" "$r"
 
-r=$(envia POST /api/pets/meus "$TK_TUTOR" "{\"nome\":\"\",\"especie\":\"Gato\",\"dataNascimento\":\"2024-01-01\"}")
+r=$(envia POST /api/pets/meus "$TK_TUTOR" "{\"nome\":\"\",\"especie\":\"Cachorro\",\"dataNascimento\":\"2024-01-01\"}")
 checa "nome vazio continua recusado" "obrigatório" "$r"
 
 echo "== Mural de atualizações =="

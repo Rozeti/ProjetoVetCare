@@ -10,9 +10,10 @@ using VetCare.Tests.Suporte;
 namespace VetCare.Tests
 {
     /// <summary>
-    /// Cada paciente é acompanhado por um único veterinário responsável. O profissional
-    /// enxerga só os seus; a transferência leva junto o tratamento em andamento e as
-    /// sessões futuras, e o paciente some da lista de quem o entregou.
+    /// Todo paciente tem um veterinário responsável, mas qualquer veterinário da clínica
+    /// alcança qualquer paciente: se o responsável faltar, um colega atende o animal sem que a
+    /// administração precise transferi-lo. O responsável é escolhido no cadastro e trocado na
+    /// edição do cadastro.
     /// </summary>
     public class PacientesPorVeterinarioTests : BaseDeTeste
     {
@@ -54,28 +55,60 @@ namespace VetCare.Tests
             new VacinaRepository(Contexto),
             new TratamentoRepository(Contexto),
             new VeterinarioRepository(Contexto),
-            Dependencias.Auditoria(Contexto, usuarioAtual),
-            usuarioAtual);
-
-        private TransferirPacienteUseCase CasoDeTransferencia(UsuarioAtual usuarioAtual) => new(
-            new PetRepository(Contexto),
-            new VeterinarioRepository(Contexto),
-            new TratamentoRepository(Contexto),
-            new SessaoRepository(Contexto),
-            new BloqueioAgendaRepository(Contexto),
-            new ClinicaRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private GerenciarTratamentosUseCase CasoDeTratamentos(UsuarioAtual usuarioAtual) => new(
             new TratamentoRepository(Contexto),
+            new AvaliacaoRepository(Contexto),
             new PetRepository(Contexto),
             new VeterinarioRepository(Contexto),
             new ProntuarioRepository(Contexto),
             new SessaoRepository(Contexto),
+            new AtendimentoRepository(Contexto),
+            Dependencias.Notificacoes(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
+
+        /// <summary>Avaliação de origem gravada direto no banco, para os cenários de tratamento.</summary>
+        private AvaliacaoClinica AvaliacaoDe(Guid pacienteId, Guid veterinarioId)
+        {
+            var prontuario = Contexto.Prontuarios.FirstOrDefault(p => p.PacienteId == pacienteId);
+
+            if (prontuario == null)
+            {
+                prontuario = new Prontuario { PacienteId = pacienteId };
+                Contexto.Prontuarios.Add(prontuario);
+            }
+
+            var avaliacao = new AvaliacaoClinica
+            {
+                PacienteId = pacienteId,
+                ProntuarioId = prontuario.Id,
+                VeterinarioId = veterinarioId,
+                MotivoConsulta = "Avaliação inicial",
+                Observacoes = "Sem intercorrências",
+                DiagnosticoPossivel = "A esclarecer"
+            };
+
+            Contexto.AvaliacoesClinicas.Add(avaliacao);
+            Contexto.SaveChanges();
+
+            return avaliacao;
+        }
+
+        private static CriarTratamentoDTO TratamentoNovo(Guid avaliacaoId, Guid? veterinarioId = null) => new()
+        {
+            AvaliacaoId = avaliacaoId,
+            VeterinarioId = veterinarioId,
+            Nome = "Fortalecimento",
+            Tipo = "Fisioterapia",
+            Descricao = "Fortalecimento muscular dos membros posteriores",
+            DuracaoPrevista = "1 mês",
+            Frequencia = "2 sessões por semana",
+            SessoesPrevistas = 8
+        };
 
         private static ParametrosPagina Pagina() => new() { Pagina = 1, Tamanho = 50 };
 
@@ -90,51 +123,65 @@ namespace VetCare.Tests
             VeterinarioResponsavelId = veterinarioResponsavelId
         };
 
-        private Sessao SessaoFutura(Guid tratamentoId, Guid veterinarioId, DateTime dataHora)
+        /// <summary>Paciente cadastrado pelo tutor no aplicativo: ninguém o acompanha ainda.</summary>
+        private Pet PacienteSemResponsavel(string nome)
         {
-            var sessao = new Sessao
+            var pet = new Pet
             {
-                TratamentoId = tratamentoId,
-                VeterinarioId = veterinarioId,
-                DataHora = dataHora,
-                Status = StatusSessao.Confirmada
+                ClinicaId = Clinica.Id,
+                TutorId = Tutor.Id,
+                Nome = nome,
+                Especie = "Gato",
+                DataNascimento = DateTime.SpecifyKind(new DateTime(2023, 5, 1), DateTimeKind.Utc)
             };
 
-            Contexto.Sessoes.Add(sessao);
+            Contexto.Pets.Add(pet);
             Contexto.SaveChanges();
 
-            return sessao;
+            return pet;
         }
 
+        private AtualizarPetDTO EdicaoDe(Pet pet, Guid? veterinarioResponsavelId) => new()
+        {
+            Nome = pet.Nome,
+            Especie = pet.Especie,
+            Raca = pet.Raca,
+            Sexo = pet.Sexo,
+            DataNascimento = pet.DataNascimento,
+            TutorId = pet.TutorId,
+            VeterinarioResponsavelId = veterinarioResponsavelId
+        };
+
         [Fact]
-        public async Task Cada_veterinario_lista_apenas_os_proprios_pacientes()
+        public async Task Todo_veterinario_lista_todos_os_pacientes_da_clinica()
         {
             await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Bolt", _outroVeterinario.Id));
 
             var doPrimeiro = await CasoDePacientes(ComoVeterinario()).Listar(null, null, false, null, null, Pagina());
             var doSegundo = await CasoDePacientes(ComoOutroVeterinario()).Listar(null, null, false, null, null, Pagina());
-            var daClinica = await CasoDePacientes(ComoAdministrador()).Listar(null, null, false, null, null, Pagina());
 
-            doPrimeiro.Dados!.Itens.Select(p => p.Nome).Should().BeEquivalentTo(new[] { Paciente.Nome });
-            doSegundo.Dados!.Itens.Select(p => p.Nome).Should().BeEquivalentTo(new[] { "Bolt" });
-            daClinica.Dados!.Itens.Should().HaveCount(2);
+            var todos = new[] { Paciente.Nome, "Bolt" };
+
+            doPrimeiro.Dados!.Itens.Select(p => p.Nome).Should().BeEquivalentTo(todos);
+            doSegundo.Dados!.Itens.Select(p => p.Nome).Should().BeEquivalentTo(todos);
         }
 
         [Fact]
-        public async Task Filtro_de_veterinario_na_url_nao_amplia_o_recorte_do_proprio_veterinario()
+        public async Task Veterinario_filtra_a_lista_pelo_responsavel()
         {
             await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Bolt", _outroVeterinario.Id));
 
-            var resultado = await CasoDePacientes(ComoVeterinario())
-                .Listar(null, _outroVeterinario.Id, false, null, null, Pagina());
+            var meus = await CasoDePacientes(ComoVeterinario()).Listar(null, Veterinario.Id, false, null, null, Pagina());
+            var daColega = await CasoDePacientes(ComoVeterinario()).Listar(null, _outroVeterinario.Id, false, null, null, Pagina());
 
-            resultado.Dados!.Itens.Select(p => p.Nome).Should().BeEquivalentTo(new[] { Paciente.Nome });
+            meus.Dados!.Itens.Select(p => p.Nome).Should().Equal(Paciente.Nome);
+            daColega.Dados!.Itens.Select(p => p.Nome).Should().Equal("Bolt");
         }
 
         [Fact]
         public async Task Administracao_filtra_pacientes_sem_responsavel()
         {
-            await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Sem Dono Clínico"));
+            PacienteSemResponsavel("Sem Dono Clínico");
 
             var semResponsavel = await CasoDePacientes(ComoAdministrador()).Listar(null, null, true, null, null, Pagina());
 
@@ -143,22 +190,20 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Veterinario_nao_abre_paciente_de_outro_profissional()
+        public async Task Qualquer_veterinario_abre_o_paciente_de_um_colega()
         {
-            var negado = await CasoDePacientes(ComoOutroVeterinario()).ObterPorId(Paciente.Id);
-            var permitido = await CasoDePacientes(ComoVeterinario()).ObterPorId(Paciente.Id);
-            var administracao = await CasoDePacientes(ComoAdministrador()).ObterPorId(Paciente.Id);
+            var colega = await CasoDePacientes(ComoOutroVeterinario()).ObterPorId(Paciente.Id);
+            var responsavel = await CasoDePacientes(ComoVeterinario()).ObterPorId(Paciente.Id);
 
-            negado.Sucesso.Should().BeFalse();
-            negado.Falha.Should().Be(TipoFalha.NaoAutorizado);
-            permitido.Sucesso.Should().BeTrue(permitido.Mensagem);
-            administracao.Sucesso.Should().BeTrue(administracao.Mensagem);
+            colega.Sucesso.Should().BeTrue(colega.Mensagem);
+            responsavel.Sucesso.Should().BeTrue(responsavel.Mensagem);
+            colega.Dados!.VeterinarioResponsavelId.Should().Be(Veterinario.Id, "abrir o paciente não muda quem é o responsável");
         }
 
         [Fact]
-        public async Task Veterinario_que_cadastra_assume_o_paciente_mesmo_que_indique_outro()
+        public async Task Veterinario_que_cadastra_e_o_responsavel_quando_nao_indica_outro()
         {
-            var resultado = await CasoDePacientes(ComoVeterinario()).Cadastrar(PacienteNovo("Mel", _outroVeterinario.Id));
+            var resultado = await CasoDePacientes(ComoVeterinario()).Cadastrar(PacienteNovo("Mel"));
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
             resultado.Dados!.VeterinarioResponsavelId.Should().Be(Veterinario.Id);
@@ -166,147 +211,95 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Administracao_escolhe_o_responsavel_no_cadastro()
+        public async Task Veterinario_pode_cadastrar_paciente_para_um_colega()
         {
-            var resultado = await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Mel", _outroVeterinario.Id));
+            var resultado = await CasoDePacientes(ComoVeterinario()).Cadastrar(PacienteNovo("Mel", _outroVeterinario.Id));
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
             resultado.Dados!.VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
         }
 
         [Fact]
-        public async Task Transferencia_leva_tratamento_em_andamento_e_sessoes_futuras()
+        public async Task Administracao_precisa_escolher_o_responsavel_no_cadastro()
         {
-            var futura = SessaoFutura(Tratamento.Id, Veterinario.Id, DateTime.UtcNow.AddDays(2));
-            var passada = SessaoFutura(Tratamento.Id, Veterinario.Id, DateTime.UtcNow.AddDays(-2));
+            var semResponsavel = await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Mel"));
+            var comResponsavel = await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Mel", _outroVeterinario.Id));
 
-            var resultado = await CasoDeTransferencia(ComoAdministrador())
-                .Executar(Paciente.Id, new TransferirPacienteDTO { VeterinarioId = _outroVeterinario.Id, Motivo = "Férias" });
-
-            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
-            resultado.Dados!.TratamentosTransferidos.Should().Be(1);
-            resultado.Dados.SessoesTransferidas.Should().Be(1);
-            resultado.Dados.NomeNovoVeterinario.Should().Be(_usuarioOutroVeterinario.Nome);
-
-            Contexto.ChangeTracker.Clear();
-
-            Contexto.Pets.Single(p => p.Id == Paciente.Id).VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
-            Contexto.Tratamentos.Single(t => t.Id == Tratamento.Id).VeterinarioId.Should().Be(_outroVeterinario.Id);
-            Contexto.Sessoes.Single(s => s.Id == futura.Id).VeterinarioId.Should().Be(_outroVeterinario.Id);
-            Contexto.Sessoes.Single(s => s.Id == passada.Id).VeterinarioId.Should().Be(Veterinario.Id,
-                "o histórico continua assinado por quem o produziu");
-
-            // Quem entregou perde o acesso; quem recebeu passa a ter.
-            (await CasoDePacientes(ComoVeterinario()).ObterPorId(Paciente.Id)).Falha.Should().Be(TipoFalha.NaoAutorizado);
-            (await CasoDePacientes(ComoOutroVeterinario()).ObterPorId(Paciente.Id)).Sucesso.Should().BeTrue();
-
-            Contexto.Notificacoes.Should().Contain(n => n.UsuarioId == _usuarioOutroVeterinario.Id && n.Tipo == TiposDeNotificacao.PacienteTransferido);
-            Contexto.Notificacoes.Should().Contain(n => n.UsuarioId == UsuarioVeterinario.Id && n.Tipo == TiposDeNotificacao.PacienteTransferido);
-            Contexto.Notificacoes.Should().Contain(n => n.UsuarioId == UsuarioTutor.Id && n.Tipo == TiposDeNotificacao.PacienteTransferido);
+            semResponsavel.Sucesso.Should().BeFalse();
+            semResponsavel.Mensagem.Should().Contain("veterinário responsável");
+            comResponsavel.Sucesso.Should().BeTrue(comResponsavel.Mensagem);
+            comResponsavel.Dados!.VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
         }
 
         [Fact]
-        public async Task Transferencia_e_recusada_quando_a_agenda_do_novo_veterinario_ja_esta_ocupada()
+        public async Task Edicao_troca_o_responsavel_sem_mexer_nos_tratamentos()
         {
-            var horario = DateTime.UtcNow.AddDays(3).Date.AddHours(14);
-            SessaoFutura(Tratamento.Id, Veterinario.Id, horario);
+            var resultado = await CasoDePacientes(ComoAdministrador())
+                .Atualizar(Paciente.Id, EdicaoDe(Paciente, _outroVeterinario.Id));
 
-            // O outro veterinário já tem compromisso no mesmo horário, com outro paciente.
-            var outroPaciente = await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Bolt", _outroVeterinario.Id));
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            resultado.Dados!.VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
 
-            var outroTratamento = new Tratamento
-            {
-                PacienteId = outroPaciente.Dados!.Id,
-                VeterinarioId = _outroVeterinario.Id,
-                DataInicio = DateTime.UtcNow.AddDays(-1),
-                ObjetivoTerapeutico = "Reabilitação",
-                Status = StatusTratamento.EmAndamento
-            };
+            Contexto.ChangeTracker.Clear();
+            Contexto.Pets.Single(p => p.Id == Paciente.Id).VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
+            Contexto.Tratamentos.Single(t => t.Id == Tratamento.Id).VeterinarioId.Should().Be(Veterinario.Id,
+                "o tratamento continua com quem o conduz");
 
-            Contexto.Tratamentos.Add(outroTratamento);
-            Contexto.SaveChanges();
-            SessaoFutura(outroTratamento.Id, _outroVeterinario.Id, horario);
+            // O novo responsável e o tutor ficam sabendo; a troca fica na auditoria.
+            Contexto.Notificacoes.Should().Contain(n => n.UsuarioId == _usuarioOutroVeterinario.Id);
+            Contexto.Notificacoes.Should().Contain(n => n.UsuarioId == UsuarioTutor.Id && n.Titulo == "Novo veterinário responsável");
+            Contexto.RegistrosAuditoria.Should().Contain(r =>
+                r.Entidade == "Paciente" && r.Detalhe.Contains(_usuarioOutroVeterinario.Nome));
+        }
 
-            var resultado = await CasoDeTransferencia(ComoAdministrador())
-                .Executar(Paciente.Id, new TransferirPacienteDTO { VeterinarioId = _outroVeterinario.Id });
+        [Fact]
+        public async Task Edicao_sem_responsavel_mantem_o_atual()
+        {
+            var resultado = await CasoDePacientes(ComoAdministrador()).Atualizar(Paciente.Id, EdicaoDe(Paciente, null));
 
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Falha.Should().Be(TipoFalha.Conflito);
-            resultado.Mensagem.Should().Contain("Reagende");
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            resultado.Dados!.VeterinarioResponsavelId.Should().Be(Veterinario.Id);
+        }
+
+        [Fact]
+        public async Task Paciente_sem_responsavel_precisa_ganhar_um_na_edicao()
+        {
+            var pet = PacienteSemResponsavel("Pipoca");
+
+            var semEscolha = await CasoDePacientes(ComoAdministrador()).Atualizar(pet.Id, EdicaoDe(pet, null));
+            var comEscolha = await CasoDePacientes(ComoAdministrador()).Atualizar(pet.Id, EdicaoDe(pet, _outroVeterinario.Id));
+
+            semEscolha.Sucesso.Should().BeFalse();
+            semEscolha.Mensagem.Should().Contain("veterinário responsável");
+            comEscolha.Sucesso.Should().BeTrue(comEscolha.Mensagem);
+            comEscolha.Dados!.VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
+        }
+
+        [Fact]
+        public async Task Colega_abre_tratamento_para_paciente_de_outro_veterinario()
+        {
+            var resultado = await CasoDeTratamentos(ComoOutroVeterinario()).Cadastrar(TratamentoNovo(Avaliacao.Id));
+
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            resultado.Dados!.VeterinarioId.Should().Be(_outroVeterinario.Id, "quem abre o tratamento é quem o conduz");
 
             Contexto.ChangeTracker.Clear();
             Contexto.Pets.Single(p => p.Id == Paciente.Id).VeterinarioResponsavelId.Should().Be(Veterinario.Id,
-                "nada muda quando a transferência é recusada");
+                "atender o paciente não troca o responsável");
         }
 
         [Fact]
-        public async Task Veterinario_so_transfere_paciente_que_esta_com_ele()
+        public async Task Primeiro_tratamento_define_o_responsavel_de_paciente_que_ainda_nao_tem()
         {
-            var negado = await CasoDeTransferencia(ComoOutroVeterinario())
-                .Executar(Paciente.Id, new TransferirPacienteDTO { VeterinarioId = _outroVeterinario.Id });
+            var pet = PacienteSemResponsavel("Sem Dono Clínico");
+            var avaliacao = AvaliacaoDe(pet.Id, _outroVeterinario.Id);
 
-            negado.Sucesso.Should().BeFalse();
-            negado.Falha.Should().Be(TipoFalha.NaoAutorizado);
-
-            var permitido = await CasoDeTransferencia(ComoVeterinario())
-                .Executar(Paciente.Id, new TransferirPacienteDTO { VeterinarioId = _outroVeterinario.Id });
-
-            permitido.Sucesso.Should().BeTrue(permitido.Mensagem);
-        }
-
-        [Fact]
-        public async Task Transferir_para_o_mesmo_veterinario_e_recusado()
-        {
-            var resultado = await CasoDeTransferencia(ComoAdministrador())
-                .Executar(Paciente.Id, new TransferirPacienteDTO { VeterinarioId = Veterinario.Id });
-
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Mensagem.Should().Contain("já é o responsável");
-        }
-
-        [Fact]
-        public async Task Tratamento_com_veterinario_diferente_do_responsavel_e_recusado()
-        {
-            var resultado = await CasoDeTratamentos(ComoAdministrador()).Cadastrar(new CriarTratamentoDTO
-            {
-                PacienteId = Paciente.Id,
-                VeterinarioId = _outroVeterinario.Id,
-                ObjetivoTerapeutico = "Fortalecimento"
-            });
-
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Mensagem.Should().Contain("Transfira o paciente");
-        }
-
-        [Fact]
-        public async Task Primeiro_tratamento_aberto_pela_administracao_define_quem_acompanha_o_paciente()
-        {
-            // Paciente cadastrado pelo tutor no aplicativo: ninguém o acompanha ainda, e por
-            // isso nenhum veterinário o enxerga; a administração abre o tratamento escolhendo quem será.
-            var semResponsavel = await CasoDePacientes(ComoAdministrador()).Cadastrar(PacienteNovo("Sem Dono Clínico"));
-
-            var negado = await CasoDeTratamentos(ComoOutroVeterinario()).Cadastrar(new CriarTratamentoDTO
-            {
-                PacienteId = semResponsavel.Dados!.Id,
-                ObjetivoTerapeutico = "Fortalecimento"
-            });
-
-            negado.Falha.Should().Be(TipoFalha.NaoAutorizado);
-
-            var resultado = await CasoDeTratamentos(ComoAdministrador()).Cadastrar(new CriarTratamentoDTO
-            {
-                PacienteId = semResponsavel.Dados.Id,
-                VeterinarioId = _outroVeterinario.Id,
-                ObjetivoTerapeutico = "Fortalecimento"
-            });
+            var resultado = await CasoDeTratamentos(ComoOutroVeterinario()).Cadastrar(TratamentoNovo(avaliacao.Id));
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
 
             Contexto.ChangeTracker.Clear();
-            Contexto.Pets.Single(p => p.Id == semResponsavel.Dados.Id).VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
-
-            // A partir daí o paciente aparece para quem o recebeu.
-            (await CasoDePacientes(ComoOutroVeterinario()).ObterPorId(semResponsavel.Dados.Id)).Sucesso.Should().BeTrue();
+            Contexto.Pets.Single(p => p.Id == pet.Id).VeterinarioResponsavelId.Should().Be(_outroVeterinario.Id);
         }
 
         [Fact]

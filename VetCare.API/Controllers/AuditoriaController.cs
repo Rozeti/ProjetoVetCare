@@ -7,8 +7,8 @@ using VetCare.API.UseCases;
 namespace VetCare.API.Controllers
 {
     /// <summary>
-    /// Trilha de auditoria da clínica. Saber quem acessou cada prontuário também é
-    /// informação sensível, por isso a consulta fica restrita ao Administrador.
+    /// Trilha de auditoria da clínica: quem criou, alterou, inativou ou excluiu cada dado.
+    /// A consulta fica restrita ao Administrador.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]

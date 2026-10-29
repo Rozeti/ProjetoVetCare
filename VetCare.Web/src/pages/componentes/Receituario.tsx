@@ -3,10 +3,10 @@ import { Ban, Loader2, Pill, Plus, Printer, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
-import type { Prescricao } from '../../types';
+import type { Avaliacao, Prescricao } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
-import { formatarData, formatarDia, paraValorInputData } from '../../utils/formato';
+import { formatarData, formatarDia, paraValorInputData, resumirTexto } from '../../utils/formato';
 import { imprimirReceita } from '../../utils/impressao';
 
 const VIAS = ['Oral', 'Tópica', 'Intramuscular', 'Subcutânea', 'Intravenosa', 'Oftálmica', 'Otológica'];
@@ -29,6 +29,12 @@ function validadeMaxima(): Date {
   return data;
 }
 
+function proximosTrintaDias(): Date {
+  const data = new Date();
+  data.setDate(data.getDate() + 30);
+  return data;
+}
+
 interface ItemFormulario {
   medicamento: string;
   dosagem: string;
@@ -47,20 +53,212 @@ const ITEM_VAZIO: ItemFormulario = {
   observacao: '',
 };
 
+/** Evolução que pode originar uma receita, montada a partir da linha do tempo do prontuário. */
+export interface EvolucaoParaReceita {
+  id: string;
+  data: string;
+  numeroSessao: number;
+  nomeTratamento: string;
+}
+
+/** Origem já escolhida quando a receita é emitida do cartão de uma avaliação ou de uma evolução. */
+export type OrigemDaReceita = { avaliacaoId: string } | { atendimentoId: string };
+
 interface Props {
-  pacienteId: string;
   prescricoes: Prescricao[];
   nomeClinica: string;
+  /** Abre o formulário de receita; ausente quando o prontuário é só consulta. */
+  aoEmitir?: () => void;
   /** Recarrega o prontuário; a mensagem, quando vem, é exibida pela tela que o contém. */
   aoAtualizar: (mensagem?: string) => void;
 }
 
-/** Receituário do paciente, com emissão, cancelamento e impressão. */
-export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar }: Props) {
-  const { temPerfil, ehVeterinario } = useAuth();
-  const podeEmitir = temPerfil('Administrador', 'Veterinario');
+/** Medicação do paciente: as receitas, com cancelamento e impressão; cada uma mostra de onde veio. */
+export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }: Props) {
+  const { temPerfil } = useAuth();
+  const podeCancelar = temPerfil('Administrador', 'Veterinario');
+  const { perguntar } = useConfirmacao();
 
-  const [modalAberto, setModalAberto] = useState(false);
+  const [erro, setErro] = useState('');
+  const [cancelando, setCancelando] = useState('');
+
+  async function cancelar(prescricao: Prescricao) {
+    const { confirmado, texto: motivo } = await perguntar({
+      titulo: 'Cancelar receita',
+      mensagem: (
+        <>
+          Cancelar a receita emitida em <strong>{formatarData(prescricao.dataEmissao)}</strong>? Ela continua no
+          prontuário como cancelada e, se for impressa, sai marcada como sem validade.
+        </>
+      ),
+      rotuloConfirmar: 'Cancelar receita',
+      rotuloCancelar: 'Voltar',
+      perigo: true,
+      campoTexto: { rotulo: 'Motivo do cancelamento', placeholder: 'Ex.: dosagem revista', obrigatorio: true },
+    });
+
+    if (!confirmado) {
+      return;
+    }
+
+    if (motivo.length > 300) {
+      setErro('O motivo do cancelamento deve ter até 300 caracteres.');
+      return;
+    }
+
+    setErro('');
+    setCancelando(prescricao.id);
+
+    try {
+      await api.patch(`/api/prescricoes/${prescricao.id}/cancelar`, { motivo });
+      aoAtualizar('Receita cancelada. O registro permanece no histórico do paciente.');
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível cancelar a receita.'));
+    } finally {
+      setCancelando('');
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+        <div>
+          <h2 className="font-semibold text-slate-900">Medicação</h2>
+          <p className="text-xs text-slate-500">Receitas com os medicamentos prescritos, para consulta e impressão.</p>
+        </div>
+
+        {aoEmitir && (
+          <button type="button" className="vc-botao-primario" onClick={aoEmitir}>
+            <Plus size={16} />
+            Nova receita
+          </button>
+        )}
+      </div>
+
+      {erro && (
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
+      )}
+
+      {prescricoes.length === 0 ? (
+        <SemDados
+          icone={<Pill size={40} />}
+          titulo="Nenhuma receita emitida"
+          descricao="As receitas são emitidas a partir de uma avaliação ou de uma evolução e ficam aqui para consulta e impressão."
+        />
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {prescricoes.map((prescricao) => (
+            <li key={prescricao.id} className="px-5 py-4">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-900">
+                      Receita de {formatarData(prescricao.dataEmissao)}
+                    </span>
+
+                    <Etiqueta
+                      className={
+                        prescricao.status === 'Ativa' ? 'bg-sucesso-claro text-emerald-800' : 'bg-slate-200 text-slate-600'
+                      }
+                    >
+                      {prescricao.status}
+                    </Etiqueta>
+                  </div>
+
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {prescricao.nomeVeterinario}
+                    {prescricao.crmv && ` · ${prescricao.crmv}`}
+                    {prescricao.validaAte && ` · Válida até ${formatarDia(prescricao.validaAte)}`}
+                  </p>
+                  {prescricao.origem && (
+                    <p className="mt-0.5 text-xs text-slate-500">Origem: {prescricao.origem}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => imprimirReceita(prescricao, nomeClinica)}
+                    className="rounded-lg p-2 text-slate-500 transition hover:bg-brand-100 hover:text-brand"
+                    title="Imprimir receita"
+                    aria-label={`Imprimir a receita de ${formatarData(prescricao.dataEmissao)}`}
+                  >
+                    <Printer size={16} />
+                  </button>
+
+                  {podeCancelar && prescricao.status === 'Ativa' && (
+                    <button
+                      type="button"
+                      onClick={() => cancelar(prescricao)}
+                      disabled={cancelando === prescricao.id}
+                      className="rounded-lg p-2 text-slate-500 transition hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
+                      title="Cancelar receita"
+                      aria-label={`Cancelar a receita de ${formatarData(prescricao.dataEmissao)}`}
+                    >
+                      {cancelando === prescricao.id ? <Loader2 className="animate-spin" size={16} /> : <Ban size={16} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <ul className="space-y-2">
+                {prescricao.itens.map((item) => (
+                  <li key={item.id} className="rounded-xl bg-slate-50 px-4 py-3">
+                    <p className="text-sm font-semibold text-slate-800">{item.medicamento}</p>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      {[item.dosagem, item.frequencia, item.duracao, item.via].filter(Boolean).join(' · ')}
+                    </p>
+                    {item.observacao && <p className="mt-1 text-xs text-slate-500">{item.observacao}</p>}
+                  </li>
+                ))}
+              </ul>
+
+              {prescricao.orientacoes && (
+                <p className="mt-3 text-sm text-slate-600">
+                  <strong className="text-slate-700">Orientações:</strong> {prescricao.orientacoes}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+interface ModalProps {
+  aberto: boolean;
+  pacienteId: string;
+  avaliacoes: Avaliacao[];
+  evolucoes: EvolucaoParaReceita[];
+  /** Origem já definida pelo botão que abriu o formulário; sem ela, o usuário escolhe. */
+  origem?: OrigemDaReceita | null;
+  aoFechar: () => void;
+  aoSalvar: (mensagem: string) => void;
+}
+
+/**
+ * Emissão de receita. Toda receita vem de uma avaliação ou de uma evolução: a origem é
+ * escolhida no formulário, ou já vem marcada quando a emissão parte do próprio registro.
+ */
+export function ModalReceita({ aberto, ...props }: ModalProps) {
+  // O formulário só existe enquanto o modal está aberto: cada abertura monta campos novos.
+  if (!aberto) return null;
+
+  return <FormularioReceita {...props} />;
+}
+
+function valorDaOrigem(origem?: OrigemDaReceita | null): string {
+  if (!origem) return '';
+  return 'avaliacaoId' in origem ? `avaliacao:${origem.avaliacaoId}` : `evolucao:${origem.atendimentoId}`;
+}
+
+function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemInicial, aoFechar, aoSalvar }: Omit<ModalProps, 'aberto'>) {
+  const { ehVeterinario } = useAuth();
+
+  const [origem, setOrigem] = useState(valorDaOrigem(origemInicial));
   const [itens, setItens] = useState<ItemFormulario[]>([{ ...ITEM_VAZIO }]);
   // O veterinário logado assina a própria receita; o administrador precisa escolher quem assina.
   const [veterinarioId, setVeterinarioId] = useState('');
@@ -69,14 +267,8 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  function abrirNova() {
-    setItens([{ ...ITEM_VAZIO }]);
-    setVeterinarioId('');
-    setOrientacoes('');
-    setValidaAte(paraValorInputData(proximosTrintaDias()));
-    setErro('');
-    setModalAberto(true);
-  }
+  // Limite inferior do campo de validade, calculado uma vez: o lint pede funções puras na renderização.
+  const [amanha] = useState(() => paraValorInputData(new Date(Date.now() + 86_400_000)));
 
   function atualizarItem(indice: number, campo: keyof ItemFormulario, valor: string) {
     setItens((atual) => atual.map((item, i) => (i === indice ? { ...item, [campo]: valor } : item)));
@@ -85,6 +277,11 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
+
+    if (!origem) {
+      setErro('Informe a origem da receita: a avaliação ou a evolução em que ela foi prescrita.');
+      return;
+    }
 
     const preenchidos = itens.filter((i) => i.medicamento.trim());
 
@@ -141,12 +338,16 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
       return;
     }
 
+    const [tipoDaOrigem, idDaOrigem] = origem.split(':');
+
     setSalvando(true);
 
     try {
       await api.post('/api/prescricoes', {
         pacienteId,
         veterinarioId: veterinarioId || null,
+        avaliacaoId: tipoDaOrigem === 'avaliacao' ? idDaOrigem : null,
+        atendimentoId: tipoDaOrigem === 'evolucao' ? idDaOrigem : null,
         validaAte: validaAte || null,
         orientacoes: orientacoes.trim(),
         itens: preenchidos.map((i) => ({
@@ -159,8 +360,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
         })),
       });
 
-      setModalAberto(false);
-      aoAtualizar('Receita emitida com sucesso.');
+      aoSalvar('Receita emitida com sucesso.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível emitir a receita.'));
     } finally {
@@ -168,164 +368,52 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
     }
   }
 
-  const { perguntar } = useConfirmacao();
-
-  // Limite inferior do campo de validade, calculado uma vez: o lint pede funções puras na renderização.
-  const [amanha] = useState(() => paraValorInputData(new Date(Date.now() + 86_400_000)));
-
-  const [cancelando, setCancelando] = useState('');
-
-  async function cancelar(prescricao: Prescricao) {
-    const { confirmado, texto: motivo } = await perguntar({
-      titulo: 'Cancelar receita',
-      mensagem: (
-        <>
-          Cancelar a receita emitida em <strong>{formatarData(prescricao.dataEmissao)}</strong>? Ela continua no
-          prontuário como cancelada e, se for impressa, sai marcada como sem validade.
-        </>
-      ),
-      rotuloConfirmar: 'Cancelar receita',
-      rotuloCancelar: 'Voltar',
-      perigo: true,
-      campoTexto: { rotulo: 'Motivo do cancelamento', placeholder: 'Ex.: dosagem revista', obrigatorio: true },
-    });
-
-    if (!confirmado) {
-      return;
-    }
-
-    if (motivo.length > 300) {
-      setErro('O motivo do cancelamento deve ter até 300 caracteres.');
-      return;
-    }
-
-    setErro('');
-    setCancelando(prescricao.id);
-
-    try {
-      await api.patch(`/api/prescricoes/${prescricao.id}/cancelar`, { motivo });
-      aoAtualizar('Receita cancelada. O registro permanece no histórico do paciente.');
-    } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível cancelar a receita.'));
-    } finally {
-      setCancelando('');
-    }
-  }
+  const semOrigens = avaliacoes.length === 0 && evolucoes.length === 0;
 
   return (
-    <>
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-          <h2 className="font-semibold text-slate-900">Receituário</h2>
-
-          {podeEmitir && (
-            <button type="button" className="vc-botao-primario" onClick={abrirNova}>
-              <Plus size={16} />
-              Nova receita
-            </button>
-          )}
-        </div>
-
-        {erro && (
-          <div className="px-5 pt-4">
-            <Alerta tipo="erro" aoFechar={() => setErro('')}>
-              {erro}
-            </Alerta>
-          </div>
-        )}
-
-        {prescricoes.length === 0 ? (
-          <SemDados
-            icone={<Pill size={40} />}
-            titulo="Nenhuma receita emitida"
-            descricao="As receitas emitidas ficam disponíveis aqui para consulta e impressão."
-          />
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {prescricoes.map((prescricao) => (
-              <li key={prescricao.id} className="px-5 py-4">
-                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-slate-900">
-                        Receita de {formatarData(prescricao.dataEmissao)}
-                      </span>
-
-                      <Etiqueta
-                        className={
-                          prescricao.status === 'Ativa'
-                            ? 'bg-sucesso-claro text-emerald-800'
-                            : 'bg-slate-200 text-slate-600'
-                        }
-                      >
-                        {prescricao.status}
-                      </Etiqueta>
-                    </div>
-
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {prescricao.nomeVeterinario}
-                      {prescricao.crmv && ` · ${prescricao.crmv}`}
-                      {prescricao.validaAte && ` · Válida até ${formatarDia(prescricao.validaAte)}`}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => imprimirReceita(prescricao, nomeClinica)}
-                      className="rounded-lg p-2 text-slate-500 transition hover:bg-brand-100 hover:text-brand"
-                      title="Imprimir receita"
-                      aria-label={`Imprimir a receita de ${formatarData(prescricao.dataEmissao)}`}
-                    >
-                      <Printer size={16} />
-                    </button>
-
-                    {podeEmitir && prescricao.status === 'Ativa' && (
-                      <button
-                        type="button"
-                        onClick={() => cancelar(prescricao)}
-                        disabled={cancelando === prescricao.id}
-                        className="rounded-lg p-2 text-slate-500 transition hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
-                        title="Cancelar receita"
-                        aria-label={`Cancelar a receita de ${formatarData(prescricao.dataEmissao)}`}
-                      >
-                        {cancelando === prescricao.id ? <Loader2 className="animate-spin" size={16} /> : <Ban size={16} />}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <ul className="space-y-2">
-                  {prescricao.itens.map((item) => (
-                    <li key={item.id} className="rounded-xl bg-slate-50 px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-800">{item.medicamento}</p>
-                      <p className="mt-0.5 text-xs text-slate-600">
-                        {[item.dosagem, item.frequencia, item.duracao, item.via].filter(Boolean).join(' · ')}
-                      </p>
-                      {item.observacao && <p className="mt-1 text-xs text-slate-500">{item.observacao}</p>}
-                    </li>
-                  ))}
-                </ul>
-
-                {prescricao.orientacoes && (
-                  <p className="mt-3 text-sm text-slate-600">
-                    <strong className="text-slate-700">Orientações:</strong> {prescricao.orientacoes}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Modal
-        aberto={modalAberto}
-        titulo="Nova receita"
-        descricao="A receita fica registrada no prontuário e pode ser impressa para o tutor."
-        aoFechar={() => setModalAberto(false)}
-        largura="max-w-3xl"
-      >
+    <Modal
+      aberto
+      titulo="Nova receita"
+      descricao="A receita fica registrada no prontuário, ligada à avaliação ou à evolução de origem, e pode ser impressa para o tutor."
+      aoFechar={aoFechar}
+      largura="max-w-3xl"
+    >
+      {semOrigens ? (
+        <Alerta tipo="aviso">
+          A receita é emitida a partir de uma avaliação ou de uma evolução. Registre a avaliação do animal antes de
+          prescrever.
+        </Alerta>
+      ) : (
         <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <Campo rotulo="Origem da receita" obrigatorio dica="A avaliação ou a evolução em que o medicamento foi prescrito.">
+            <select
+              className="vc-campo"
+              value={origem}
+              onChange={(e) => setOrigem(e.target.value)}
+              disabled={!!origemInicial}
+            >
+              <option value="">Selecione a origem</option>
+              {avaliacoes.length > 0 && (
+                <optgroup label="Avaliações">
+                  {avaliacoes.map((avaliacao) => (
+                    <option key={avaliacao.id} value={`avaliacao:${avaliacao.id}`}>
+                      Avaliação de {formatarData(avaliacao.dataRegistro)} — {resumirTexto(avaliacao.motivoConsulta, 60)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {evolucoes.length > 0 && (
+                <optgroup label="Evoluções">
+                  {evolucoes.map((evolucao) => (
+                    <option key={evolucao.id} value={`evolucao:${evolucao.id}`}>
+                      Evolução nº {evolucao.numeroSessao} — {evolucao.nomeTratamento} ({formatarData(evolucao.data)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </Campo>
+
           {itens.map((item, indice) => (
             <fieldset key={indice} className="rounded-xl border border-slate-200 p-4">
               <legend className="flex items-center gap-2 px-2 text-sm font-semibold text-slate-700">
@@ -385,11 +473,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
                   </Campo>
 
                   <Campo rotulo="Via">
-                    <select
-                      className="vc-campo"
-                      value={item.via}
-                      onChange={(e) => atualizarItem(indice, 'via', e.target.value)}
-                    >
+                    <select className="vc-campo" value={item.via} onChange={(e) => atualizarItem(indice, 'via', e.target.value)}>
                       {VIAS.map((via) => (
                         <option key={via}>{via}</option>
                       ))}
@@ -448,7 +532,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
           {erro && <Alerta tipo="erro">{erro}</Alerta>}
 
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="vc-botao-secundario" onClick={() => setModalAberto(false)} disabled={salvando}>
+            <button type="button" className="vc-botao-secundario" onClick={aoFechar} disabled={salvando}>
               Cancelar
             </button>
             <button type="submit" className="vc-botao-primario" disabled={salvando}>
@@ -457,13 +541,7 @@ export function Receituario({ prescricoes, pacienteId, nomeClinica, aoAtualizar 
             </button>
           </div>
         </form>
-      </Modal>
-    </>
+      )}
+    </Modal>
   );
-}
-
-function proximosTrintaDias(): Date {
-  const data = new Date();
-  data.setDate(data.getDate() + 30);
-  return data;
 }

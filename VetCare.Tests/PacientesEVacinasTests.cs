@@ -20,6 +20,7 @@ namespace VetCare.Tests
             new VacinaRepository(Contexto),
             new TratamentoRepository(Contexto),
             new VeterinarioRepository(Contexto),
+            Dependencias.Notificacoes(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
@@ -37,7 +38,8 @@ namespace VetCare.Tests
             Raca = "Beagle",
             Sexo = "Fêmea",
             DataNascimento = new DateTime(2021, 5, 20),
-            TutorId = Tutor.Id
+            TutorId = Tutor.Id,
+            VeterinarioResponsavelId = Veterinario.Id
         };
 
         [Fact]
@@ -95,27 +97,17 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Paciente_com_historico_nao_pode_ser_excluido()
+        public async Task Paciente_e_inativado_sem_perder_o_historico()
         {
-            Contexto.AvaliacoesClinicas.Add(new AvaliacaoClinica
-            {
-                TratamentoId = Tratamento.Id,
-                ProntuarioId = Prontuario.Id,
-                VeterinarioId = Veterinario.Id,
-                QueixaPrincipal = "q",
-                Anamnese = "a",
-                ExameFisico = "e",
-                HipoteseDiagnostica = "h",
-                PlanoTerapeutico = "p"
-            });
+            var resultado = await CriarCasoDePacientes(ComoAdministrador()).AlterarStatus(Paciente.Id, false);
 
-            await Contexto.SaveChangesAsync();
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            (await Contexto.Pets.FindAsync(Paciente.Id))!.Ativo.Should().BeFalse();
+            Contexto.AvaliacoesClinicas.Count(a => a.PacienteId == Paciente.Id)
+                .Should().Be(1, "a avaliação do cenário continua no prontuário");
 
-            var resultado = await CriarCasoDePacientes(ComoAdministrador()).Excluir(Paciente.Id);
-
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Falha.Should().Be(TipoFalha.Conflito);
-            resultado.Mensagem.Should().Contain("inativação");
+            // Não existe mais exclusão de paciente: só a inativação, que preserva tudo.
+            typeof(GerenciarPacientesUseCase).GetMethod("Excluir").Should().BeNull();
         }
 
         [Fact]
@@ -137,7 +129,7 @@ namespace VetCare.Tests
             pet!.Ativo.Should().BeFalse();
 
             var tratamento = await Contexto.Tratamentos.FindAsync(Tratamento.Id);
-            tratamento!.Status.Should().Be("Interrompido");
+            tratamento!.Status.Should().Be(StatusTratamento.Inativado);
             tratamento.DataFim.Should().NotBeNull();
         }
 

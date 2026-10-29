@@ -102,7 +102,7 @@ namespace VetCare.API.UseCases
                 return Resultado<List<SessaoDTO>>.NaoEncontrado("Tratamento não encontrado.");
             }
 
-            // HU-013, CA-1: o tutor só vê as sessões dos próprios pets; o veterinário, as dos seus pacientes.
+            // HU-013, CA-1: o tutor só vê as sessões dos próprios pets; a equipe clínica, as de todos.
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
             {
                 return Resultado<List<SessaoDTO>>.NaoAutorizado("Você não tem acesso a este tratamento.");

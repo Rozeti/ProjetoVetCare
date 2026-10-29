@@ -14,19 +14,13 @@ namespace VetCare.API.Controllers
     public class PetsController : ControllerBase
     {
         private readonly GerenciarPacientesUseCase _useCase;
-        private readonly TransferirPacienteUseCase _transferir;
 
-        public PetsController(GerenciarPacientesUseCase useCase, TransferirPacienteUseCase transferir)
-        {
-            _useCase = useCase;
-            _transferir = transferir;
-        }
+        public PetsController(GerenciarPacientesUseCase useCase) => _useCase = useCase;
 
         /// <summary>
-        /// Lista no recorte de quem consulta: o veterinário vê só os pacientes sob sua
-        /// responsabilidade e o tutor só os próprios pets. Administração e apoio veem a
-        /// clínica inteira e podem filtrar por veterinário ou pelos pacientes ainda sem
-        /// responsável designado.
+        /// O tutor vê só os próprios pets; a equipe clínica (administração, apoio e todos os
+        /// veterinários) vê a clínica inteira e pode filtrar por veterinário responsável ou pelos
+        /// pacientes ainda sem responsável designado.
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> Listar(
@@ -35,9 +29,17 @@ namespace VetCare.API.Controllers
             [FromQuery] bool? semResponsavel,
             [FromQuery] string? busca,
             [FromQuery] bool? ativo,
+            [FromQuery] string? raca,
             [FromQuery] ParametrosPagina paginacao)
         {
-            return this.Responder(await _useCase.Listar(tutorId, veterinarioId, semResponsavel == true, busca, ativo, paginacao));
+            return this.Responder(await _useCase.Listar(tutorId, veterinarioId, semResponsavel == true, busca, ativo, paginacao, raca));
+        }
+
+        /// <summary>Raças dos pacientes no recorte de quem consulta, para o filtro da lista.</summary>
+        [HttpGet("racas")]
+        public async Task<IActionResult> ListarRacas()
+        {
+            return this.Responder(await _useCase.ListarRacas());
         }
 
         /// <summary>
@@ -96,32 +98,14 @@ namespace VetCare.API.Controllers
         }
 
         /// <summary>
-        /// Troca o veterinário responsável. Os tratamentos em andamento e as sessões futuras
-        /// acompanham o paciente, que sai da lista do profissional anterior.
+        /// HU-003, CA-4: o paciente não é excluído, é inativado. O cadastro e todo o histórico
+        /// clínico permanecem (RN-004), e o paciente pode ser reativado depois.
         /// </summary>
-        [HttpPatch("{id:guid}/veterinario-responsavel")]
-        [Authorize(Roles = Perfis.EquipeClinica)]
-        public async Task<IActionResult> Transferir(Guid id, TransferirPacienteDTO dto)
-        {
-            return this.Responder(await _transferir.Executar(id, dto));
-        }
-
         [HttpPatch("{id:guid}/status")]
         [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
         public async Task<IActionResult> AlterarStatus(Guid id, [FromBody] AlterarStatusDTO dto)
         {
             return this.Responder(await _useCase.AlterarStatus(id, dto.Ativo));
-        }
-
-        /// <summary>
-        /// HU-003, CA-4: um paciente sem histórico clínico é excluído; com prontuário
-        /// preenchido a operação é recusada e o sistema oferece apenas a inativação.
-        /// </summary>
-        [HttpDelete("{id:guid}")]
-        [Authorize(Roles = Perfis.Administrador)]
-        public async Task<IActionResult> Excluir(Guid id)
-        {
-            return this.Responder(await _useCase.Excluir(id));
         }
     }
 }

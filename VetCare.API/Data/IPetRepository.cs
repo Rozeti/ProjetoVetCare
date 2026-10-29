@@ -16,6 +16,9 @@ namespace VetCare.API.Data
 
         public string? Busca { get; init; }
         public bool? Ativo { get; init; }
+
+        /// <summary>Raça exata, sem diferenciar maiúsculas.</summary>
+        public string? Raca { get; init; }
     }
 
     public interface IPetRepository
@@ -29,11 +32,8 @@ namespace VetCare.API.Data
         Task<List<Pet>> ListarParaSelecao(Guid clinicaId, FiltroDePacientes filtro);
         void Atualizar(Pet pet);
 
-        /// <summary>HU-003, CA-4: um paciente com registros clínicos não pode ser excluído.</summary>
-        Task<bool> PossuiRegistrosClinicos(Guid petId);
-
-        /// <summary>Exclusão definitiva, permitida apenas quando não há histórico clínico (RN-004).</summary>
-        Task Remover(Pet pet);
+        /// <summary>Raças cadastradas no recorte de quem consulta, para o filtro da lista de pacientes.</summary>
+        Task<List<string>> ListarRacas(Guid clinicaId, FiltroDePacientes filtro);
 
         /// <summary>O microchip identifica o animal e não pode se repetir na mesma clínica.</summary>
         Task<bool> MicrochipEmUso(Guid clinicaId, string microchip, Guid? ignorarPetId = null);

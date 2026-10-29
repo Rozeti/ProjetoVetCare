@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, KeyRound, Loader2, Mail, MailCheck, Stethoscope } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
-import { emailValido } from '../utils/formato';
+import { DICA_SENHA, emailValido, validarSenha } from '../utils/formato';
 import type { RespostaRecuperacao } from '../types';
 import { Alerta } from '../components/ui';
 
@@ -80,8 +80,10 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
       return;
     }
 
-    if (novaSenha.length < 6) {
-      setErro('A nova senha deve ter no mínimo 6 caracteres.');
+    const senhaInvalida = validarSenha(novaSenha);
+
+    if (senhaInvalida) {
+      setErro(senhaInvalida);
       return;
     }
 
@@ -237,7 +239,7 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
                     autoComplete="new-password"
                     disabled={enviando}
                   />
-                  <p className="mt-1 text-xs text-slate-500">Mínimo de 6 caracteres.</p>
+                  <p className="mt-1 text-xs text-slate-500">{DICA_SENHA}</p>
                 </div>
 
                 <div>

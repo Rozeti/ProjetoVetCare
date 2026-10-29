@@ -12,9 +12,19 @@ namespace VetCare.API.DTOs
         [Range(0, 10, ErrorMessage = "A escala de dor deve ser um valor entre 0 e 10.")]
         public int EscalaDor { get; set; }
 
-        [Required(ErrorMessage = "A evolução clínica é obrigatória.")]
-        [StringLength(4000, ErrorMessage = "A evolução clínica deve ter até 4000 caracteres.")]
+        [Required(ErrorMessage = "Descreva o que foi realizado na sessão.")]
+        [StringLength(4000, ErrorMessage = "A descrição do que foi realizado deve ter até 4000 caracteres.")]
         public string EvolucaoClinica { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Informe como o animal reagiu à sessão.")]
+        [StringLength(2000, ErrorMessage = "A reação do animal deve ter até 2000 caracteres.")]
+        public string ReacaoAnimal { get; set; } = string.Empty;
+
+        [StringLength(4000, ErrorMessage = "As observações devem ter até 4000 caracteres.")]
+        public string Observacoes { get; set; } = string.Empty;
+
+        [StringLength(4000, ErrorMessage = "O relatório deve ter até 4000 caracteres.")]
+        public string Relatorio { get; set; } = string.Empty;
 
         [StringLength(500, ErrorMessage = "Os sinais vitais devem ter até 500 caracteres.")]
         public string SinaisVitais { get; set; } = string.Empty;

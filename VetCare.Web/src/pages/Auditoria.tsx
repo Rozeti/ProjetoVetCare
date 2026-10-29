@@ -9,39 +9,44 @@ import { formatarDataHora, paraValorInputData, trintaDiasAtras } from '../utils/
 import { useCarregamento } from '../hooks/useCarregamento';
 import { paginaVazia } from '../utils/paginacao';
 
-/** Mesma lista de AuditoriaService.Acoes, na API. */
-const ACOES = [
-  'Login',
-  'LoginNegado',
-  'Consulta',
-  'Criacao',
-  'Alteracao',
-  'Inativacao',
-  'Exclusao',
-  'Download',
-  'SolicitacaoDeSenha',
-  'RedefinicaoSenha',
+/**
+ * Ações mostradas na tela (AuditoriaService.Acoes.AlteracoesDeDados, na API). Logins,
+ * consultas e downloads continuam gravados no banco, mas não aparecem aqui.
+ */
+const ACOES: { valor: string; rotulo: string; estilo: string }[] = [
+  { valor: 'Criacao', rotulo: 'Criação', estilo: 'bg-info-claro text-purple-800' },
+  { valor: 'Alteracao', rotulo: 'Alteração', estilo: 'bg-alerta-claro text-amber-800' },
+  { valor: 'Inativacao', rotulo: 'Inativação ou cancelamento', estilo: 'bg-slate-200 text-slate-700' },
+  { valor: 'Exclusao', rotulo: 'Exclusão', estilo: 'bg-perigo-claro text-red-800' },
 ];
 
-const ENTIDADES = ['Autenticacao', 'Usuario', 'Paciente', 'Prontuario', 'DocumentoClinico'];
+/** Cadastros e registros que aparecem na trilha, com o nome que o usuário reconhece. */
+const ENTIDADES: { valor: string; rotulo: string }[] = [
+  { valor: 'Paciente', rotulo: 'Paciente' },
+  { valor: 'Tutor', rotulo: 'Tutor' },
+  { valor: 'Usuario', rotulo: 'Usuário' },
+  { valor: 'Veterinario', rotulo: 'Veterinário' },
+  { valor: 'AvaliacaoClinica', rotulo: 'Avaliação' },
+  { valor: 'Tratamento', rotulo: 'Tratamento' },
+  { valor: 'AtendimentoFisioterapeutico', rotulo: 'Evolução' },
+  { valor: 'Sessao', rotulo: 'Sessão' },
+  { valor: 'Vacina', rotulo: 'Vacina' },
+  { valor: 'Prescricao', rotulo: 'Receita' },
+  { valor: 'PedidoExame', rotulo: 'Pedido de exame' },
+  { valor: 'AlergiaCondicao', rotulo: 'Alerta clínico' },
+  { valor: 'ObservacaoInterna', rotulo: 'Observação interna' },
+  { valor: 'DocumentoClinico', rotulo: 'Documento' },
+  { valor: 'MidiaSessao', rotulo: 'Foto ou vídeo' },
+  { valor: 'Clinica', rotulo: 'Configurações da clínica' },
+];
 
-const ESTILO_ACAO: Record<string, string> = {
-  Login: 'bg-sucesso-claro text-emerald-800',
-  LoginNegado: 'bg-perigo-claro text-red-800',
-  Consulta: 'bg-brand-100 text-brand-dark',
-  Criacao: 'bg-info-claro text-purple-800',
-  Alteracao: 'bg-alerta-claro text-amber-800',
-  Inativacao: 'bg-slate-200 text-slate-700',
-  Exclusao: 'bg-perigo-claro text-red-800',
-  Download: 'bg-slate-100 text-slate-600',
-  SolicitacaoDeSenha: 'bg-alerta-claro text-amber-800',
-  RedefinicaoSenha: 'bg-alerta-claro text-amber-800',
-};
+const rotuloDaAcao = (acao: string) => ACOES.find((a) => a.valor === acao)?.rotulo ?? acao;
+const rotuloDaEntidade = (entidade: string) => ENTIDADES.find((e) => e.valor === entidade)?.rotulo ?? entidade;
 
 /**
- * Trilha de auditoria da clínica. Registrar quem consultou cada prontuário é
- * exigência de rastreabilidade em dados clínicos e base para responder a
- * pedidos de titulares sobre o uso dos seus dados.
+ * Trilha de auditoria da clínica: quem criou, alterou, inativou ou excluiu cada cadastro e
+ * registro clínico, e quando. Logins e consultas não aparecem: a tela se concentra no que
+ * mudou nos dados.
  */
 export function Auditoria() {
   const [numeroPagina, setNumeroPagina] = useState(1);
@@ -106,8 +111,8 @@ export function Auditoria() {
         formatarDataHora(r.dataHora),
         r.nomeUsuario,
         r.perfil,
-        r.acao,
-        r.entidade,
+        rotuloDaAcao(r.acao),
+        rotuloDaEntidade(r.entidade),
         r.detalhe,
         r.enderecoIp,
       ]),
@@ -118,7 +123,7 @@ export function Auditoria() {
     <>
       <CabecalhoPagina
         titulo="Trilha de auditoria"
-        descricao="Registro de acessos e alterações nos dados clínicos da clínica."
+        descricao="Quem criou, alterou, inativou ou excluiu cada cadastro e registro clínico."
         acoes={
           pagina.itens.length > 0 && (
             <button type="button" className="vc-botao-secundario" onClick={exportar}>
@@ -130,11 +135,9 @@ export function Auditoria() {
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
 
       <Card className="mb-6 p-4">
@@ -146,8 +149,8 @@ export function Auditoria() {
             <select id="acao" className="vc-campo w-auto" value={acao} onChange={(e) => filtrar(() => setAcao(e.target.value))}>
               <option value="">Todas</option>
               {ACOES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+                <option key={item.valor} value={item.valor}>
+                  {item.rotulo}
                 </option>
               ))}
             </select>
@@ -155,7 +158,7 @@ export function Auditoria() {
 
           <div>
             <label htmlFor="entidade" className="vc-rotulo">
-              Entidade
+              Registro
             </label>
             <select
               id="entidade"
@@ -165,8 +168,8 @@ export function Auditoria() {
             >
               <option value="">Todas</option>
               {ENTIDADES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+                <option key={item.valor} value={item.valor}>
+                  {item.rotulo}
                 </option>
               ))}
             </select>
@@ -236,7 +239,7 @@ export function Auditoria() {
           <SemDados
             icone={<ScrollText size={40} />}
             titulo="Nenhum registro no período"
-            descricao="Acessos a prontuários, alterações de cadastro e tentativas de login aparecem aqui."
+            descricao="Criações, alterações, inativações e exclusões de cadastros e registros clínicos aparecem aqui."
           />
         </Card>
       ) : (
@@ -248,7 +251,7 @@ export function Auditoria() {
                   <th scope="col">Data e hora</th>
                   <th scope="col">Usuário</th>
                   <th scope="col">Ação</th>
-                  <th scope="col">Entidade</th>
+                  <th scope="col">Registro</th>
                   <th scope="col">Detalhe</th>
                   <th scope="col">Origem</th>
                 </tr>
@@ -262,11 +265,13 @@ export function Auditoria() {
                       <span className="text-xs text-slate-400">{registro.perfil}</span>
                     </td>
                     <td>
-                      <Etiqueta className={ESTILO_ACAO[registro.acao] ?? 'bg-slate-100 text-slate-600'}>
-                        {registro.acao}
+                      <Etiqueta
+                        className={ACOES.find((a) => a.valor === registro.acao)?.estilo ?? 'bg-slate-100 text-slate-600'}
+                      >
+                        {rotuloDaAcao(registro.acao)}
                       </Etiqueta>
                     </td>
-                    <td className="text-xs text-slate-500">{registro.entidade || '—'}</td>
+                    <td className="text-xs text-slate-500">{registro.entidade ? rotuloDaEntidade(registro.entidade) : '—'}</td>
                     <td className="text-xs text-slate-600">{registro.detalhe || '—'}</td>
                     <td className="text-xs text-slate-400">{registro.enderecoIp || '—'}</td>
                   </tr>

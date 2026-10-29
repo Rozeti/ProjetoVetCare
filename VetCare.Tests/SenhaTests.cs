@@ -58,11 +58,12 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public void Validacao_de_forca_exige_o_tamanho_minimo()
+        public void Validacao_de_forca_exige_oito_caracteres_com_letras_e_numeros()
         {
             PasswordHasher.ValidarForca("12345").Should().NotBeNull();
             PasswordHasher.ValidarForca(string.Empty).Should().NotBeNull();
-            PasswordHasher.ValidarForca("123456").Should().BeNull();
+            PasswordHasher.ValidarForca("1234567").Should().NotBeNull();
+            PasswordHasher.ValidarForca("senha123").Should().BeNull();
         }
 
         [Fact]

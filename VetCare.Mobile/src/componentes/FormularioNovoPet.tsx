@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, mensagemDeErro } from '../services/api';
-import { ESPECIES, type Pet } from '../tipos';
+import { ESPECIE_ATENDIDA, type Pet } from '../tipos';
 import { Alerta, Botao, CampoDeMarcacao, CampoTexto, SeletorDeOpcao } from './ui';
 import { Icone } from './Icone';
 import { cores, espacos } from '../tema';
@@ -22,7 +22,7 @@ const SEXOS = ['Macho', 'Fêmea'] as const;
 
 const FORM_VAZIO = {
   nome: '',
-  especie: 'Cachorro' as string,
+  especie: ESPECIE_ATENDIDA as string,
   raca: '',
   sexo: 'Macho' as string,
   pelagem: '',
@@ -161,20 +161,13 @@ export function FormularioNovoPet({
               maximo={80}
             />
 
-            <SeletorDeOpcao
-              rotulo="Espécie"
-              obrigatorio
-              opcoes={ESPECIES}
-              selecionada={form.especie}
-              aoSelecionar={(especie) => setForm({ ...form, especie })}
-            />
-
+            {/* A clínica atende apenas cães: o pet é cadastrado como Cachorro. */}
             <CampoTexto
               desabilitado={salvando}
-              rotulo="Raça"
+              rotulo="Raça do cão"
               valor={form.raca}
               aoMudar={(raca) => setForm({ ...form, raca })}
-              exemplo="Deixe em branco se não souber"
+              exemplo="Ex.: SRD, Labrador, Shih Tzu (ou em branco)"
               maximo={80}
             />
 

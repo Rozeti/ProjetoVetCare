@@ -82,18 +82,34 @@ namespace VetCare.API.UseCases
             return Resultado<UsuarioDTO>.Ok(await MapearComVinculos(usuario));
         }
 
+        /// <summary>
+        /// Cadastro da equipe: Administrador, Veterinário e Apoio. Tutores têm tela própria
+        /// (<see cref="GerenciarTutoresUseCase"/>), que cria também o acesso deles.
+        /// </summary>
         public async Task<Resultado<UsuarioDTO>> Cadastrar(CriarUsuarioDTO dto, Guid clinicaId)
         {
             if (!Perfis.EhValido(dto.Perfil))
             {
                 return Resultado<UsuarioDTO>.Invalido(
-                    $"Perfil inválido. Use um destes: {string.Join(", ", Perfis.Validos)}.");
+                    $"Perfil inválido. Use um destes: {Perfis.Administrador}, {Perfis.Veterinario} ou {Perfis.Apoio}.");
             }
 
-            // RN-007: o e-mail precisa ser único no sistema.
-            if (await _usuarios.EmailExiste(dto.Email))
+            var perfil = Perfis.Normalizar(dto.Perfil);
+
+            if (perfil == Perfis.Tutor)
             {
-                return Resultado<UsuarioDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+                return Resultado<UsuarioDTO>.Invalido(
+                    "Tutores são cadastrados na tela de Tutores, que cria também o acesso deles ao sistema.");
+            }
+
+            if (ValidacaoDeCadastro.Nome(dto.Nome) is { } erroDeNome)
+            {
+                return Resultado<UsuarioDTO>.Invalido(erroDeNome);
+            }
+
+            if (ValidacaoDeCadastro.Email(dto.Email) is { } erroDeEmail)
+            {
+                return Resultado<UsuarioDTO>.Invalido(erroDeEmail);
             }
 
             var senhaDefinidaPelaClinica = !string.IsNullOrWhiteSpace(dto.Senha);
@@ -103,25 +119,30 @@ namespace VetCare.API.UseCases
                 return Resultado<UsuarioDTO>.Invalido(erroDeSenha);
             }
 
-            var perfil = Perfis.Normalizar(dto.Perfil);
+            var dadosDoPerfil = ValidarDadosDoPerfil(perfil, dto.Crmv, dto.Especialidade, dto.Setor, cadastro: true);
 
-            if (perfil == Perfis.Veterinario)
+            if (dadosDoPerfil.Erro != null)
             {
-                if (string.IsNullOrWhiteSpace(dto.Crmv))
-                {
-                    return Resultado<UsuarioDTO>.Invalido("Informe o CRMV do veterinário.");
-                }
-
-                if (await _veterinarios.CrmvExiste(dto.Crmv))
-                {
-                    return Resultado<UsuarioDTO>.Conflito("Já existe um veterinário cadastrado com este CRMV.");
-                }
+                return Resultado<UsuarioDTO>.Invalido(dadosDoPerfil.Erro);
             }
+
+            // RN-007: o e-mail precisa ser único no sistema.
+            if (await _usuarios.EmailExiste(dto.Email.Trim()))
+            {
+                return Resultado<UsuarioDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+            }
+
+            if (perfil == Perfis.Veterinario && await _veterinarios.CrmvExiste(dadosDoPerfil.Crmv!))
+            {
+                return Resultado<UsuarioDTO>.Conflito("Já existe um veterinário cadastrado com este CRMV.");
+            }
+
+            dto.Crmv = dadosDoPerfil.Crmv;
 
             var usuario = new Usuario
             {
                 ClinicaId = clinicaId,
-                Nome = dto.Nome.Trim(),
+                Nome = ValidacaoDeCadastro.Compactar(dto.Nome),
                 Email = dto.Email.Trim().ToLowerInvariant(),
                 // Sem senha informada, a conta nasce com uma senha aleatória que ninguém conhece;
                 // o usuário define a própria pelo link e código do e-mail de boas-vindas.
@@ -159,22 +180,36 @@ namespace VetCare.API.UseCases
                 return Resultado<UsuarioDTO>.NaoEncontrado("Usuário não encontrado.");
             }
 
-            if (await _usuarios.EmailExiste(dto.Email, id))
+            // O nome só passa pela regra de nome completo quando muda: um cadastro antigo
+            // (como o administrador inicial) continua editável sem trocar de nome.
+            var nome = ValidacaoDeCadastro.Compactar(dto.Nome);
+
+            if (nome != usuario.Nome && ValidacaoDeCadastro.Nome(nome) is { } erroDeNome)
+            {
+                return Resultado<UsuarioDTO>.Invalido(erroDeNome);
+            }
+
+            if (ValidacaoDeCadastro.Email(dto.Email) is { } erroDeEmail)
+            {
+                return Resultado<UsuarioDTO>.Invalido(erroDeEmail);
+            }
+
+            if (await _usuarios.EmailExiste(dto.Email.Trim(), id))
             {
                 return Resultado<UsuarioDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
             }
 
             // HU-002, CA-3: a atualização preserva os vínculos existentes do usuário.
-            usuario.Nome = dto.Nome.Trim();
+            usuario.Nome = nome;
             usuario.Email = dto.Email.Trim().ToLowerInvariant();
 
             _usuarios.Atualizar(usuario);
 
-            var conflitoDoVinculo = await AtualizarVinculoDoPerfil(usuario, dto);
+            var falhaDoVinculo = await AtualizarVinculoDoPerfil(usuario, dto);
 
-            if (conflitoDoVinculo != null)
+            if (falhaDoVinculo != null)
             {
-                return Resultado<UsuarioDTO>.Conflito(conflitoDoVinculo);
+                return Resultado<UsuarioDTO>.Erro(falhaDoVinculo.Value.Tipo, falhaDoVinculo.Value.Mensagem);
             }
 
             // Usuário e vínculo profissional saem numa única gravação.
@@ -321,20 +356,10 @@ namespace VetCare.API.UseCases
                     await _veterinarios.Adicionar(new Veterinario
                     {
                         UsuarioId = usuario.Id,
-                        Crmv = dto.Crmv?.Trim() ?? string.Empty,
+                        Crmv = dto.Crmv ?? string.Empty,
                         Especialidade = string.IsNullOrWhiteSpace(dto.Especialidade)
                             ? "Fisioterapia veterinária"
-                            : dto.Especialidade.Trim()
-                    });
-                    break;
-
-                case Perfis.Tutor:
-                    await _tutores.Adicionar(new Tutor
-                    {
-                        UsuarioId = usuario.Id,
-                        Telefone = dto.Telefone?.Trim() ?? string.Empty,
-                        Endereco = dto.Endereco?.Trim() ?? string.Empty,
-                        Cpf = dto.Cpf?.Trim() ?? string.Empty
+                            : ValidacaoDeCadastro.Compactar(dto.Especialidade)
                     });
                     break;
 
@@ -342,18 +367,62 @@ namespace VetCare.API.UseCases
                     await _apoios.Adicionar(new ApoioAdministrativo
                     {
                         UsuarioId = usuario.Id,
-                        Setor = string.IsNullOrWhiteSpace(dto.Setor) ? "Recepção" : dto.Setor.Trim()
+                        Setor = string.IsNullOrWhiteSpace(dto.Setor) ? "Recepção" : ValidacaoDeCadastro.Compactar(dto.Setor)
                     });
                     break;
             }
         }
 
         /// <summary>
-        /// Campos omitidos (nulos) mantêm o valor atual; só o que veio preenchido é alterado.
-        /// Devolve a mensagem de conflito quando o novo CRMV já pertence a outro profissional.
+        /// Dados profissionais do perfil, com as mesmas regras no cadastro e na edição: CRMV
+        /// obrigatório e no formato do conselho para o veterinário, especialidade e setor com
+        /// tamanho coerente. Devolve o CRMV já normalizado ("CRMV-DF 12345").
         /// </summary>
-        private async Task<string?> AtualizarVinculoDoPerfil(Usuario usuario, AtualizarUsuarioDTO dto)
+        private static (string? Crmv, string? Erro) ValidarDadosDoPerfil(
+            string perfil, string? crmv, string? especialidade, string? setor, bool cadastro)
         {
+            switch (perfil)
+            {
+                case Perfis.Veterinario:
+                {
+                    string? crmvNormalizado = null;
+
+                    // Na edição o CRMV em branco mantém o atual; no cadastro ele é obrigatório.
+                    if (cadastro || !string.IsNullOrWhiteSpace(crmv))
+                    {
+                        var (valor, erro) = ValidacaoDeCadastro.Crmv(crmv);
+
+                        if (erro != null)
+                            return (null, erro);
+
+                        crmvNormalizado = valor;
+                    }
+
+                    var erroDeEspecialidade = ValidacaoDeCadastro.TextoOpcional(especialidade, "A especialidade", 3, 120);
+                    return erroDeEspecialidade != null ? (null, erroDeEspecialidade) : (crmvNormalizado, null);
+                }
+
+                case Perfis.Apoio:
+                    return (null, ValidacaoDeCadastro.TextoOpcional(setor, "O setor", 2, 80));
+
+                default:
+                    return (null, null);
+            }
+        }
+
+        /// <summary>
+        /// Campos omitidos (nulos) mantêm o valor atual; só o que veio preenchido é alterado.
+        /// Os dados de contato do tutor (telefone, CPF, endereço) são editados na tela de Tutores.
+        /// </summary>
+        private async Task<(TipoFalha Tipo, string Mensagem)?> AtualizarVinculoDoPerfil(Usuario usuario, AtualizarUsuarioDTO dto)
+        {
+            var (crmv, erro) = ValidarDadosDoPerfil(usuario.Perfil, dto.Crmv, dto.Especialidade, dto.Setor, cadastro: false);
+
+            if (erro != null)
+            {
+                return (TipoFalha.Validacao, erro);
+            }
+
             switch (usuario.Perfil)
             {
                 case Perfis.Veterinario:
@@ -362,33 +431,20 @@ namespace VetCare.API.UseCases
 
                     if (veterinario != null)
                     {
-                        var crmv = dto.Crmv?.Trim();
-
                         // O CRMV identifica o profissional: a mesma regra do cadastro vale na edição.
-                        if (!string.IsNullOrWhiteSpace(crmv) && crmv != veterinario.Crmv &&
-                            await _veterinarios.CrmvExiste(crmv, veterinario.Id))
+                        if (crmv != null && crmv != veterinario.Crmv && await _veterinarios.CrmvExiste(crmv, veterinario.Id))
                         {
-                            return "Já existe outro veterinário cadastrado com este CRMV.";
+                            return (TipoFalha.Conflito, "Já existe outro veterinário cadastrado com este CRMV.");
                         }
 
-                        veterinario.Crmv = string.IsNullOrWhiteSpace(crmv) ? veterinario.Crmv : crmv;
-                        veterinario.Especialidade = dto.Especialidade?.Trim() ?? veterinario.Especialidade;
+                        veterinario.Crmv = crmv ?? veterinario.Crmv;
+
+                        if (!string.IsNullOrWhiteSpace(dto.Especialidade))
+                        {
+                            veterinario.Especialidade = ValidacaoDeCadastro.Compactar(dto.Especialidade);
+                        }
+
                         _veterinarios.Atualizar(veterinario);
-                    }
-
-                    break;
-                }
-
-                case Perfis.Tutor:
-                {
-                    var tutor = await _tutores.ObterPorUsuarioId(usuario.Id);
-
-                    if (tutor != null)
-                    {
-                        tutor.Telefone = dto.Telefone?.Trim() ?? tutor.Telefone;
-                        tutor.Endereco = dto.Endereco?.Trim() ?? tutor.Endereco;
-                        tutor.Cpf = dto.Cpf?.Trim() ?? tutor.Cpf;
-                        _tutores.Atualizar(tutor);
                     }
 
                     break;
@@ -400,7 +456,7 @@ namespace VetCare.API.UseCases
 
                     if (apoio != null && !string.IsNullOrWhiteSpace(dto.Setor))
                     {
-                        apoio.Setor = dto.Setor.Trim();
+                        apoio.Setor = ValidacaoDeCadastro.Compactar(dto.Setor);
                         _apoios.Atualizar(apoio);
                     }
 

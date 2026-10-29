@@ -173,7 +173,7 @@ export function Configuracoes() {
       <form onSubmit={aoEnviar} className="max-w-3xl space-y-6" noValidate>
         {(erro || erroForm) && <Alerta tipo="erro">{erroForm || erro}</Alerta>}
         {aviso && (
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
+          <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
             {aviso}
           </Alerta>
         )}

@@ -146,13 +146,27 @@ namespace VetCare.Tests
         [Fact]
         public async Task Tratamento_encerrado_nao_aceita_novas_sessoes()
         {
-            Tratamento.Status = "Concluído";
+            foreach (var status in new[] { StatusTratamento.Concluido, StatusTratamento.Inativado })
+            {
+                Tratamento.Status = status;
+                await Contexto.SaveChangesAsync();
+
+                var resultado = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(ProximoHorarioValido()));
+
+                resultado.Sucesso.Should().BeFalse($"um tratamento {status} não recebe sessões");
+                resultado.Mensagem.Should().Contain("concluído ou inativado");
+            }
+        }
+
+        [Fact]
+        public async Task Tratamento_planejado_aceita_sessoes()
+        {
+            Tratamento.Status = StatusTratamento.Planejado;
             await Contexto.SaveChangesAsync();
 
             var resultado = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(ProximoHorarioValido()));
 
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Mensagem.Should().Contain("em andamento");
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
         }
 
         [Fact]
@@ -183,6 +197,34 @@ namespace VetCare.Tests
 
             resultado.Sucesso.Should().BeFalse();
             resultado.Falha.Should().Be(TipoFalha.NaoAutorizado);
+        }
+
+        [Fact]
+        public async Task Colega_agenda_na_propria_agenda_uma_sessao_para_paciente_de_outro_veterinario()
+        {
+            var outroUsuario = new Usuario
+            {
+                ClinicaId = Clinica.Id,
+                Nome = "Veterinária que cobre a ausência",
+                Email = "cobertura@teste.com",
+                Perfil = Perfis.Veterinario,
+                SenhaHash = "hash"
+            };
+
+            var outroVeterinario = new Veterinario { UsuarioId = outroUsuario.Id, Crmv = "CRMV-DF 2100" };
+
+            Contexto.Usuarios.Add(outroUsuario);
+            Contexto.Veterinarios.Add(outroVeterinario);
+            await Contexto.SaveChangesAsync();
+
+            var comoOutro = ComoUsuario(outroUsuario, Clinica.Id, veterinarioId: outroVeterinario.Id);
+            var agendamento = Agendamento(ProximoHorarioValido());
+            agendamento.VeterinarioId = outroVeterinario.Id;
+
+            var resultado = await CriarCasoDeUso(comoOutro).Executar(agendamento);
+
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            resultado.Dados!.VeterinarioId.Should().Be(outroVeterinario.Id);
         }
     }
 }

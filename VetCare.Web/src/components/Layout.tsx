@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart3,
+  Activity,
   Bell,
   CalendarDays,
   CalendarRange,
@@ -42,9 +42,9 @@ const MENU: ItemMenu[] = [
   { rotulo: 'Agenda geral', caminho: '/agenda-geral', icone: CalendarRange, perfis: ['Administrador', 'Apoio'] },
   { rotulo: 'Pacientes', caminho: '/pacientes', icone: PawPrint, perfis: ['Administrador', 'Veterinario', 'Apoio'] },
   { rotulo: 'Tutores', caminho: '/tutores', icone: UserSquare2, perfis: ['Administrador', 'Veterinario', 'Apoio'] },
+  { rotulo: 'Evoluções', caminho: '/evolucoes', icone: Activity, perfis: ['Administrador', 'Veterinario'] },
   { rotulo: 'Mensagens', caminho: '/mensagens', icone: MessageSquare, perfis: ['Administrador', 'Veterinario', 'Tutor', 'Apoio'] },
   { rotulo: 'Notificações', caminho: '/notificacoes', icone: Bell, perfis: ['Administrador', 'Veterinario', 'Tutor', 'Apoio'] },
-  { rotulo: 'Relatórios', caminho: '/relatorios', icone: BarChart3, perfis: ['Administrador', 'Veterinario'] },
   // O apoio consulta a equipe (a API abre a listagem a ele); só a administração edita.
   { rotulo: 'Usuários', caminho: '/usuarios', icone: Users, perfis: ['Administrador', 'Apoio'] },
   { rotulo: 'Auditoria', caminho: '/auditoria', icone: ScrollText, perfis: ['Administrador'] },

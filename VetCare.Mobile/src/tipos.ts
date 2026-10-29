@@ -130,7 +130,23 @@ export interface Prescricao {
   validaAte?: string | null;
   orientacoes: string;
   status: 'Ativa' | 'Cancelada';
+  /** Avaliação ou evolução em que a receita foi prescrita ("Avaliação de 12/04/2026"). */
+  origem: string;
   itens: ItemPrescricao[];
+}
+
+/** Pedido de exames emitido a partir de uma avaliação. */
+export interface PedidoExame {
+  id: string;
+  avaliacaoId: string;
+  dataAvaliacao?: string | null;
+  nomeVeterinario: string;
+  crmv: string;
+  dataEmissao: string;
+  /** Exames solicitados, um por linha. */
+  exames: string;
+  justificativa: string;
+  status: 'Ativo' | 'Cancelado';
 }
 
 export interface Sessao {
@@ -160,12 +176,27 @@ export interface Midia {
   dataUpload: string;
 }
 
-export type TipoItemLinhaTempo = 'Avaliação Clínica' | 'Atendimento' | 'Observação Interna';
+export type CategoriaLinhaTempo =
+  | 'Avaliação'
+  | 'Tratamento'
+  | 'Evolução'
+  | 'Cirurgia'
+  | 'Vacinação'
+  | 'Receita'
+  | 'Exame'
+  | 'Observação';
 
+/** Evento da linha do tempo clínica do animal. */
 export interface ItemLinhaTempo {
   id: string;
+  /** Única por evento: um tratamento gera o evento de início e o de encerramento. */
+  chave: string;
   data: string;
-  tipo: TipoItemLinhaTempo;
+  categoria: CategoriaLinhaTempo;
+  /** Título do evento, por exemplo "Avaliação clínica" ou "Evolução — sessão 3". */
+  tipo: string;
+  tratamentoId?: string | null;
+  numeroSessao?: number | null;
   autor: string;
   descricao: string;
   detalhes: string;
@@ -195,19 +226,30 @@ export interface Documento {
   dataUpload: string;
 }
 
+/** Tratamento encaminhado a partir de uma avaliação; cada sessão realizada gera uma evolução. */
 export interface Tratamento {
   id: string;
   pacienteId: string;
   nomePaciente: string;
+  avaliacaoId: string;
+  dataAvaliacao?: string | null;
+  motivoAvaliacao: string;
   veterinarioId: string;
   nomeVeterinario: string;
+  nome: string;
+  tipo: string;
+  descricao: string;
+  duracaoPrevista: string;
+  frequencia: string;
+  sessoesPrevistas: number;
   dataInicio: string;
   dataFim?: string | null;
-  objetivoTerapeutico: string;
+  /** Planejado, Em Andamento, Concluído ou Inativado. */
   status: string;
   observacoesGerais: string;
   totalSessoes: number;
   sessoesConcluidas: number;
+  evolucoesRegistradas: number;
 }
 
 export interface Prontuario {
@@ -238,6 +280,7 @@ export interface Prontuario {
   evolucaoDor: PontoEvolucao[];
   vacinas: Vacina[];
   prescricoes: Prescricao[];
+  pedidosExame: PedidoExame[];
   documentos: Documento[];
   tratamentos: Tratamento[];
 }
@@ -276,6 +319,7 @@ export type RecursoAtualizado =
   | 'atendimentos'
   | 'avaliacoes'
   | 'prescricoes'
+  | 'pedidosexame'
   | 'vacinas'
   | 'alergias'
   | 'prontuarios'
@@ -333,4 +377,5 @@ export interface Notificacao {
 }
 
 /** Espécies oferecidas no cadastro; a API aceita qualquer texto. */
-export const ESPECIES = ['Cachorro', 'Gato', 'Ave', 'Roedor', 'Outro'] as const;
+/** A clínica atende apenas cães: é a espécie de todo pet cadastrado pelo tutor. */
+export const ESPECIE_ATENDIDA = 'Cachorro';

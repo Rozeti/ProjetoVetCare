@@ -18,6 +18,7 @@ import type { RotasDaPilha } from '../navegacao/rotas';
 import { Alerta } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
 import { cores, espacos, raios, sombraCard } from '../tema';
+import { DICA_SENHA, validarSenha } from '../utils/formato';
 
 type Etapa = 'solicitar' | 'redefinir';
 
@@ -84,13 +85,10 @@ export function RecuperarSenha() {
       return;
     }
 
-    if (novaSenha.length < 6) {
-      setErro('A nova senha deve ter no mínimo 6 caracteres.');
-      return;
-    }
+    const senhaInvalida = validarSenha(novaSenha);
 
-    if (novaSenha.length > 64) {
-      setErro('A nova senha deve ter no máximo 64 caracteres.');
+    if (senhaInvalida) {
+      setErro(senhaInvalida);
       return;
     }
 
@@ -210,7 +208,7 @@ export function RecuperarSenha() {
                 <Text style={estilos.rotulo}>Nova senha</Text>
                 <TextInput
                   style={estilos.campo}
-                  placeholder="Mínimo de 6 caracteres"
+                  placeholder={DICA_SENHA}
                   placeholderTextColor={cores.textoSuave}
                   value={novaSenha}
                   onChangeText={setNovaSenha}

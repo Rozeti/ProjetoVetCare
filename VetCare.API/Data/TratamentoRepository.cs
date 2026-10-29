@@ -30,6 +30,7 @@ namespace VetCare.API.Data
                         .ThenInclude(tu => tu!.Usuario)
                 .Include(t => t.Veterinario)
                     .ThenInclude(v => v!.Usuario)
+                .Include(t => t.Avaliacao)
                 .FirstOrDefaultAsync(t => t.Id == id);
         }
 
@@ -39,6 +40,7 @@ namespace VetCare.API.Data
                 .AsNoTracking()
                 .Include(t => t.Veterinario)
                     .ThenInclude(v => v!.Usuario)
+                .Include(t => t.Avaliacao)
                 .Where(t => t.PacienteId == pacienteId)
                 .OrderByDescending(t => t.DataInicio)
                 .ToListAsync();
@@ -51,6 +53,7 @@ namespace VetCare.API.Data
                 .Include(t => t.Paciente)
                     .ThenInclude(p => p!.Tutor)
                         .ThenInclude(tu => tu!.Usuario)
+                .Include(t => t.Avaliacao)
                 .Where(t => t.VeterinarioId == veterinarioId)
                 .OrderByDescending(t => t.DataInicio)
                 .ToListAsync();

@@ -31,7 +31,8 @@ export function Mensagens() {
   const [erro, setErro] = useState('');
   const [modalNovaConversa, setModalNovaConversa] = useState(false);
 
-  const fimDaLista = useRef<HTMLDivElement>(null);
+  // Área rolável das mensagens: só ela cresce por dentro, a página fica do mesmo tamanho.
+  const areaDasMensagens = useRef<HTMLDivElement>(null);
 
   // Toda ação que muda a lista de conversas incrementa esta versão, que é o que
   // dispara uma nova leitura.
@@ -154,8 +155,11 @@ export function Mensagens() {
     };
   }, [selecionado, ehTutor, perfilContato, nomeContato]);
 
+  // A conversa abre e acompanha a última mensagem rolando só a própria área, sem mexer na
+  // rolagem da página (scrollIntoView rolaria a página inteira junto).
   useEffect(() => {
-    fimDaLista.current?.scrollIntoView({ behavior: 'smooth' });
+    const area = areaDasMensagens.current;
+    if (area) area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
   }, [mensagens]);
 
   async function abrirNovaConversa() {
@@ -219,16 +223,16 @@ export function Mensagens() {
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <div className="border-b border-slate-200 px-5 py-3">
+      {/* Altura fixa na tela: a lista de conversas e o histórico rolam por dentro, e a página
+          não cresce conforme a conversa ganha mensagens. */}
+      <div className="grid gap-4 lg:h-[calc(100vh-13rem)] lg:min-h-[28rem] lg:grid-cols-3">
+        <Card className="flex min-h-0 flex-col lg:col-span-1">
+          <div className="shrink-0 border-b border-slate-200 px-5 py-3">
             <h2 className="text-sm font-semibold text-slate-700">Conversas</h2>
           </div>
 
@@ -241,7 +245,7 @@ export function Mensagens() {
               descricao={ehTutor ? 'Inicie uma conversa com a equipe clínica.' : 'Inicie uma conversa com um tutor ou com a equipe.'}
             />
           ) : (
-            <ul className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto">
+            <ul className="max-h-72 min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto lg:max-h-none">
               {conversas.map((conversa) => (
                 <li key={conversa.usuarioId}>
                   <button
@@ -284,7 +288,7 @@ export function Mensagens() {
           )}
         </Card>
 
-        <Card className="flex min-h-[32rem] flex-col lg:col-span-2">
+        <Card className="flex h-[70vh] min-h-[24rem] flex-col lg:col-span-2 lg:h-auto lg:min-h-0">
           {!selecionado ? (
             <SemDados
               icone={<MessageSquare size={40} />}
@@ -293,7 +297,7 @@ export function Mensagens() {
             />
           ) : (
             <>
-              <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-3">
+              <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-5 py-3">
                 <Avatar nome={nomeContato} rotulo={`Conversa com ${nomeContato}`} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-slate-900">{nomeContato}</p>
@@ -314,7 +318,7 @@ export function Mensagens() {
                 </button>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              <div ref={areaDasMensagens} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
                 {carregandoConversa ? (
                   <Carregando texto="Carregando mensagens..." />
                 ) : mensagens.length === 0 ? (
@@ -353,10 +357,9 @@ export function Mensagens() {
                     </div>
                   ))
                 )}
-                <div ref={fimDaLista} />
               </div>
 
-              <form onSubmit={enviar} className="border-t border-slate-200 p-4">
+              <form onSubmit={enviar} className="shrink-0 border-t border-slate-200 p-4">
                 {petsDaConversa.length > 0 && (
                   <label className="mb-2 flex items-center gap-2 text-xs text-slate-500">
                     <PawPrint size={14} className="shrink-0 text-brand" />

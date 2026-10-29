@@ -28,7 +28,7 @@ const DIAS_DE_PREVENCAO = 30;
 
 /** HU-016: painel com os indicadores operacionais do dia. */
 export function Dashboard() {
-  const { usuario, ehVeterinario, temPerfil } = useAuth();
+  const { usuario, ehVeterinario } = useAuth();
 
   const buscar = useCallback(async () => {
     const [indicadores, prevencao] = await Promise.all([
@@ -70,11 +70,9 @@ export function Dashboard() {
       />
 
       {erro && (
-        <div className="mb-6">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
 
       {carregando ? (
@@ -88,7 +86,7 @@ export function Dashboard() {
               : 'Indicadores consolidados de toda a clínica.'}
           </p>
 
-          {/* HU-016, CA-1: avaliações, atendimentos, confirmações pendentes e pacientes ativos. */}
+          {/* HU-016, CA-1: avaliações, evoluções, confirmações pendentes e pacientes ativos. */}
           <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Estatistica
               rotulo="Avaliações do dia"
@@ -96,7 +94,7 @@ export function Dashboard() {
               icone={<ClipboardList size={20} />}
             />
             <Estatistica
-              rotulo="Atendimentos do dia"
+              rotulo="Evoluções do dia"
               valor={indicadores.atendimentosDoDia}
               icone={<Activity size={20} />}
               cor="text-info"
@@ -260,13 +258,6 @@ export function Dashboard() {
                     <ClipboardList size={16} />
                     Tutores
                   </Link>
-                  {/* RN-008: o apoio administrativo não tem acesso aos relatórios. */}
-                  {temPerfil('Administrador', 'Veterinario') && (
-                    <Link to="/relatorios" className="vc-botao-secundario w-full justify-start">
-                      <Activity size={16} />
-                      Relatórios de produtividade
-                    </Link>
-                  )}
                 </div>
               </Card>
             </div>

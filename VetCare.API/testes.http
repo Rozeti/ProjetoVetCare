@@ -74,15 +74,27 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "nome": "Duplicado",
+  "nome": "Duplicado Souza",
   "email": "rafael@vetcare.com",
   "senha": "senha123",
   "perfil": "Veterinario",
-  "crmv": "CRMV-DF 00000"
+  "crmv": "CRMV-DF 99999"
 }
 
-### Cadastrar tutor
-# @name novoTutor
+### Validação: nome sem sobrenome, CRMV sem UF válida e senha sem números são recusados (400)
+POST {{host}}/api/usuarios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Rafael",
+  "email": "rafael2@vetcare.com",
+  "senha": "somenteletras",
+  "perfil": "Veterinario",
+  "crmv": "CRMV-XX 1"
+}
+
+### Tutores não são cadastrados em /api/usuarios (400): use /api/tutores
 POST {{host}}/api/usuarios
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -90,14 +102,36 @@ Authorization: Bearer {{token}}
 {
   "nome": "Joana Prado",
   "email": "joana@vetcare.com",
+  "perfil": "Tutor"
+}
+
+### Cadastrar tutor (cria também o acesso; telefone com DDD obrigatório, CPF opcional e conferido)
+# @name novoTutor
+POST {{host}}/api/tutores
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Joana Prado",
+  "email": "joana@vetcare.com",
   "senha": "senha123",
-  "perfil": "Tutor",
-  "telefone": "(61) 98888-7777",
+  "telefone": "61988887777",
+  "cpf": "123.456.789-09",
   "endereco": "Taguatinga, Brasília - DF"
 }
 
-@tutorId = {{novoTutor.response.body.tutorId}}
-@usuarioTutorId = {{novoTutor.response.body.id}}
+@tutorId = {{novoTutor.response.body.id}}
+@usuarioTutorId = {{novoTutor.response.body.usuarioId}}
+
+### Editar tutor: a equipe altera nome, e-mail, telefone, CPF e endereço; o próprio tutor, só o contato
+PUT {{host}}/api/tutores/{{tutorId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Joana Prado Lima",
+  "telefone": "(61) 3333-4444"
+}
 
 ### HU-002, CA-5 — Redefinir senha (devolve a senha provisória)
 POST {{host}}/api/usuarios/{{usuarioTutorId}}/redefinir-senha
@@ -134,7 +168,8 @@ Authorization: Bearer {{token}}
   "sexo": "Fêmea",
   "dataNascimento": "2020-08-30",
   "pesoAtualKg": 12.4,
-  "tutorId": "{{tutorId}}"
+  "tutorId": "{{tutorId}}",
+  "veterinarioResponsavelId": "{{veterinarioId}}"
 }
 
 @pacienteId = {{novoPet.response.body.id}}
@@ -146,30 +181,115 @@ Authorization: Bearer {{token}}
 
 {
   "nome": "Sem tutor",
-  "especie": "Gato",
+  "especie": "Cachorro",
   "dataNascimento": "2021-01-10",
   "tutorId": "00000000-0000-0000-0000-000000000000"
 }
 
-### Listar pacientes (aceita busca e filtro por status)
-GET {{host}}/api/pets?busca=Mel&ativo=true
+### Listar pacientes (aceita busca e filtros por status e raça)
+GET {{host}}/api/pets?busca=Mel&ativo=true&raca=Poodle
 Authorization: Bearer {{token}}
 
+### Raças dos pacientes, para o filtro da lista
+GET {{host}}/api/pets/racas
+Authorization: Bearer {{token}}
+
+### Inativar paciente (pacientes não são excluídos; o prontuário é preservado)
+PATCH {{host}}/api/pets/{{pacienteId}}/status
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "ativo": false }
+
+### Reativar paciente
+PATCH {{host}}/api/pets/{{pacienteId}}/status
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "ativo": true }
+
 ###############################################################################
-# Tratamento e agenda
+# Fluxo clínico: animal → avaliações → tratamentos → evoluções (HU-007 / HU-008)
 ###############################################################################
 
-### Abrir tratamento
-# @name novoTratamento
-POST {{host}}/api/tratamentos
+### RN-010 — Avaliação com campo obrigatório vazio é recusada (400)
+POST {{host}}/api/avaliacoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "motivoConsulta": "Dificuldade para levantar",
+  "observacoes": "",
+  "diagnosticoPossivel": "Displasia coxofemoral"
+}
+
+### HU-007, CA-1 — Avaliação: motivo da consulta, observações, possível diagnóstico e veterinário
+# @name novaAvaliacao
+POST {{host}}/api/avaliacoes
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
   "pacienteId": "{{pacienteId}}",
   "veterinarioId": "{{veterinarioId}}",
-  "dataInicio": "2026-09-16",
-  "objetivoTerapeutico": "Reabilitação de displasia coxofemoral.",
+  "motivoConsulta": "Dificuldade para levantar após repouso.",
+  "observacoes": "Quadro progressivo nos últimos seis meses. Dor à extensão do quadril, massa muscular reduzida.",
+  "diagnosticoPossivel": "Displasia coxofemoral bilateral.",
+  "observacaoInterna": "Tutora demonstra dificuldade em seguir as orientações."
+}
+
+@avaliacaoId = {{novaAvaliacao.response.body.id}}
+
+### RN-004 — Corrigir a avaliação (a versão anterior é arquivada)
+PUT {{host}}/api/avaliacoes/{{avaliacaoId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "motivoConsulta": "Dificuldade para levantar após repouso prolongado.",
+  "observacoes": "Quadro progressivo nos últimos seis meses. Dor à extensão do quadril, massa muscular reduzida.",
+  "diagnosticoPossivel": "Displasia coxofemoral bilateral."
+}
+
+### RN-004 — Histórico de versões do registro
+GET {{host}}/api/avaliacoes/{{avaliacaoId}}/historico
+Authorization: Bearer {{token}}
+
+### Avaliações do animal, cada uma com os tratamentos, receitas e pedidos de exame que originou
+GET {{host}}/api/avaliacoes/paciente/{{pacienteId}}
+Authorization: Bearer {{token}}
+
+### Tratamento sem avaliação de origem é recusado (404)
+POST {{host}}/api/tratamentos
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nome": "Tratamento sem origem",
+  "tipo": "Fisioterapia",
+  "descricao": "Teste",
+  "duracaoPrevista": "1 mês",
+  "frequencia": "Semanal",
+  "sessoesPrevistas": 4
+}
+
+### Tratamento encaminhado a partir da avaliação (status Planejado, o padrão, ou Em Andamento)
+# @name novoTratamento
+POST {{host}}/api/tratamentos
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "avaliacaoId": "{{avaliacaoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "nome": "Reabilitação de displasia coxofemoral",
+  "tipo": "Fisioterapia",
+  "descricao": "Hidroterapia e fortalecimento muscular para reduzir a dor e melhorar a marcha.",
+  "duracaoPrevista": "12 semanas",
+  "frequencia": "2 sessões por semana",
+  "sessoesPrevistas": 24,
+  "status": "Planejado",
   "observacoesGerais": "Tutora orientada sobre controle de peso."
 }
 
@@ -227,60 +347,6 @@ Authorization: Bearer {{token}}
 
 { "status": "Confirmada" }
 
-###############################################################################
-# HU-007 / HU-008 / HU-009 — Registros clínicos
-###############################################################################
-
-### RN-010 — Avaliação com campo obrigatório vazio é recusada (400)
-POST {{host}}/api/avaliacoes
-Content-Type: application/json
-Authorization: Bearer {{token}}
-
-{
-  "tratamentoId": "{{tratamentoId}}",
-  "queixaPrincipal": "Dificuldade para levantar",
-  "anamnese": "",
-  "exameFisico": "Dor à extensão do quadril",
-  "hipoteseDiagnostica": "Displasia coxofemoral",
-  "planoTerapeutico": "Hidroterapia"
-}
-
-### HU-007, CA-1 — Avaliação completa (com observação interna opcional)
-# @name novaAvaliacao
-POST {{host}}/api/avaliacoes
-Content-Type: application/json
-Authorization: Bearer {{token}}
-
-{
-  "tratamentoId": "{{tratamentoId}}",
-  "veterinarioId": "{{veterinarioId}}",
-  "queixaPrincipal": "Dificuldade para levantar após repouso.",
-  "anamnese": "Quadro progressivo nos últimos seis meses.",
-  "exameFisico": "Dor à extensão do quadril, massa muscular reduzida.",
-  "hipoteseDiagnostica": "Displasia coxofemoral bilateral.",
-  "planoTerapeutico": "Hidroterapia semanal e controle de peso.",
-  "observacaoInterna": "Tutora demonstra dificuldade em seguir as orientações."
-}
-
-@avaliacaoId = {{novaAvaliacao.response.body.id}}
-
-### RN-004 — Corrigir a avaliação (a versão anterior é arquivada)
-PUT {{host}}/api/avaliacoes/{{avaliacaoId}}
-Content-Type: application/json
-Authorization: Bearer {{token}}
-
-{
-  "queixaPrincipal": "Dificuldade para levantar após repouso prolongado.",
-  "anamnese": "Quadro progressivo nos últimos seis meses.",
-  "exameFisico": "Dor à extensão do quadril, massa muscular reduzida.",
-  "hipoteseDiagnostica": "Displasia coxofemoral bilateral.",
-  "planoTerapeutico": "Hidroterapia duas vezes por semana e controle de peso."
-}
-
-### RN-004 — Histórico de versões do registro
-GET {{host}}/api/avaliacoes/{{avaliacaoId}}/historico
-Authorization: Bearer {{token}}
-
 ### HU-008, CA-2 — Escala de dor fora do intervalo 0–10 é recusada (400)
 POST {{host}}/api/atendimentos
 Content-Type: application/json
@@ -290,10 +356,12 @@ Authorization: Bearer {{token}}
   "sessaoId": "{{sessaoId}}",
   "tecnicasAplicadas": "Hidroterapia",
   "escalaDor": 15,
-  "evolucaoClinica": "Teste"
+  "evolucaoClinica": "Teste",
+  "reacaoAnimal": "Teste"
 }
 
-### HU-008, CA-1 — Registrar atendimento
+### HU-008, CA-1 — Evolução da sessão (o número da sessão é atribuído pela API; a primeira põe o tratamento em andamento)
+# @name novaEvolucao
 POST {{host}}/api/atendimentos
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -303,7 +371,10 @@ Authorization: Bearer {{token}}
   "veterinarioId": "{{veterinarioId}}",
   "tecnicasAplicadas": "Hidroterapia, Laserterapia, Cinesioterapia",
   "escalaDor": 4,
-  "evolucaoClinica": "Melhora na transição deitado-em pé.",
+  "evolucaoClinica": "Esteira aquática por 15 minutos e exercícios de transição deitado-em pé.",
+  "reacaoAnimal": "Tolerou bem a água; cansou no fim da sessão.",
+  "observacoes": "Melhora na transição deitado-em pé.",
+  "relatorio": "Primeira sessão do protocolo, sem intercorrências.",
   "proximosPassos": "Manter o protocolo por mais quatro semanas.",
   "pesoKg": 12.1,
   "temperaturaCelsius": 38.2,
@@ -311,6 +382,91 @@ Authorization: Bearer {{token}}
   "frequenciaRespiratoria": 22,
   "observacaoInterna": "Avaliar encaminhamento ortopédico se não houver ganho."
 }
+
+@evolucaoId = {{novaEvolucao.response.body.id}}
+
+### Evoluções com filtros (pacienteId, tratamentoId, inicio, fim, veterinarioId, numeroSessao); por tratamento saem em ordem cronológica
+GET {{host}}/api/atendimentos?pacienteId={{pacienteId}}&tratamentoId={{tratamentoId}}&pagina=1&tamanho=20
+Authorization: Bearer {{token}}
+
+### Sessão realizada sem agendamento: a evolução nasce do tratamento, e a API cria a sessão já concluída
+POST {{host}}/api/atendimentos
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "tecnicasAplicadas": "Cinesioterapia",
+  "escalaDor": 3,
+  "evolucaoClinica": "Exercícios de propriocepção e alongamento.",
+  "reacaoAnimal": "Colaborativo durante toda a sessão."
+}
+
+### Receita emitida a partir da evolução (a origem é obrigatória: avaliacaoId ou atendimentoId)
+POST {{host}}/api/prescricoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "pacienteId": "{{pacienteId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "atendimentoId": "{{evolucaoId}}",
+  "itens": [
+    { "medicamento": "Gabapentina 100 mg", "dosagem": "1 cápsula", "frequencia": "a cada 12 horas", "duracao": "por 7 dias", "via": "Oral" }
+  ]
+}
+
+### Pedido de exames a partir da avaliação (um exame por linha)
+# @name novoPedidoExame
+POST {{host}}/api/pedidos-exame
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "avaliacaoId": "{{avaliacaoId}}",
+  "exames": "Raio-X do quadril em duas incidências\nHemograma completo",
+  "justificativa": "Confirmar a displasia antes de ampliar o protocolo."
+}
+
+@pedidoExameId = {{novoPedidoExame.response.body.id}}
+
+### Pedidos de exame do animal
+GET {{host}}/api/pedidos-exame/paciente/{{pacienteId}}
+Authorization: Bearer {{token}}
+
+### RN-004 — O pedido de exame é cancelado, nunca apagado
+PATCH {{host}}/api/pedidos-exame/{{pedidoExameId}}/cancelar
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "motivo": "Exame já realizado em outro laboratório."
+}
+
+### Atualizar o tratamento (campos omitidos mantêm o valor atual)
+PUT {{host}}/api/tratamentos/{{tratamentoId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "frequencia": "3 sessões por semana",
+  "sessoesPrevistas": 30
+}
+
+### Inativar o tratamento: as sessões e evoluções continuam no histórico, e ele pode ser reativado
+PUT {{host}}/api/tratamentos/{{tratamentoId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "status": "Inativado" }
+
+### Reativar o tratamento (Concluído, ao contrário, é definitivo)
+PUT {{host}}/api/tratamentos/{{tratamentoId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "status": "Em Andamento" }
 
 ### HU-009 — Observações internas do paciente (rota fechada ao Tutor)
 GET {{host}}/api/observacoes-internas/paciente/{{pacienteId}}
@@ -320,7 +476,7 @@ Authorization: Bearer {{token}}
 # HU-011 / HU-012 — Prontuário e documentos
 ###############################################################################
 
-### HU-011 — Prontuário completo (linha do tempo, evolução, documentos)
+### HU-011 — Prontuário completo (avaliações, tratamentos, linha do tempo com categorias, receitas, exames, documentos)
 GET {{host}}/api/prontuarios/paciente/{{pacienteId}}
 Authorization: Bearer {{token}}
 
@@ -329,7 +485,7 @@ GET {{host}}/api/documentos/paciente/{{pacienteId}}
 Authorization: Bearer {{token}}
 
 ###############################################################################
-# HU-014 / HU-015 / HU-016 / HU-017
+# HU-014 / HU-015 / HU-016
 ###############################################################################
 
 ### Conversas do usuário autenticado
@@ -342,10 +498,6 @@ Authorization: Bearer {{token}}
 
 ### HU-016 — Indicadores do dia (escopo definido pela RN-008)
 GET {{host}}/api/dashboard/indicadores
-Authorization: Bearer {{token}}
-
-### HU-017 — Relatório de produtividade por período
-GET {{host}}/api/dashboard/relatorio-produtividade?inicio=2026-09-01&fim=2026-09-30
 Authorization: Bearer {{token}}
 
 ### Configurações da clínica (RN-002 e RN-009 usam estes valores)
@@ -448,7 +600,7 @@ Authorization: Bearer {{token}}
   "justificativa": "Lançada na carteira do paciente errado."
 }
 
-### Receita com dois medicamentos (o veterinário logado assina; o administrador informa veterinarioId)
+### Receita com dois medicamentos, a partir da avaliação (o veterinário logado assina; o administrador informa veterinarioId)
 # @name novaReceita
 POST {{host}}/api/prescricoes
 Content-Type: application/json
@@ -457,6 +609,7 @@ Authorization: Bearer {{token}}
 {
   "pacienteId": "{{pacienteId}}",
   "veterinarioId": "{{veterinarioId}}",
+  "avaliacaoId": "{{avaliacaoId}}",
   "orientacoes": "Administrar junto com alimento.",
   "itens": [
     { "medicamento": "Meloxicam 2 mg", "dosagem": "1 comprimido", "frequencia": "a cada 24 horas", "duracao": "por 5 dias", "via": "Oral" },
@@ -487,21 +640,27 @@ Authorization: Bearer {{token}}
   "motivo": "Congresso de fisioterapia"
 }
 
-### Pacientes ativos para os seletores dos formulários (sem paginação, no recorte de quem consulta)
+### Pacientes ativos para os seletores dos formulários (sem paginação; a equipe vê toda a clínica, o tutor só os seus)
 GET {{host}}/api/pets/selecao
 Authorization: Bearer {{token}}
 
-### Transferência de paciente para outro veterinário (leva tratamentos em andamento e sessões futuras)
-PATCH {{host}}/api/pets/{{pacienteId}}/veterinario-responsavel
+### Trocar o veterinário responsável na edição do cadastro (não há mais transferência:
+### qualquer veterinário atende qualquer paciente; tratamentos e sessões não mudam)
+PUT {{host}}/api/pets/{{pacienteId}}
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "veterinarioId": "{{veterinarioId}}",
-  "motivo": "Redistribuição da agenda."
+  "nome": "Mel",
+  "especie": "Cachorro",
+  "raca": "Beagle",
+  "sexo": "Fêmea",
+  "dataNascimento": "2020-08-30",
+  "tutorId": "{{tutorId}}",
+  "veterinarioResponsavelId": "{{veterinarioId}}"
 }
 
-### Trilha de auditoria (filtros: acao, entidade, usuarioId, inicio, fim; paginada)
+### Trilha de auditoria: só criações, alterações, inativações e exclusões (filtros: acao, entidade, usuarioId, inicio, fim; paginada)
 GET {{host}}/api/auditoria?entidade=Vacina&pagina=1&tamanho=25
 Authorization: Bearer {{token}}
 

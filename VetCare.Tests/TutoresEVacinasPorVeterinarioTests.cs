@@ -11,10 +11,9 @@ using VetCare.Tests.Suporte;
 namespace VetCare.Tests
 {
     /// <summary>
-    /// O tutor acompanha o paciente: o veterinário vê os tutores dos seus pacientes (e os
-    /// que ainda não têm paciente), e a transferência leva o tutor junto. A carteira de
-    /// vacinação segue a mesma regra: só o responsável e a administração corrigem ou
-    /// apagam aplicações.
+    /// Todo veterinário alcança todos os pacientes da clínica, e com eles todos os tutores e
+    /// todas as carteiras de vacinação: se o responsável faltar, um colega atende o animal sem
+    /// precisar de transferência.
     /// </summary>
     public class TutoresEVacinasPorVeterinarioTests : BaseDeTeste
     {
@@ -88,17 +87,6 @@ namespace VetCare.Tests
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
-        private TransferirPacienteUseCase CasoDeTransferencia(UsuarioAtual usuarioAtual) => new(
-            new PetRepository(Contexto),
-            new VeterinarioRepository(Contexto),
-            new TratamentoRepository(Contexto),
-            new SessaoRepository(Contexto),
-            new BloqueioAgendaRepository(Contexto),
-            new ClinicaRepository(Contexto),
-            Dependencias.Notificacoes(Contexto),
-            Dependencias.Auditoria(Contexto, usuarioAtual),
-            usuarioAtual);
-
         private static ParametrosPagina Pagina() => new() { Pagina = 1, Tamanho = 50 };
 
         private async Task<Vacina> VacinaDoPacienteBase()
@@ -118,19 +106,47 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Veterinario_lista_apenas_os_tutores_dos_seus_pacientes()
+        public async Task Todo_veterinario_lista_todos_os_tutores_da_clinica()
         {
             var doPrimeiro = await CasoDeTutores(ComoVeterinario()).Listar(null, Pagina());
             var doSegundo = await CasoDeTutores(ComoOutroVeterinario()).Listar(null, Pagina());
             var daClinica = await CasoDeTutores(ComoAdministrador()).Listar(null, Pagina());
 
-            doPrimeiro.Dados!.Itens.Select(t => t.Nome).Should().BeEquivalentTo(new[] { UsuarioTutor.Nome });
-            doSegundo.Dados!.Itens.Select(t => t.Nome).Should().BeEquivalentTo(new[] { _usuarioOutroTutor.Nome });
+            var esperados = new[] { UsuarioTutor.Nome, _usuarioOutroTutor.Nome };
+
+            doPrimeiro.Dados!.Itens.Select(t => t.Nome).Should().BeEquivalentTo(esperados);
+            doSegundo.Dados!.Itens.Select(t => t.Nome).Should().BeEquivalentTo(esperados);
             daClinica.Dados!.Itens.Should().HaveCount(2);
         }
 
         [Fact]
-        public async Task Tutor_sem_paciente_aparece_para_todos_os_veterinarios()
+        public async Task Lista_de_tutores_mostra_todos_os_animais_vinculados()
+        {
+            // A outra tutora também leva um pet ao primeiro veterinário.
+            Contexto.Pets.Add(new Pet
+            {
+                ClinicaId = Clinica.Id,
+                TutorId = _outroTutor.Id,
+                VeterinarioResponsavelId = Veterinario.Id,
+                Nome = "Amora",
+                Especie = "Gato",
+                DataNascimento = DateTime.SpecifyKind(new DateTime(2022, 3, 1), DateTimeKind.Utc)
+            });
+            Contexto.SaveChanges();
+
+            var daClinica = await CasoDeTutores(ComoAdministrador()).Listar(null, Pagina());
+            var doSegundo = await CasoDeTutores(ComoOutroVeterinario()).Listar(null, Pagina());
+
+            daClinica.Dados!.Itens.Single(t => t.Id == _outroTutor.Id).Pets.Select(p => p.Nome)
+                .Should().Equal("Amora", "Bolt");
+
+            // O outro veterinário vê os dois animais, inclusive o que a colega acompanha.
+            doSegundo.Dados!.Itens.Single(t => t.Id == _outroTutor.Id).Pets.Select(p => p.Nome)
+                .Should().Equal("Amora", "Bolt");
+        }
+
+        [Fact]
+        public async Task Selecao_de_tutores_traz_todos_os_tutores_para_qualquer_veterinario()
         {
             var usuarioNovo = new Usuario
             {
@@ -147,27 +163,24 @@ namespace VetCare.Tests
 
             var selecao = await CasoDeTutores(ComoVeterinario()).ListarParaSelecao();
 
-            selecao.Dados!.Select(t => t.Nome).Should().Contain("Tutor Recém-chegado",
-                "sem ele o veterinário não conseguiria cadastrar o primeiro paciente do tutor");
-            selecao.Dados.Select(t => t.Nome).Should().NotContain(_usuarioOutroTutor.Nome);
+            selecao.Dados!.Select(t => t.Nome).Should()
+                .Contain(new[] { "Tutor Recém-chegado", _usuarioOutroTutor.Nome, UsuarioTutor.Nome });
         }
 
         [Fact]
-        public async Task Veterinario_nao_abre_nem_altera_tutor_de_outro_profissional()
+        public async Task Qualquer_veterinario_abre_e_atualiza_o_contato_de_qualquer_tutor()
         {
-            var negado = await CasoDeTutores(ComoOutroVeterinario()).ObterPorId(Tutor.Id);
+            var leitura = await CasoDeTutores(ComoOutroVeterinario()).ObterPorId(Tutor.Id);
             var alteracao = await CasoDeTutores(ComoOutroVeterinario())
                 .Atualizar(Tutor.Id, new AtualizarTutorDTO { Telefone = "(61) 90000-9999" });
 
-            negado.Sucesso.Should().BeFalse();
-            negado.Falha.Should().Be(TipoFalha.NaoEncontrado, "o cadastro nem deve parecer existir");
-            alteracao.Falha.Should().Be(TipoFalha.NaoAutorizado);
-
-            (await CasoDeTutores(ComoVeterinario()).ObterPorId(Tutor.Id)).Sucesso.Should().BeTrue();
+            leitura.Sucesso.Should().BeTrue(leitura.Mensagem);
+            alteracao.Sucesso.Should().BeTrue(alteracao.Mensagem);
+            alteracao.Dados!.Telefone.Should().Be("(61) 90000-9999");
         }
 
         [Fact]
-        public async Task Contagem_de_pacientes_do_tutor_segue_o_recorte_do_veterinario()
+        public async Task Contagem_de_pacientes_do_tutor_inclui_todos_os_animais()
         {
             // Segundo pet do tutor base, acompanhado pelo outro veterinário.
             Contexto.Pets.Add(new Pet
@@ -184,24 +197,8 @@ namespace VetCare.Tests
             var doPrimeiro = await CasoDeTutores(ComoVeterinario()).ObterPorId(Tutor.Id);
             var daClinica = await CasoDeTutores(ComoAdministrador()).ObterPorId(Tutor.Id);
 
-            doPrimeiro.Dados!.QuantidadePets.Should().Be(1);
+            doPrimeiro.Dados!.QuantidadePets.Should().Be(2);
             daClinica.Dados!.QuantidadePets.Should().Be(2);
-        }
-
-        [Fact]
-        public async Task Transferencia_do_paciente_leva_o_tutor_para_o_novo_veterinario()
-        {
-            var resultado = await CasoDeTransferencia(ComoAdministrador())
-                .Executar(Paciente.Id, new TransferirPacienteDTO { VeterinarioId = _outroVeterinario.Id });
-
-            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
-            Contexto.ChangeTracker.Clear();
-
-            var doPrimeiro = await CasoDeTutores(ComoVeterinario()).Listar(null, Pagina());
-            var doSegundo = await CasoDeTutores(ComoOutroVeterinario()).Listar(null, Pagina());
-
-            doPrimeiro.Dados!.Itens.Should().BeEmpty("o único paciente do tutor foi embora");
-            doSegundo.Dados!.Itens.Select(t => t.Nome).Should().Contain(UsuarioTutor.Nome);
         }
 
         [Fact]
@@ -228,21 +225,19 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Outro_veterinario_nao_mexe_na_carteira_de_paciente_que_nao_e_seu()
+        public async Task Veterinario_que_cobre_a_colega_corrige_a_carteira_do_paciente()
         {
             var vacina = await VacinaDoPacienteBase();
 
             var correcao = await CasoDeVacinas(ComoOutroVeterinario()).Atualizar(vacina.Id, new AtualizarVacinaDTO
             {
                 Tipo = "Vacina",
-                Nome = "Outra",
+                Nome = "V10 (fabricante corrigido)",
                 DataAplicacao = vacina.DataAplicacao
             });
-            var exclusao = await CasoDeVacinas(ComoOutroVeterinario()).Remover(vacina.Id, "Lançada no paciente errado");
 
-            correcao.Falha.Should().Be(TipoFalha.NaoAutorizado);
-            exclusao.Falha.Should().Be(TipoFalha.NaoAutorizado);
-            Contexto.Vacinas.Should().Contain(v => v.Id == vacina.Id);
+            correcao.Sucesso.Should().BeTrue(correcao.Mensagem);
+            correcao.Dados!.Nome.Should().Be("V10 (fabricante corrigido)");
         }
     }
 }

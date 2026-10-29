@@ -3,8 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace VetCare.API.DTOs
 {
     /// <summary>
-    /// HU-002: cadastro feito pelo Administrador. Quando o perfil é Veterinario, Tutor ou
-    /// Apoio, os dados profissionais correspondentes são criados na mesma operação.
+    /// HU-002: cadastro da equipe feito pelo Administrador (Administrador, Veterinario ou
+    /// Apoio); os dados profissionais do perfil são criados na mesma operação. Tutores são
+    /// cadastrados em /api/tutores. As regras de formato estão em ValidacaoDeCadastro.
     /// </summary>
     public class CriarUsuarioDTO
     {
@@ -33,16 +34,6 @@ namespace VetCare.API.DTOs
 
         [StringLength(120, ErrorMessage = "A especialidade deve ter até 120 caracteres.")]
         public string? Especialidade { get; set; }
-
-        // Dados do tutor (perfil Tutor)
-        [StringLength(30, ErrorMessage = "O telefone deve ter até 30 caracteres.")]
-        public string? Telefone { get; set; }
-
-        [StringLength(250, ErrorMessage = "O endereço deve ter até 250 caracteres.")]
-        public string? Endereco { get; set; }
-
-        [StringLength(20, ErrorMessage = "O CPF deve ter até 20 caracteres.")]
-        public string? Cpf { get; set; }
 
         // Dados do apoio administrativo (perfil Apoio)
         [StringLength(80, ErrorMessage = "O setor deve ter até 80 caracteres.")]

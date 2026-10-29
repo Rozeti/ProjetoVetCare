@@ -1,4 +1,4 @@
-import { AlertTriangle, ShieldAlert, Syringe } from 'lucide-react';
+import { AlertTriangle, Syringe } from 'lucide-react';
 import type { AlergiaCondicao, Vacina } from '../types';
 import { Etiqueta } from './ui';
 import { estiloGravidade, formatarDia, rotuloTipoAlerta } from '../utils/formato';
@@ -19,8 +19,8 @@ interface Props {
 /**
  * Alergias, comorbidades e vacinação em atraso do paciente. Aparecem no topo do
  * prontuário porque precisam ser lidas antes de qualquer conduta clínica — é
- * informação de segurança, não um detalhe de cadastro. Os itens ficam lado a lado
- * para que a leitura seja rápida e a caixa não empurre o restante da tela.
+ * informação de segurança, não um detalhe de cadastro. Cada item mostra só o nome e a
+ * descrição, na cor da gravidade, lado a lado para que a leitura seja rápida.
  */
 export function AlertasClinicos({
   alertas,
@@ -34,8 +34,6 @@ export function AlertasClinicos({
   if (alertas.length === 0 && totalDeDosesVencidas === 0) {
     return null;
   }
-
-  const temGrave = alertas.some((a) => a.gravidade === 'Grave');
 
   if (compacto) {
     return (
@@ -57,68 +55,58 @@ export function AlertasClinicos({
     );
   }
 
-  const total = alertas.length + dosesVencidas.length;
-
+  // Sem título nem moldura: cada alerta é só o nome e a descrição, na cor da gravidade.
   return (
-    <div
-      className={`rounded-2xl border-2 p-4 ${
-        temGrave ? 'border-perigo bg-perigo-claro/40' : 'border-amber-300 bg-alerta-claro/40'
-      }`}
-      role="alert"
-    >
-      <div className="mb-3 flex items-center gap-2">
-        <ShieldAlert size={18} className={temGrave ? 'text-perigo' : 'text-alerta'} />
-        <h2 className={`text-sm font-bold uppercase tracking-wide ${temGrave ? 'text-red-800' : 'text-amber-800'}`}>
-          Atenção — {total} {total === 1 ? 'alerta clínico' : 'alertas clínicos'}
-        </h2>
-      </div>
+    <ul className="flex flex-wrap gap-2" role="alert" aria-label="Alertas clínicos">
+      {alertas.map((alerta) => (
+        <li
+          key={alerta.id}
+          className={`flex min-w-0 max-w-full flex-1 basis-64 items-start gap-2 rounded-xl px-3 py-2 ${COR_DA_GRAVIDADE[alerta.gravidade]}`}
+          title={`Gravidade ${alerta.gravidade.toLowerCase()}`}
+        >
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <p className="min-w-0 text-sm">
+            <span className="font-semibold">{rotuloTipoAlerta[alerta.tipo] ?? alerta.tipo}:</span> {alerta.descricao}
+          </p>
+        </li>
+      ))}
 
-      <ul className="flex flex-wrap gap-2">
-        {alertas.map((alerta) => (
-          <li
-            key={alerta.id}
-            className="flex min-w-0 max-w-full flex-1 basis-64 items-start gap-2 rounded-xl border border-white/70 bg-white/70 px-3 py-2"
-          >
-            <Etiqueta className={`shrink-0 ${estiloGravidade[alerta.gravidade]}`}>{alerta.gravidade}</Etiqueta>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {rotuloTipoAlerta[alerta.tipo] ?? alerta.tipo}
-              </p>
-              <p className="text-sm font-medium text-slate-800">{alerta.descricao}</p>
-            </div>
-          </li>
-        ))}
+      {/* Prevenção atrasada fica junto das demais condições; o item abre a carteira de vacinação. */}
+      {dosesVencidas.map((dose) => {
+        const texto = (
+          <>
+            <span className="font-semibold">Vacinação:</span> {dose.nome}
+            {dose.descricaoDose && ` (${dose.descricaoDose.toLowerCase()})`}
+            {dose.proximaDose && ` — prevista para ${formatarDia(dose.proximaDose)}`}
+            {dose.diasParaProximaDose != null &&
+              dose.diasParaProximaDose < 0 &&
+              `, ${Math.abs(dose.diasParaProximaDose)} dia(s) em atraso`}
+          </>
+        );
 
-        {/* Prevenção atrasada é condição relacionada ao atendimento: fica junto das demais. */}
-        {dosesVencidas.map((dose) => (
+        return (
           <li
             key={dose.id}
-            className="flex min-w-0 max-w-full flex-1 basis-64 items-start gap-2 rounded-xl border border-white/70 bg-white/70 px-3 py-2"
+            className={`flex min-w-0 max-w-full flex-1 basis-64 items-start gap-2 rounded-xl px-3 py-2 ${COR_DA_GRAVIDADE.Moderada}`}
           >
-            <Etiqueta className={`shrink-0 ${ESTILO_DOSE_ATRASADA}`}>
-              <Syringe size={11} />
-              Atrasada
-            </Etiqueta>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vacinação</p>
-              <p className="text-sm font-medium text-slate-800">
-                {dose.nome}
-                {dose.descricaoDose && ` (${dose.descricaoDose.toLowerCase()})`}
-                {dose.proximaDose && ` — prevista para ${formatarDia(dose.proximaDose)}`}
-                {dose.diasParaProximaDose != null &&
-                  dose.diasParaProximaDose < 0 &&
-                  `, ${Math.abs(dose.diasParaProximaDose)} dia(s) em atraso`}
-              </p>
-            </div>
+            <Syringe size={15} className="mt-0.5 shrink-0" />
+            {aoVerVacinas ? (
+              <button type="button" onClick={aoVerVacinas} className="min-w-0 text-left text-sm hover:underline">
+                {texto}
+              </button>
+            ) : (
+              <p className="min-w-0 text-sm">{texto}</p>
+            )}
           </li>
-        ))}
-      </ul>
-
-      {dosesVencidas.length > 0 && aoVerVacinas && (
-        <button type="button" onClick={aoVerVacinas} className="mt-3 text-xs font-semibold text-brand hover:underline">
-          Abrir a carteira de vacinação
-        </button>
-      )}
-    </div>
+        );
+      })}
+    </ul>
   );
 }
+
+/** Cor característica de cada gravidade, sem borda. */
+const COR_DA_GRAVIDADE: Record<AlergiaCondicao['gravidade'], string> = {
+  Grave: 'bg-perigo-claro text-red-800',
+  Moderada: 'bg-alerta-claro text-amber-800',
+  Leve: 'bg-slate-100 text-slate-700',
+};

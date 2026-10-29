@@ -14,11 +14,11 @@ import { Agenda } from './pages/Agenda';
 import { AgendaGeral } from './pages/AgendaGeral';
 import { Pacientes } from './pages/Pacientes';
 import { Prontuario } from './pages/Prontuario';
+import { Evolucoes } from './pages/Evolucoes';
 import { Tutores } from './pages/Tutores';
 import { Usuarios } from './pages/Usuarios';
 import { Mensagens } from './pages/Mensagens';
 import { Notificacoes } from './pages/Notificacoes';
-import { Relatorios } from './pages/Relatorios';
 import { Configuracoes } from './pages/Configuracoes';
 import { Perfil as PaginaPerfil } from './pages/Perfil';
 import { Auditoria } from './pages/Auditoria';
@@ -128,6 +128,16 @@ export default function App() {
               }
             />
 
+            {/* Evoluções das sessões, com filtros; registro clínico restrito à equipe clínica */}
+            <Route
+              path="/evolucoes"
+              element={
+                <Protegida perfis={['Administrador', 'Veterinario']}>
+                  <Evolucoes />
+                </Protegida>
+              }
+            />
+
             {/* HU-011 — prontuário; o tutor recebe a visão filtrada (RN-003) */}
             <Route
               path="/prontuario/:pacienteId"
@@ -174,16 +184,6 @@ export default function App() {
               element={
                 <Protegida>
                   <Notificacoes />
-                </Protegida>
-              }
-            />
-
-            {/* HU-017 */}
-            <Route
-              path="/relatorios"
-              element={
-                <Protegida perfis={['Administrador', 'Veterinario']}>
-                  <Relatorios />
                 </Protegida>
               }
             />

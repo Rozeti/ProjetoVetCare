@@ -6,11 +6,11 @@ em execução, comprovando o comportamento ponta a ponta.
 
 | Roteiro | Verificações | Precisa de |
 |---|---|---|
-| `teste-regras-negocio.sh` | 47 | API em `http://localhost:5265` |
-| `teste-api-mobile.sh` | 26 | API + dados de demonstração |
-| `teste-funcionalidades-novas.sh` | 56 a 63 | API + dados de demonstração |
+| `teste-regras-negocio.sh` | 73 a 74 | API em `http://localhost:5265` |
+| `teste-api-mobile.sh` | 28 | API + dados de demonstração |
+| `teste-funcionalidades-novas.sh` | 58 a 65 | API + dados de demonstração |
 | `teste-tempo-real.sh` | 27 | API + dados de demonstração |
-| `teste-navegador.mjs` | 28 | API + front-end em `http://localhost:5173` + Microsoft Edge |
+| `teste-navegador.mjs` | 44 | API + front-end em `http://localhost:5173` + Microsoft Edge |
 | `criar-dados-demonstracao.sh` | — | API |
 
 `comum.sh` não é executável: reúne as funções que os roteiros de shell compartilham
@@ -40,7 +40,21 @@ Autenticação, bloqueio por tentativas (RN-006), unicidade de e-mail (RN-007), 
 tutor–paciente (RN-001), conflito e retroatividade de agenda (RN-002), campos
 obrigatórios da avaliação (RN-010), escala de dor, privacidade das observações internas
 (RN-003), prazo de cancelamento (RN-009), escopo por perfil (RN-005 e RN-008),
-indicadores e relatórios.
+indicadores do dia e o acesso de qualquer veterinário a qualquer paciente (o colega encontra
+o paciente, abre o prontuário, a antiga transferência responde 404 e o responsável é trocado
+na edição do cadastro).
+
+Confere ainda a validação dos cadastros: o CRMV gravado no formato do conselho e com UF
+válida, nome sem números, senha com letras e números, a recusa do perfil Tutor na tela de
+usuários (tutor nasce em `/api/tutores`), o telefone do tutor com DDD e máscara, o CPF com
+dígitos verificadores e a recusa de pacientes que não sejam cães.
+
+Percorre também o fluxo clínico: a avaliação do animal, o tratamento que só nasce a partir
+dela (planejado até a primeira evolução), a evolução que exige a reação do animal e recebe o
+número da sessão, a sessão realizada sem agendamento (registrada direto no tratamento e já
+concluída na agenda), o filtro de evoluções por tratamento, a receita que exige origem, o pedido
+de exame emitido da avaliação, a inativação e a reativação do tratamento sem perder as
+evoluções e a garantia de que paciente não é excluído, só inativado.
 
 ```bash
 bash testes/teste-regras-negocio.sh
@@ -63,7 +77,7 @@ bash testes/teste-api-mobile.sh
 
 Carteira de vacinação (classificação das doses, esquema com várias doses, recorrência,
 edição, exclusão com justificativa, filtro e paginação), receituário, alertas clínicos,
-bloqueios de agenda, transferência de paciente, trilha de auditoria, paginação (RNF-004), preferências de notificação
+bloqueios de agenda, trilha de auditoria (só criações, alterações, inativações e exclusões), paginação (RNF-004), preferências de notificação
 por e-mail e push, registro do aparelho do tutor, conta criada sem senha (primeiro acesso),
 recuperação de senha pelo código de 6 dígitos (aplicativo) e pelo link (portal), e
 limitação de requisições nos endpoints de autenticação.
@@ -100,9 +114,15 @@ bash testes/teste-tempo-real.sh
 
 ## 5. Interface web (navegador real)
 
-Roteiro com Puppeteer sobre o Microsoft Edge: percorre login, painel, pacientes,
-prontuário com todas as abas, agenda geral, relatórios, auditoria, responsividade em tela
-de celular e a visão filtrada do tutor. Gera capturas de tela na pasta indicada.
+Roteiro com Puppeteer sobre o Microsoft Edge: percorre login, painel, pacientes (ações
+reduzidas a visualizar e inativar, filtro por raça), prontuário com todas as abas
+(avaliações, tratamentos com a avaliação de origem, as próprias evoluções e o botão
+"Registrar sessão", medicação, exames, sem a antiga aba de gráficos), a linha do tempo com a
+data de cada evento, o filtro por período e o registro completo, a tela de evoluções com os
+filtros e o "Registrar sessão", agenda
+geral, tutores em tabela com os animais vinculados, digitação contínua nos formulários,
+auditoria, responsividade em tela de celular e a visão filtrada do tutor. Gera capturas de
+tela na pasta indicada.
 
 ```bash
 npm --prefix testes i puppeteer-core@23   # apenas na primeira vez
@@ -124,10 +144,11 @@ WEB_URL=http://localhost:8080 PACIENTE_DEMO=Nina \
 `criar-dados-demonstracao.sh` monta, a partir da conta de administrador, um cenário
 coerente com a documentação: veterinária, recepção, tutor, dois pacientes, alertas
 clínicos, carteira de vacinação com um esquema de três doses e reforço anual a vencer,
-antirrábica vencida e vermífugo e antipulgas recorrentes, tratamento
-pós-cirúrgico, avaliação clínica, três atendimentos com evolução de peso e dor, duas
-sessões futuras aguardando confirmação, receita com dois medicamentos e observações
-internas restritas.
+antirrábica vencida e vermífugo e antipulgas recorrentes e o fluxo clínico completo de Thor
+— avaliação, tratamento pós-cirúrgico originado dela, três sessões com a sua evolução (peso,
+dor e reação do animal), duas sessões futuras aguardando confirmação, uma receita emitida da
+avaliação, outra da última evolução e um pedido de exames. Nina tem uma avaliação que não
+originou tratamento, só um pedido de exames. Há também observações internas restritas.
 
 As contas criadas usam a senha `vetcare123` e servem apenas para avaliação do sistema.
 **Não execute este script em um ambiente real.**

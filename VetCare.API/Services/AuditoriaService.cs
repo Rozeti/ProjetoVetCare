@@ -40,6 +40,13 @@ namespace VetCare.API.Services
             public const string RedefinicaoSenha = "RedefinicaoSenha";
             public const string SolicitacaoDeSenha = "SolicitacaoDeSenha";
             public const string Exclusao = "Exclusao";
+
+            /// <summary>
+            /// O que a tela de auditoria mostra: criação, alteração, inativação (ou cancelamento)
+            /// e exclusão de dados. Logins, consultas, downloads e pedidos de senha continuam
+            /// gravados, mas ficam fora da tela, que se concentra no que mudou nos cadastros.
+            /// </summary>
+            public static readonly IReadOnlyList<string> AlteracoesDeDados = new[] { Criacao, Alteracao, Inativacao, Exclusao };
         }
 
         public Task RegistrarDoUsuarioAtual(string acao, string entidade, Guid? entidadeId = null, string detalhe = "")

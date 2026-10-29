@@ -112,6 +112,14 @@ namespace VetCare.API.Migrations
                     b.Property<int?>("FrequenciaRespiratoria")
                         .HasColumnType("integer");
 
+                    b.Property<int>("NumeroSessao")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Observacoes")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
                     b.Property<decimal?>("PesoKg")
                         .HasColumnType("numeric(8,2)");
 
@@ -122,6 +130,16 @@ namespace VetCare.API.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ReacaoAnimal")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Relatorio")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<Guid>("SessaoId")
                         .HasColumnType("uuid");
@@ -150,9 +168,9 @@ namespace VetCare.API.Migrations
                     b.HasIndex("SessaoId")
                         .IsUnique();
 
-                    b.HasIndex("TratamentoId");
-
                     b.HasIndex("ProntuarioId", "DataRegistro");
+
+                    b.HasIndex("TratamentoId", "NumeroSessao");
 
                     b.HasIndex("VeterinarioId", "DataRegistro");
 
@@ -165,41 +183,31 @@ namespace VetCare.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Anamnese")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
                     b.Property<DateTime>("DataRegistro")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("DataUltimaEdicao")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ExameFisico")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("HipoteseDiagnostica")
+                    b.Property<string>("DiagnosticoPossivel")
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<string>("PlanoTerapeutico")
+                    b.Property<string>("MotivoConsulta")
                         .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
-                    b.Property<Guid>("ProntuarioId")
+                    b.Property<string>("Observacoes")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<Guid>("PacienteId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("QueixaPrincipal")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<Guid>("TratamentoId")
+                    b.Property<Guid>("ProntuarioId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("VeterinarioId")
@@ -207,7 +215,7 @@ namespace VetCare.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TratamentoId");
+                    b.HasIndex("PacienteId");
 
                     b.HasIndex("ProntuarioId", "DataRegistro");
 
@@ -608,6 +616,60 @@ namespace VetCare.API.Migrations
                     b.ToTable("ObservacoesInternas");
                 });
 
+            modelBuilder.Entity("VetCare.API.Models.PedidoExame", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AvaliacaoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("DataEmissao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Exames")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Justificativa")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("MotivoCancelamento")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("PacienteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProntuarioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("VeterinarioId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvaliacaoId");
+
+                    b.HasIndex("PacienteId");
+
+                    b.HasIndex("VeterinarioId");
+
+                    b.HasIndex("ProntuarioId", "DataEmissao");
+
+                    b.ToTable("PedidosExame");
+                });
+
             modelBuilder.Entity("VetCare.API.Models.Pet", b =>
                 {
                     b.Property<Guid>("Id")
@@ -691,6 +753,9 @@ namespace VetCare.API.Migrations
                     b.Property<Guid?>("AtendimentoId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AvaliacaoId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("DataEmissao")
                         .HasColumnType("timestamp with time zone");
 
@@ -717,6 +782,10 @@ namespace VetCare.API.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AtendimentoId");
+
+                    b.HasIndex("AvaliacaoId");
 
                     b.HasIndex("PacienteId");
 
@@ -901,16 +970,34 @@ namespace VetCare.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("AvaliacaoId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("DataFim")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("DataInicio")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ObjetivoTerapeutico")
+                    b.Property<string>("Descricao")
                         .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("DuracaoPrevista")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Frequencia")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.Property<string>("ObservacoesGerais")
                         .IsRequired()
@@ -920,15 +1007,25 @@ namespace VetCare.API.Migrations
                     b.Property<Guid>("PacienteId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("SessoesPrevistas")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
                     b.Property<Guid>("VeterinarioId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AvaliacaoId");
 
                     b.HasIndex("VeterinarioId");
 
@@ -1234,15 +1331,15 @@ namespace VetCare.API.Migrations
 
             modelBuilder.Entity("VetCare.API.Models.AvaliacaoClinica", b =>
                 {
-                    b.HasOne("VetCare.API.Models.Prontuario", "Prontuario")
+                    b.HasOne("VetCare.API.Models.Pet", "Paciente")
                         .WithMany()
-                        .HasForeignKey("ProntuarioId")
+                        .HasForeignKey("PacienteId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("VetCare.API.Models.Tratamento", "Tratamento")
+                    b.HasOne("VetCare.API.Models.Prontuario", "Prontuario")
                         .WithMany()
-                        .HasForeignKey("TratamentoId")
+                        .HasForeignKey("ProntuarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1252,9 +1349,9 @@ namespace VetCare.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Prontuario");
+                    b.Navigation("Paciente");
 
-                    b.Navigation("Tratamento");
+                    b.Navigation("Prontuario");
 
                     b.Navigation("Veterinario");
                 });
@@ -1399,6 +1496,41 @@ namespace VetCare.API.Migrations
                     b.Navigation("Prontuario");
                 });
 
+            modelBuilder.Entity("VetCare.API.Models.PedidoExame", b =>
+                {
+                    b.HasOne("VetCare.API.Models.AvaliacaoClinica", "Avaliacao")
+                        .WithMany()
+                        .HasForeignKey("AvaliacaoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VetCare.API.Models.Pet", "Paciente")
+                        .WithMany()
+                        .HasForeignKey("PacienteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VetCare.API.Models.Prontuario", "Prontuario")
+                        .WithMany()
+                        .HasForeignKey("ProntuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VetCare.API.Models.Veterinario", "Veterinario")
+                        .WithMany()
+                        .HasForeignKey("VeterinarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Avaliacao");
+
+                    b.Navigation("Paciente");
+
+                    b.Navigation("Prontuario");
+
+                    b.Navigation("Veterinario");
+                });
+
             modelBuilder.Entity("VetCare.API.Models.Pet", b =>
                 {
                     b.HasOne("VetCare.API.Models.Clinica", "Clinica")
@@ -1427,6 +1559,14 @@ namespace VetCare.API.Migrations
 
             modelBuilder.Entity("VetCare.API.Models.Prescricao", b =>
                 {
+                    b.HasOne("VetCare.API.Models.AtendimentoFisioterapeutico", "Atendimento")
+                        .WithMany()
+                        .HasForeignKey("AtendimentoId");
+
+                    b.HasOne("VetCare.API.Models.AvaliacaoClinica", "Avaliacao")
+                        .WithMany()
+                        .HasForeignKey("AvaliacaoId");
+
                     b.HasOne("VetCare.API.Models.Pet", "Paciente")
                         .WithMany()
                         .HasForeignKey("PacienteId")
@@ -1444,6 +1584,10 @@ namespace VetCare.API.Migrations
                         .HasForeignKey("VeterinarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Atendimento");
+
+                    b.Navigation("Avaliacao");
 
                     b.Navigation("Paciente");
 
@@ -1495,6 +1639,12 @@ namespace VetCare.API.Migrations
 
             modelBuilder.Entity("VetCare.API.Models.Tratamento", b =>
                 {
+                    b.HasOne("VetCare.API.Models.AvaliacaoClinica", "Avaliacao")
+                        .WithMany("Tratamentos")
+                        .HasForeignKey("AvaliacaoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("VetCare.API.Models.Pet", "Paciente")
                         .WithMany()
                         .HasForeignKey("PacienteId")
@@ -1506,6 +1656,8 @@ namespace VetCare.API.Migrations
                         .HasForeignKey("VeterinarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Avaliacao");
 
                     b.Navigation("Paciente");
 
@@ -1571,6 +1723,11 @@ namespace VetCare.API.Migrations
                         .IsRequired();
 
                     b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("VetCare.API.Models.AvaliacaoClinica", b =>
+                {
+                    b.Navigation("Tratamentos");
                 });
 
             modelBuilder.Entity("VetCare.API.Models.Pet", b =>

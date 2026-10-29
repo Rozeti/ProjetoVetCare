@@ -4,14 +4,14 @@ import { FileText, Loader2, PawPrint, Plus } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
-import type { Pet } from '../types';
+import { ESPECIE_ATENDIDA, RACAS_DE_CAES, type Pet } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { formatarDia, formatarPeso, paraValorInputData, validarDadosDoPet } from '../utils/formato';
 
 const FORM_VAZIO = {
   nome: '',
-  especie: 'Cachorro',
+  especie: ESPECIE_ATENDIDA,
   raca: '',
   sexo: 'Macho',
   pelagem: '',
@@ -105,18 +105,14 @@ export function MeusPets() {
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
       {aviso && (
-        <div className="mb-4">
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-            {aviso}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
       )}
 
       {carregando ? (
@@ -207,30 +203,21 @@ export function MeusPets() {
             />
           </Campo>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Campo rotulo="Espécie" obrigatorio>
-              <select
-                className="vc-campo"
-                value={form.especie}
-                onChange={(e) => setForm({ ...form, especie: e.target.value })}
-              >
-                <option>Cachorro</option>
-                <option>Gato</option>
-                <option>Ave</option>
-                <option>Roedor</option>
-                <option>Outro</option>
-              </select>
-            </Campo>
-
-            <Campo rotulo="Raça">
-              <input
-                className="vc-campo"
-                value={form.raca}
-                onChange={(e) => setForm({ ...form, raca: e.target.value })}
-                placeholder="Deixe em branco se não souber"
-              />
-            </Campo>
-          </div>
+          <Campo rotulo="Raça" dica="A clínica atende apenas cães. Deixe em branco se não souber a raça.">
+            <input
+              className="vc-campo"
+              list="racas-de-caes-tutor"
+              value={form.raca}
+              onChange={(e) => setForm({ ...form, raca: e.target.value })}
+              placeholder="Ex.: SRD, Labrador Retriever, Shih Tzu"
+              maxLength={80}
+            />
+          </Campo>
+          <datalist id="racas-de-caes-tutor">
+            {RACAS_DE_CAES.map((raca) => (
+              <option key={raca} value={raca} />
+            ))}
+          </datalist>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <Campo rotulo="Sexo">

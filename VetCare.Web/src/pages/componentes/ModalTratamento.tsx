@@ -1,28 +1,51 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
-import type { Veterinario } from '../../types';
+import type { Avaliacao, StatusTratamento, Tratamento } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
-import { paraValorInputData } from '../../utils/formato';
+import { SeletorVeterinario } from '../../components/SeletorVeterinario';
+import { formatarData, paraValorInputData, tratamentoAtivo } from '../../utils/formato';
 
 /** Mesmos limites de CriarTratamentoDTO. */
-const LIMITE_OBJETIVO = 1000;
-const LIMITE_OBSERVACOES = 2000;
+const LIMITES = {
+  nome: 120,
+  tipo: 60,
+  descricao: 2000,
+  duracaoPrevista: 60,
+  frequencia: 60,
+  observacoesGerais: 2000,
+};
+
+const SESSOES_MAXIMAS = 365;
+
+/** Sugestões do campo "Tipo"; a API aceita qualquer texto. */
+const TIPOS_SUGERIDOS = [
+  'Fisioterapia',
+  'Hidroterapia',
+  'Acupuntura',
+  'Reabilitação pós-cirúrgica',
+  'Medicamentoso',
+  'Cirúrgico',
+  'Nutricional',
+];
 
 interface Props {
   aberto: boolean;
-  pacienteId: string;
-  /** Veterinário que acompanha o paciente: o tratamento é dele. Nulo quando ainda não há responsável. */
+  /** Avaliação de origem: obrigatória para criar um tratamento. */
+  avaliacao?: Pick<Avaliacao, 'id' | 'dataRegistro' | 'motivoConsulta'> | null;
+  /** Quando informado, o modal edita este tratamento. */
+  tratamento?: Tratamento | null;
+  /** Veterinário que acompanha o paciente, sugerido para conduzir. Nulo quando ainda não há responsável. */
   veterinarioResponsavelId?: string | null;
   nomeVeterinarioResponsavel?: string;
   aoFechar: () => void;
-  aoSalvar: () => void;
+  aoSalvar: (mensagem: string) => void;
 }
 
 /**
- * Abertura do processo terapêutico que agrupa avaliação, sessões e atendimentos
- * de um paciente, conforme a definição de Tratamento no DAS.
+ * Tratamento: procedimento ou plano terapêutico encaminhado a partir de uma avaliação. As
+ * sessões realizadas dentro dele geram as evoluções.
  */
 export function ModalTratamento({ aberto, ...props }: Props) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos
@@ -35,171 +58,285 @@ export function ModalTratamento({ aberto, ...props }: Props) {
 }
 
 function Formulario({
-  pacienteId,
+  avaliacao,
+  tratamento,
   veterinarioResponsavelId,
   nomeVeterinarioResponsavel,
   aoFechar,
   aoSalvar,
 }: Omit<Props, 'aberto'>) {
-  const { usuario, ehVeterinario } = useAuth();
+  const { ehVeterinario } = useAuth();
 
-  // O paciente já tem quem o acompanha: o tratamento nasce no nome dele. Sem responsável
-  // (cadastro vindo do aplicativo), o primeiro tratamento define quem passa a ser.
-  const responsavelDefinido = !!veterinarioResponsavelId;
+  const emEdicao = !!tratamento;
+  // O veterinário conduz o tratamento que cadastra; administração e apoio escolhem quem conduz,
+  // com o responsável pelo paciente já sugerido.
+  const escolheVeterinario = !emEdicao && !ehVeterinario;
+  // Concluído e inativado mudam de situação pelos botões do tratamento, não pelo formulário.
+  const editaStatus = !emEdicao || tratamentoAtivo(tratamento.status);
 
-  const [veterinarios, setVeterinarios] = useState<Veterinario[]>([]);
-  const [veterinarioId, setVeterinarioId] = useState(
-    veterinarioResponsavelId ?? (ehVeterinario ? usuario?.veterinarioId ?? '' : ''),
-  );
-  const [dataInicio, setDataInicio] = useState(paraValorInputData(new Date()));
-  const [objetivo, setObjetivo] = useState('');
-  const [observacoes, setObservacoes] = useState('');
+  const [form, setForm] = useState(() => ({
+    nome: tratamento?.nome ?? '',
+    tipo: tratamento?.tipo ?? 'Fisioterapia',
+    descricao: tratamento?.descricao ?? '',
+    duracaoPrevista: tratamento?.duracaoPrevista ?? '',
+    frequencia: tratamento?.frequencia ?? '',
+    sessoesPrevistas: tratamento ? String(tratamento.sessoesPrevistas) : '',
+    status: (tratamento?.status ?? 'Planejado') as StatusTratamento,
+    dataInicio: paraValorInputData(tratamento?.dataInicio ?? new Date()),
+    observacoesGerais: tratamento?.observacoesGerais ?? '',
+  }));
+  const [veterinarioId, setVeterinarioId] = useState(veterinarioResponsavelId ?? '');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  useEffect(() => {
-    // Com o responsável definido, ou sendo o próprio veterinário, não há o que escolher.
-    if (responsavelDefinido || (ehVeterinario && usuario?.veterinarioId)) {
-      return;
+  const hoje = paraValorInputData(new Date());
+
+  function atualizar(campo: keyof typeof form, valor: string) {
+    setForm((atual) => ({ ...atual, [campo]: valor }));
+  }
+
+  /** Mesmas regras de CriarTratamentoDTO e do caso de uso, conferidas antes do envio. */
+  function validar(): string | null {
+    const nome = form.nome.trim();
+    const descricao = form.descricao.trim();
+    const sessoes = Number(form.sessoesPrevistas);
+
+    if (nome.length < 3) return 'Informe o nome do tratamento (mínimo de 3 caracteres).';
+    if (nome.length > LIMITES.nome) return `O nome do tratamento deve ter até ${LIMITES.nome} caracteres.`;
+    if (!form.tipo.trim()) return 'Informe o tipo do tratamento.';
+    if (form.tipo.trim().length > LIMITES.tipo) return `O tipo deve ter até ${LIMITES.tipo} caracteres.`;
+    if (descricao.length < 3) return 'Descreva o tratamento (mínimo de 3 caracteres).';
+    if (!form.duracaoPrevista.trim()) return 'Informe a duração prevista do tratamento.';
+    if (!form.frequencia.trim()) return 'Informe a frequência das sessões.';
+
+    if (!Number.isInteger(sessoes) || sessoes < 1 || sessoes > SESSOES_MAXIMAS) {
+      return `Informe entre 1 e ${SESSOES_MAXIMAS} sessões previstas.`;
     }
 
-    let ativo = true;
+    if (!form.dataInicio) return 'Informe a data de início do tratamento.';
 
-    api
-      .get<Veterinario[]>('/api/veterinarios')
-      .then(({ data }) => {
-        // Só profissionais ativos assumem tratamentos novos.
-        if (ativo) setVeterinarios(data.filter((v) => v.ativo));
-      })
-      .catch((falha) => {
-        if (ativo) setErro(mensagemDeErro(falha, 'Não foi possível carregar os veterinários.'));
-      });
+    if (form.status === 'Em Andamento' && form.dataInicio > hoje) {
+      return 'Um tratamento em andamento não pode ter início no futuro. Cadastre-o como planejado.';
+    }
 
-    return () => {
-      ativo = false;
-    };
-  }, [responsavelDefinido, ehVeterinario, usuario?.veterinarioId]);
+    if (escolheVeterinario && !veterinarioId) return 'Selecione o veterinário responsável pelo tratamento.';
+
+    return null;
+  }
 
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
 
-    // Mesmas regras de CriarTratamentoDTO, conferidas antes do envio.
-    const objetivoLimpo = objetivo.trim();
+    const problema = validar();
 
-    if (objetivoLimpo.length < 3) {
-      setErro('Descreva o objetivo terapêutico do tratamento (mínimo de 3 caracteres).');
-      return;
-    }
-
-    if (objetivoLimpo.length > LIMITE_OBJETIVO) {
-      setErro(`O objetivo terapêutico deve ter até ${LIMITE_OBJETIVO} caracteres.`);
-      return;
-    }
-
-    if (observacoes.length > LIMITE_OBSERVACOES) {
-      setErro(`As observações devem ter até ${LIMITE_OBSERVACOES} caracteres.`);
-      return;
-    }
-
-    if (!dataInicio) {
-      setErro('Informe a data de início do tratamento.');
-      return;
-    }
-
-    if (dataInicio > paraValorInputData(new Date())) {
-      setErro('A data de início do tratamento não pode ser futura.');
-      return;
-    }
-
-    if (!veterinarioId) {
-      setErro('Selecione o veterinário responsável.');
+    if (problema) {
+      setErro(problema);
       return;
     }
 
     setSalvando(true);
 
-    try {
-      await api.post('/api/tratamentos', {
-        pacienteId,
-        veterinarioId,
-        dataInicio,
-        objetivoTerapeutico: objetivoLimpo,
-        observacoesGerais: observacoes.trim(),
-      });
+    const campos = {
+      nome: form.nome.trim(),
+      tipo: form.tipo.trim(),
+      descricao: form.descricao.trim(),
+      duracaoPrevista: form.duracaoPrevista.trim(),
+      frequencia: form.frequencia.trim(),
+      sessoesPrevistas: Number(form.sessoesPrevistas),
+      observacoesGerais: form.observacoesGerais.trim(),
+    };
 
-      aoSalvar();
+    try {
+      if (tratamento) {
+        const dataMudou = form.dataInicio !== paraValorInputData(tratamento.dataInicio);
+
+        await api.put(`/api/tratamentos/${tratamento.id}`, {
+          ...campos,
+          dataInicio: dataMudou ? form.dataInicio : null,
+          status: editaStatus && form.status !== tratamento.status ? form.status : null,
+        });
+
+        aoSalvar('Tratamento atualizado com sucesso.');
+      } else {
+        await api.post('/api/tratamentos', {
+          ...campos,
+          avaliacaoId: avaliacao?.id,
+          veterinarioId: veterinarioId || null,
+          dataInicio: form.dataInicio,
+          status: form.status,
+        });
+
+        aoSalvar(
+          form.status === 'Planejado'
+            ? 'Tratamento planejado. Ele passa a "em andamento" na primeira evolução registrada.'
+            : 'Tratamento iniciado com sucesso.',
+        );
+      }
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível abrir o tratamento.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível salvar o tratamento.'));
     } finally {
       setSalvando(false);
     }
   }
 
+  const origem = tratamento
+    ? { data: tratamento.dataAvaliacao, motivo: tratamento.motivoAvaliacao }
+    : { data: avaliacao?.dataRegistro, motivo: avaliacao?.motivoConsulta };
+
   return (
     <Modal
       aberto
-      titulo="Novo tratamento"
-      descricao="O tratamento agrupa a avaliação, as sessões e os atendimentos do paciente."
+      titulo={emEdicao ? 'Editar tratamento' : 'Novo tratamento'}
+      descricao={
+        emEdicao
+          ? 'Atualize o plano terapêutico. As sessões e evoluções já registradas não mudam.'
+          : 'O tratamento é encaminhado a partir da avaliação abaixo. Cada sessão realizada gera uma evolução.'
+      }
       aoFechar={aoFechar}
+      largura="max-w-2xl"
     >
       <form onSubmit={aoEnviar} className="space-y-4" noValidate>
-        <Campo rotulo="Objetivo terapêutico" obrigatorio dica={`${objetivo.length}/${LIMITE_OBJETIVO} caracteres`}>
+        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <span className="font-semibold text-slate-700">Avaliação de origem</span>
+          {origem.data && ` · ${formatarData(origem.data)}`}
+          {origem.motivo && <p className="mt-0.5 line-clamp-2">{origem.motivo}</p>}
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <Campo rotulo="Nome do tratamento" obrigatorio>
+              <input
+                className="vc-campo"
+                value={form.nome}
+                onChange={(e) => atualizar('nome', e.target.value)}
+                placeholder="Ex.: Reabilitação do membro posterior direito"
+                maxLength={LIMITES.nome}
+              />
+            </Campo>
+          </div>
+
+          <Campo rotulo="Tipo" obrigatorio>
+            <input
+              className="vc-campo"
+              list="tipos-de-tratamento"
+              value={form.tipo}
+              onChange={(e) => atualizar('tipo', e.target.value)}
+              maxLength={LIMITES.tipo}
+            />
+          </Campo>
+          <datalist id="tipos-de-tratamento">
+            {TIPOS_SUGERIDOS.map((tipo) => (
+              <option key={tipo} value={tipo} />
+            ))}
+          </datalist>
+        </div>
+
+        <Campo rotulo="Descrição" obrigatorio dica={`${form.descricao.length}/${LIMITES.descricao} caracteres`}>
           <textarea
             className="vc-campo"
             rows={3}
-            value={objetivo}
-            onChange={(e) => setObjetivo(e.target.value)}
-            placeholder="Ex.: recuperar a amplitude de movimento do membro posterior direito após cirurgia."
-            maxLength={LIMITE_OBJETIVO}
+            value={form.descricao}
+            onChange={(e) => atualizar('descricao', e.target.value)}
+            placeholder="Técnicas previstas, objetivos e metas do plano terapêutico."
+            maxLength={LIMITES.descricao}
           />
         </Campo>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Campo
-            rotulo="Veterinário responsável"
-            obrigatorio
-            dica={responsavelDefinido ? 'Definido pelo cadastro do paciente. Para trocar, transfira o paciente.' : undefined}
-          >
-            <select
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Campo rotulo="Duração prevista" obrigatorio>
+            <input
               className="vc-campo"
-              value={veterinarioId}
-              onChange={(e) => setVeterinarioId(e.target.value)}
-              disabled={responsavelDefinido || (ehVeterinario && !!usuario?.veterinarioId)}
-            >
-              <option value="">Selecione</option>
-              {responsavelDefinido && (
-                <option value={veterinarioResponsavelId ?? ''}>{nomeVeterinarioResponsavel}</option>
-              )}
-              {!responsavelDefinido && ehVeterinario && usuario?.veterinarioId && (
-                <option value={usuario.veterinarioId}>{usuario.nome}</option>
-              )}
-              {veterinarios.map((vet) => (
-                <option key={vet.id} value={vet.id}>
-                  {vet.nome}
-                </option>
-              ))}
-            </select>
+              value={form.duracaoPrevista}
+              onChange={(e) => atualizar('duracaoPrevista', e.target.value)}
+              placeholder="Ex.: 8 semanas"
+              maxLength={LIMITES.duracaoPrevista}
+            />
           </Campo>
 
-          <Campo rotulo="Data de início" obrigatorio dica="Hoje ou uma data passada.">
+          <Campo rotulo="Frequência" obrigatorio>
             <input
-              type="date"
               className="vc-campo"
-              max={paraValorInputData(new Date())}
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
+              value={form.frequencia}
+              onChange={(e) => atualizar('frequencia', e.target.value)}
+              placeholder="Ex.: 2 sessões por semana"
+              maxLength={LIMITES.frequencia}
+            />
+          </Campo>
+
+          <Campo rotulo="Sessões previstas" obrigatorio>
+            <input
+              type="number"
+              min={1}
+              max={SESSOES_MAXIMAS}
+              className="vc-campo"
+              value={form.sessoesPrevistas}
+              onChange={(e) => atualizar('sessoesPrevistas', e.target.value)}
             />
           </Campo>
         </div>
 
-        <Campo rotulo="Observações gerais" dica={`${observacoes.length}/${LIMITE_OBSERVACOES} caracteres`}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {editaStatus && (
+            <Campo
+              rotulo="Status"
+              obrigatorio
+              dica="Planejado passa a em andamento na primeira evolução registrada."
+            >
+              <select
+                className="vc-campo"
+                value={form.status}
+                onChange={(e) => atualizar('status', e.target.value)}
+              >
+                <option value="Planejado">Planejado</option>
+                <option value="Em Andamento">Em andamento</option>
+              </select>
+            </Campo>
+          )}
+
+          <Campo
+            rotulo="Data de início"
+            obrigatorio
+            dica={form.status === 'Planejado' ? 'Pode ser uma data futura.' : 'Hoje ou uma data passada.'}
+          >
+            <input
+              type="date"
+              className="vc-campo"
+              max={form.status === 'Planejado' ? undefined : hoje}
+              value={form.dataInicio}
+              onChange={(e) => atualizar('dataInicio', e.target.value)}
+            />
+          </Campo>
+        </div>
+
+        {escolheVeterinario ? (
+          <SeletorVeterinario
+            valor={veterinarioId}
+            aoMudar={setVeterinarioId}
+            obrigatorio
+            rotulo="Veterinário que conduz o tratamento"
+            dica={
+              veterinarioResponsavelId
+                ? `Sugerido: ${nomeVeterinarioResponsavel}, responsável pelo paciente. Qualquer veterinário da clínica pode conduzir.`
+                : 'O paciente ainda não tem veterinário responsável: quem conduzir o tratamento passa a acompanhá-lo.'
+            }
+          />
+        ) : (
+          <p className="text-sm text-slate-600">
+            Veterinário: <strong>{tratamento ? tratamento.nomeVeterinario : 'você'}</strong>
+          </p>
+        )}
+
+        <Campo
+          rotulo="Observações gerais"
+          dica={`${form.observacoesGerais.length}/${LIMITES.observacoesGerais} caracteres`}
+        >
           <textarea
             className="vc-campo"
             rows={2}
-            value={observacoes}
-            onChange={(e) => setObservacoes(e.target.value)}
-            maxLength={LIMITE_OBSERVACOES}
+            value={form.observacoesGerais}
+            onChange={(e) => atualizar('observacoesGerais', e.target.value)}
+            maxLength={LIMITES.observacoesGerais}
           />
         </Campo>
 
@@ -211,7 +348,7 @@ function Formulario({
           </button>
           <button type="submit" className="vc-botao-primario" disabled={salvando}>
             {salvando && <Loader2 className="animate-spin" size={16} />}
-            Abrir tratamento
+            {emEdicao ? 'Salvar alterações' : 'Cadastrar tratamento'}
           </button>
         </div>
       </form>

@@ -7,13 +7,18 @@ using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
-    /// <summary>HU-007: registro e correção da avaliação clínica.</summary>
+    /// <summary>
+    /// HU-007: registro e correção da avaliação clínica, o primeiro contato veterinário de uma
+    /// consulta. A avaliação pertence ao animal; um tratamento, uma receita ou um pedido de exame
+    /// podem nascer dela depois, ou nenhum deles.
+    /// </summary>
     public class RegistrarAvaliacaoUseCase
     {
         public const string TipoRegistro = "AvaliacaoClinica";
 
         private readonly IAvaliacaoRepository _avaliacoes;
-        private readonly ITratamentoRepository _tratamentos;
+        private readonly IPetRepository _pets;
+        private readonly IVeterinarioRepository _veterinarios;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IObservacaoInternaRepository _observacoes;
         private readonly IVersaoRegistroRepository _versoes;
@@ -23,7 +28,8 @@ namespace VetCare.API.UseCases
 
         public RegistrarAvaliacaoUseCase(
             IAvaliacaoRepository avaliacoes,
-            ITratamentoRepository tratamentos,
+            IPetRepository pets,
+            IVeterinarioRepository veterinarios,
             IProntuarioRepository prontuarios,
             IObservacaoInternaRepository observacoes,
             IVersaoRegistroRepository versoes,
@@ -32,7 +38,8 @@ namespace VetCare.API.UseCases
             UsuarioAtual usuarioAtual)
         {
             _avaliacoes = avaliacoes;
-            _tratamentos = tratamentos;
+            _pets = pets;
+            _veterinarios = veterinarios;
             _prontuarios = prontuarios;
             _observacoes = observacoes;
             _versoes = versoes;
@@ -43,9 +50,8 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<AvaliacaoDTO>> Executar(CriarAvaliacaoDTO dto)
         {
-            // RN-010: a avaliação só é concluída com os cinco campos clínicos preenchidos.
-            var camposPendentes = ListarCamposPendentes(
-                dto.QueixaPrincipal, dto.Anamnese, dto.ExameFisico, dto.HipoteseDiagnostica, dto.PlanoTerapeutico);
+            // RN-010: a avaliação só é concluída com motivo, observações e possível diagnóstico.
+            var camposPendentes = ListarCamposPendentes(dto.MotivoConsulta, dto.Observacoes, dto.DiagnosticoPossivel);
 
             if (camposPendentes.Count > 0)
             {
@@ -53,42 +59,71 @@ namespace VetCare.API.UseCases
                     $"Preencha os campos obrigatórios da avaliação: {string.Join(", ", camposPendentes)}.");
             }
 
-            var tratamento = await _tratamentos.ObterPorIdComRelacionamentos(dto.TratamentoId);
+            var pet = await _pets.ObterPorIdComTutor(dto.PacienteId);
 
-            if (tratamento == null || tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+            if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
-                return Resultado<AvaliacaoDTO>.NaoEncontrado("Tratamento não encontrado.");
+                return Resultado<AvaliacaoDTO>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
                 return Resultado<AvaliacaoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
-            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? tratamento.VeterinarioId;
+            if (!pet.EmAcompanhamento)
+            {
+                return Resultado<AvaliacaoDTO>.Conflito(
+                    "O paciente está inativo ou tem óbito registrado; o prontuário fica apenas para consulta.");
+            }
+
+            var veterinarioId = dto.VeterinarioId
+                                ?? _usuarioAtual.VeterinarioId
+                                ?? pet.VeterinarioResponsavelId
+                                ?? Guid.Empty;
+
+            if (veterinarioId == Guid.Empty)
+            {
+                return Resultado<AvaliacaoDTO>.Invalido("Informe o veterinário responsável pela avaliação.");
+            }
 
             if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)
             {
                 return Resultado<AvaliacaoDTO>.NaoAutorizado("A avaliação deve ser registrada em seu próprio nome.");
             }
 
+            var veterinario = await _veterinarios.ObterPorId(veterinarioId);
+
+            if (veterinario == null || veterinario.Usuario?.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<AvaliacaoDTO>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
+            }
+
+            // O primeiro contato clínico define quem acompanha um paciente ainda sem responsável.
+            if (!pet.VeterinarioResponsavelId.HasValue)
+            {
+                pet.VeterinarioResponsavelId = veterinario.Id;
+                pet.VeterinarioResponsavel = veterinario;
+                _pets.Atualizar(pet);
+            }
+
             // HU-007, CA-3: o registro entra na linha do tempo do prontuário do paciente.
-            var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(tratamento.PacienteId);
+            var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(pet.Id);
 
             var avaliacao = new AvaliacaoClinica
             {
-                TratamentoId = dto.TratamentoId,
+                PacienteId = pet.Id,
                 ProntuarioId = prontuario.Id,
                 VeterinarioId = veterinarioId,
-                QueixaPrincipal = dto.QueixaPrincipal.Trim(),
-                Anamnese = dto.Anamnese.Trim(),
-                ExameFisico = dto.ExameFisico.Trim(),
-                HipoteseDiagnostica = dto.HipoteseDiagnostica.Trim(),
-                PlanoTerapeutico = dto.PlanoTerapeutico.Trim()
+                MotivoConsulta = dto.MotivoConsulta.Trim(),
+                Observacoes = dto.Observacoes.Trim(),
+                DiagnosticoPossivel = dto.DiagnosticoPossivel.Trim()
             };
 
             await _avaliacoes.Adicionar(avaliacao);
             await _avaliacoes.SalvarAlteracoes();
+
+            avaliacao.Veterinario = veterinario;
 
             // HU-009: observação interna opcional gravada junto e marcada como restrita.
             if (!string.IsNullOrWhiteSpace(dto.ObservacaoInterna))
@@ -109,17 +144,14 @@ namespace VetCare.API.UseCases
             // Quem escreveu o diagnóstico fica na trilha, não só quem o consultou.
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Criacao, TipoRegistro, avaliacao.Id,
-                $"Avaliação clínica de {tratamento.Paciente?.Nome}: {avaliacao.QueixaPrincipal}");
+                $"Avaliação clínica de {pet.Nome}: {avaliacao.MotivoConsulta}");
 
-            var usuarioTutor = tratamento.Paciente?.Tutor?.UsuarioId;
+            var usuarioTutor = pet.Tutor?.UsuarioId;
 
             if (usuarioTutor.HasValue)
             {
                 await _notificacoes.NotificarNovoRegistroProntuario(
-                    usuarioTutor.Value,
-                    tratamento.Paciente?.Nome ?? "seu pet",
-                    "Nova avaliação clínica",
-                    tratamento.PacienteId);
+                    usuarioTutor.Value, pet.Nome, "Nova avaliação clínica", pet.Id);
             }
 
             return Resultado<AvaliacaoDTO>.Ok(MapearParaDTO(avaliacao), "Avaliação clínica registrada com sucesso.");
@@ -131,8 +163,7 @@ namespace VetCare.API.UseCases
         /// </summary>
         public async Task<Resultado<AvaliacaoDTO>> Atualizar(Guid id, AtualizarAvaliacaoDTO dto)
         {
-            var camposPendentes = ListarCamposPendentes(
-                dto.QueixaPrincipal, dto.Anamnese, dto.ExameFisico, dto.HipoteseDiagnostica, dto.PlanoTerapeutico);
+            var camposPendentes = ListarCamposPendentes(dto.MotivoConsulta, dto.Observacoes, dto.DiagnosticoPossivel);
 
             if (camposPendentes.Count > 0)
             {
@@ -154,20 +185,16 @@ namespace VetCare.API.UseCases
 
             await _versoes.Arquivar(TipoRegistro, avaliacao.Id, new
             {
-                avaliacao.QueixaPrincipal,
-                avaliacao.Anamnese,
-                avaliacao.ExameFisico,
-                avaliacao.HipoteseDiagnostica,
-                avaliacao.PlanoTerapeutico,
+                avaliacao.MotivoConsulta,
+                avaliacao.Observacoes,
+                avaliacao.DiagnosticoPossivel,
                 avaliacao.DataRegistro,
                 avaliacao.DataUltimaEdicao
             }, _usuarioAtual.Id);
 
-            avaliacao.QueixaPrincipal = dto.QueixaPrincipal.Trim();
-            avaliacao.Anamnese = dto.Anamnese.Trim();
-            avaliacao.ExameFisico = dto.ExameFisico.Trim();
-            avaliacao.HipoteseDiagnostica = dto.HipoteseDiagnostica.Trim();
-            avaliacao.PlanoTerapeutico = dto.PlanoTerapeutico.Trim();
+            avaliacao.MotivoConsulta = dto.MotivoConsulta.Trim();
+            avaliacao.Observacoes = dto.Observacoes.Trim();
+            avaliacao.DiagnosticoPossivel = dto.DiagnosticoPossivel.Trim();
             avaliacao.DataUltimaEdicao = DateTime.UtcNow;
 
             _avaliacoes.Atualizar(avaliacao);
@@ -183,7 +210,7 @@ namespace VetCare.API.UseCases
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Alteracao, TipoRegistro, avaliacao.Id,
-                $"Correção da avaliação clínica de {avaliacao.Tratamento?.Paciente?.Nome}");
+                $"Correção da avaliação clínica de {avaliacao.Paciente?.Nome}");
 
             return Resultado<AvaliacaoDTO>.Ok(
                 MapearParaDTO(avaliacao),
@@ -197,6 +224,26 @@ namespace VetCare.API.UseCases
             return avaliacao == null
                 ? Resultado<AvaliacaoDTO>.NaoEncontrado("Avaliação não encontrada.")
                 : Resultado<AvaliacaoDTO>.Ok(MapearParaDTO(avaliacao));
+        }
+
+        /// <summary>Avaliações do animal, cada uma com os tratamentos que originou.</summary>
+        public async Task<Resultado<List<AvaliacaoDTO>>> ListarPorPaciente(Guid pacienteId)
+        {
+            var pet = await _pets.ObterPorId(pacienteId);
+
+            if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<List<AvaliacaoDTO>>.NaoEncontrado("Paciente não encontrado.");
+            }
+
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+            {
+                return Resultado<List<AvaliacaoDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+            }
+
+            var avaliacoes = await _avaliacoes.ObterPorPaciente(pacienteId);
+
+            return Resultado<List<AvaliacaoDTO>>.Ok(avaliacoes.Select(a => MapearParaDTO(a)).ToList());
         }
 
         public async Task<Resultado<List<HistoricoVersaoDTO>>> ObterHistorico(Guid id)
@@ -218,7 +265,7 @@ namespace VetCare.API.UseCases
         private async Task<AvaliacaoClinica?> ObterDaClinica(Guid id)
         {
             var avaliacao = await _avaliacoes.ObterPorId(id);
-            var paciente = avaliacao?.Tratamento?.Paciente;
+            var paciente = avaliacao?.Paciente;
 
             return paciente?.ClinicaId == _usuarioAtual.ClinicaId && AcessoAoPaciente.Permitido(_usuarioAtual, paciente)
                 ? avaliacao
@@ -232,35 +279,48 @@ namespace VetCare.API.UseCases
             await _prontuarios.SalvarAlteracoes();
         }
 
-        private static List<string> ListarCamposPendentes(
-            string queixa, string anamnese, string exame, string hipotese, string plano)
+        private static List<string> ListarCamposPendentes(string? motivo, string? observacoes, string? diagnostico)
         {
             var pendentes = new List<string>();
 
-            if (string.IsNullOrWhiteSpace(queixa)) pendentes.Add("queixa principal");
-            if (string.IsNullOrWhiteSpace(anamnese)) pendentes.Add("anamnese");
-            if (string.IsNullOrWhiteSpace(exame)) pendentes.Add("exame físico");
-            if (string.IsNullOrWhiteSpace(hipotese)) pendentes.Add("hipótese diagnóstica");
-            if (string.IsNullOrWhiteSpace(plano)) pendentes.Add("plano terapêutico");
+            if (string.IsNullOrWhiteSpace(motivo)) pendentes.Add("motivo da consulta");
+            if (string.IsNullOrWhiteSpace(observacoes)) pendentes.Add("observações");
+            if (string.IsNullOrWhiteSpace(diagnostico)) pendentes.Add("possível diagnóstico");
 
             return pendentes;
         }
 
-        private static AvaliacaoDTO MapearParaDTO(AvaliacaoClinica avaliacao)
+        /// <summary>
+        /// Os tratamentos vêm da própria avaliação quando carregados; quem já tem a lista do
+        /// paciente (o prontuário) a informa, junto com as contagens de receitas e exames.
+        /// </summary>
+        public static AvaliacaoDTO MapearParaDTO(
+            AvaliacaoClinica avaliacao,
+            IEnumerable<Tratamento>? tratamentos = null,
+            int quantidadeReceitas = 0,
+            int quantidadePedidosExame = 0)
         {
+            var originados = (tratamentos ?? avaliacao.Tratamentos ?? Enumerable.Empty<Tratamento>())
+                .Where(t => t.AvaliacaoId == avaliacao.Id)
+                .OrderBy(t => t.DataInicio)
+                .Select(t => new TratamentoResumoDTO { Id = t.Id, Nome = t.Nome, Status = t.Status })
+                .ToList();
+
             return new AvaliacaoDTO
             {
                 Id = avaliacao.Id,
-                TratamentoId = avaliacao.TratamentoId,
+                PacienteId = avaliacao.PacienteId,
                 ProntuarioId = avaliacao.ProntuarioId,
                 DataRegistro = avaliacao.DataRegistro,
                 DataUltimaEdicao = avaliacao.DataUltimaEdicao,
+                VeterinarioId = avaliacao.VeterinarioId,
                 NomeVeterinario = avaliacao.Veterinario?.Usuario?.Nome ?? string.Empty,
-                QueixaPrincipal = avaliacao.QueixaPrincipal,
-                Anamnese = avaliacao.Anamnese,
-                ExameFisico = avaliacao.ExameFisico,
-                HipoteseDiagnostica = avaliacao.HipoteseDiagnostica,
-                PlanoTerapeutico = avaliacao.PlanoTerapeutico
+                MotivoConsulta = avaliacao.MotivoConsulta,
+                Observacoes = avaliacao.Observacoes,
+                DiagnosticoPossivel = avaliacao.DiagnosticoPossivel,
+                Tratamentos = originados,
+                QuantidadeReceitas = quantidadeReceitas,
+                QuantidadePedidosExame = quantidadePedidosExame
             };
         }
     }

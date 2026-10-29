@@ -1,4 +1,5 @@
 import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
 import { iniciais } from '../../utils/formato';
 
@@ -73,14 +74,39 @@ export function SemDados({
   );
 }
 
+/** Tempo que um aviso flutuante de sucesso ou informação fica na tela antes de sumir sozinho. */
+const DURACAO_AVISO_MS = 6000;
+
+/** Pilha fixa no canto inferior direito, criada uma vez e compartilhada por todas as telas. */
+function pilhaDeAvisos(): HTMLElement {
+  let pilha = document.getElementById('avisos-flutuantes');
+
+  if (!pilha) {
+    pilha = document.createElement('div');
+    pilha.id = 'avisos-flutuantes';
+    pilha.className =
+      'pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(26rem,calc(100vw-2rem))] flex-col gap-2';
+    document.body.appendChild(pilha);
+  }
+
+  return pilha;
+}
+
 export function Alerta({
   tipo = 'erro',
   children,
   aoFechar,
+  flutuante = false,
 }: {
   tipo?: 'erro' | 'sucesso' | 'aviso' | 'info';
   children: ReactNode;
   aoFechar?: () => void;
+  /**
+   * Avisos de retorno de uma ação (salvo, removido, falhou) aparecem no canto inferior direito
+   * da página, sobre o conteúdo. Os de sucesso e informação somem sozinhos; os de erro e de
+   * atenção ficam até serem fechados. Erros de validação de um formulário continuam no lugar.
+   */
+  flutuante?: boolean;
 }) {
   const estilos = {
     erro: { classe: 'bg-perigo-claro text-red-800 border-red-200', Icone: AlertCircle },
@@ -91,9 +117,28 @@ export function Alerta({
 
   const { Icone } = estilos;
 
-  return (
+  // A tela passa `aoFechar` como função nova a cada renderização; guardado numa referência, ele
+  // não reinicia a contagem do fechamento automático.
+  const aoFecharAtual = useRef(aoFechar);
+  useEffect(() => {
+    aoFecharAtual.current = aoFechar;
+  });
+
+  const someSozinho = flutuante && (tipo === 'sucesso' || tipo === 'info');
+  const mensagem = typeof children === 'string' ? children : undefined;
+
+  useEffect(() => {
+    if (!someSozinho) return;
+
+    const temporizador = window.setTimeout(() => aoFecharAtual.current?.(), DURACAO_AVISO_MS);
+    return () => window.clearTimeout(temporizador);
+  }, [someSozinho, mensagem]);
+
+  const conteudo = (
     <div
-      className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${estilos.classe}`}
+      className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${estilos.classe} ${
+        flutuante ? 'pointer-events-auto shadow-lg' : ''
+      }`}
       role={tipo === 'erro' ? 'alert' : 'status'}
     >
       <Icone size={18} className="mt-0.5 shrink-0" />
@@ -105,6 +150,8 @@ export function Alerta({
       )}
     </div>
   );
+
+  return flutuante ? createPortal(conteudo, pilhaDeAvisos()) : conteudo;
 }
 
 export function Modal({
@@ -124,6 +171,14 @@ export function Modal({
 }) {
   const dialogo = useRef<HTMLDivElement>(null);
 
+  // As telas passam `aoFechar` como função nova a cada renderização (cada tecla digitada num
+  // campo re-renderiza a tela). Guardado numa referência, ele não faz o efeito abaixo rodar de
+  // novo — rodar de novo devolveria o foco ao primeiro campo a cada caractere digitado.
+  const aoFecharAtual = useRef(aoFechar);
+  useEffect(() => {
+    aoFecharAtual.current = aoFechar;
+  });
+
   // Fechar com Esc é o atalho que o usuário espera de um diálogo; o foco entra na
   // janela ao abrir, não sai dela com Tab e volta para onde estava ao fechar (RNF-001).
   useEffect(() => {
@@ -141,7 +196,7 @@ export function Modal({
 
     function aoTeclar(evento: KeyboardEvent) {
       if (evento.key === 'Escape') {
-        aoFechar();
+        aoFecharAtual.current();
         return;
       }
 
@@ -166,7 +221,8 @@ export function Modal({
     document.addEventListener('keydown', aoTeclar);
     document.body.style.overflow = 'hidden';
 
-    // O primeiro campo recebe o foco; sem campos, a própria janela.
+    // O primeiro campo recebe o foco (o botão de fechar, marcado com data-fechar, fica de
+    // fora); sem campos, a própria janela.
     const primeiroCampo = focaveis().find((el) => !el.hasAttribute('data-fechar')) ?? dialogo.current;
     primeiroCampo?.focus();
 
@@ -175,7 +231,7 @@ export function Modal({
       document.body.style.overflow = '';
       focoAnterior?.focus?.();
     };
-  }, [aberto, aoFechar]);
+  }, [aberto]);
 
   if (!aberto) return null;
 
@@ -197,6 +253,7 @@ export function Modal({
           <button
             type="button"
             onClick={aoFechar}
+            data-fechar
             className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
             aria-label="Fechar"
           >

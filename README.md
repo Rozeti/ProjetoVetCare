@@ -78,6 +78,11 @@ Os dois canais funcionam sem configuração nenhuma, em modo de demonstração:
 
 Não é preciso criar tabelas manualmente: a API aplica as migrações pendentes ao iniciar.
 
+> **Atualizando um banco que já tem dados?** A migração do fluxo clínico
+> (`FluxoClinicoAvaliacaoTratamentoEvolucao`) converte os registros existentes ao iniciar a
+> API e não tem volta automática. Faça um backup do banco antes de subir a versão nova (veja
+> [Banco de dados](#banco-de-dados)).
+
 **2. API.**
 
 ```bash
@@ -141,13 +146,29 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 ## Funcionalidades
 
 ### Clínica e equipe
-- Cadastro de usuários nos quatro perfis, com ativação e desativação.
+- Cadastro da equipe (Administrador, Veterinário e Apoio) na tela de Usuários, com
+  ativação e desativação. Tutores têm tela própria, que cria também o acesso deles.
+- **Validação dos cadastros**, a mesma no portal, no aplicativo e na API, no cadastro e na
+  edição: nome completo só com letras; e-mail com domínio válido; senha de 8 caracteres com
+  letras e números; CRMV com UF válida, gravado como "CRMV-DF 12345"; telefone do tutor
+  obrigatório e com DDD; CPF opcional com dígitos verificadores, sem repetir entre tutores;
+  endereço, especialidade e setor com tamanho coerente. Cada erro aparece no próprio campo,
+  e telefone e CPF têm máscara.
+- Edição por perfil: a administração edita nome, e-mail e dados profissionais da equipe; a
+  equipe clínica edita todo o cadastro do tutor; o próprio tutor mantém telefone e endereço
+  em dia, e só a clínica troca o nome e o e-mail dele.
 - Dados da clínica, duração padrão das sessões e prazo mínimo de cancelamento.
-- Trilha de auditoria de tudo o que é criado, alterado, excluído e consultado no
-  prontuário, com filtro por entidade, usuário e período.
+- Trilha de auditoria focada no que mudou nos dados: quem criou, alterou, inativou ou
+  excluiu cada paciente, tutor, usuário e registro clínico, com filtro por ação, registro,
+  usuário e período. Logins, consultas e downloads continuam gravados no banco, mas não
+  aparecem na tela.
 
 ### Pacientes
-- Ficha completa: espécie, raça, pelagem, microchip, castração, peso e idade descritiva.
+- **A clínica atende apenas cães**: o cadastro, no portal e no aplicativo do tutor, não tem
+  escolha de espécie, e a API recusa outra. Pacientes antigos de outra espécie continuam
+  editáveis, sem trocar de espécie.
+- Ficha completa: raça (com sugestões de raças de cães), pelagem, microchip, castração, peso
+  e idade descritiva.
 - Alertas clínicos (alergias, condições crônicas, cirurgias) exibidos em destaque no
   prontuário e visíveis também ao tutor.
 - Carteira de vacinação com fabricante, lote, veterinário aplicador e classificação
@@ -162,7 +183,7 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - **Vacinação em atraso** entra nos alertas clínicos do prontuário e nas listas de pacientes,
   ao lado das alergias e comorbidades; o painel inicial lista as doses vencidas e a vencer
   nos próximos 30 dias.
-- Registro de óbito, que inativa o paciente e encerra os tratamentos em aberto.
+- Registro de óbito, que inativa o paciente e os tratamentos em aberto.
 - **Cadastro feito pelo próprio tutor**, na web e no aplicativo, para o animal recém-adquirido
   que a clínica ainda não conhece — sem precisar ir até o balcão só para isso. O vínculo com o
   responsável sai do token de quem está autenticado, nunca do corpo da requisição (RN-001), e a
@@ -174,35 +195,68 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - Confirmação e cancelamento pelo tutor, pela web ou pelo aplicativo.
 - Lembretes automáticos de confirmação e de vacinas a vencer, em segundo plano.
 
-### Pacientes
-- Cada paciente tem um tutor (RN-001) e um **veterinário responsável**. O veterinário vê
-  apenas os pacientes sob sua responsabilidade; administração e apoio veem a clínica inteira,
-  filtram por veterinário e enxergam os pacientes ainda sem responsável (cadastrados pelo
-  tutor no aplicativo).
-- **Transferência de paciente**: administração, apoio ou o próprio responsável passam o
-  paciente a outro veterinário. Os tratamentos em andamento e as sessões futuras vão junto,
-  o histórico fica assinado por quem o produziu, e o paciente sai da lista de quem o entregou.
-  Quem recebe, quem entrega e o tutor são notificados.
-- **Tutores acompanham os pacientes**: o veterinário vê os tutores dos pacientes sob sua
-  responsabilidade (mais os que ainda não têm paciente, para conseguir cadastrar o primeiro),
-  na tela de tutores, nos seletores dos formulários e nos contatos das mensagens. Uma
-  transferência leva o tutor junto, sem nenhum vínculo a mais.
-- **Carteira de vacinação**: o veterinário responsável e a administração corrigem e apagam
+### Pacientes e tutores
+- **Lista de pacientes enxuta**: cada linha só tem **visualizar** (abre o prontuário) e
+  **inativar/reativar**. Paciente não é excluído: a inativação preserva o prontuário. Editar o
+  cadastro e vacinar ficam dentro do prontuário do animal.
+- **Filtro por raça** na lista de pacientes, além da busca, do veterinário e da situação.
+- **Tutores em lista paginada**, como os pacientes, mostrando os **animais vinculados** a cada
+  tutor; cada animal leva ao próprio prontuário.
+- Cada paciente tem um tutor (RN-001) e um **veterinário responsável**, escolhido no
+  cadastro e trocado na edição do cadastro. O novo responsável e o tutor são avisados.
+- **Qualquer veterinário atende qualquer paciente**: toda a equipe clínica, inclusive todos os
+  veterinários, vê e acessa todos os pacientes da clínica, com prontuário, tutores, vacinas e
+  registros. Se a veterinária que acompanha a Pipoca faltar, um colega abre o prontuário,
+  agenda a sessão na própria agenda e registra a evolução em nome próprio, sem transferência.
+  O responsável organiza a clínica (painel do veterinário e filtro "Meus pacientes"), mas não
+  restringe o acesso. A antiga transferência de paciente deixou de existir.
+- Os pacientes cadastrados pelo tutor no aplicativo chegam sem responsável. O prontuário avisa,
+  e a clínica define o veterinário em "Editar cadastro" (ou na primeira avaliação).
+- **Carteira de vacinação**: qualquer veterinário e a administração corrigem e apagam
   aplicações lançadas por engano; cada correção e exclusão fica na auditoria.
 - **Confirmação antes de agir**: toda exclusão, cancelamento, inativação e edição do portal
   passa por uma janela de confirmação própria (`ConfirmacaoProvider`), que também pede o
   motivo quando a ação exige um, como o cancelamento de receita.
+- **Avisos de retorno no canto inferior direito**: "salvo", "removido" e as falhas de uma ação
+  aparecem sobre a página, no canto inferior direito; os de sucesso somem sozinhos.
 
-### Prontuário
-- Linha do tempo, evolução de peso e de dor, tratamentos, mídias e documentos.
-- Avaliação clínica com os cinco campos exigidos pela RN-010.
-- Atendimentos fisioterapêuticos com técnicas, sinais vitais e escala de dor.
-- Observações internas restritas à equipe clínica.
-- Receituário com múltiplos medicamentos, via, posologia e orientações.
-- Impressão de receita e de prontuário, e exportação da trilha de auditoria em CSV.
+### Prontuário e fluxo clínico
+O fluxo segue **animal → avaliações → tratamentos originados das avaliações → evoluções
+registradas em cada sessão do tratamento**.
+
+- **Avaliação**: motivo da consulta, observações, possível diagnóstico e veterinário
+  responsável (RN-010). Pertence ao animal e pode originar nenhum, um ou vários tratamentos,
+  receitas e pedidos de exame.
+- **Tratamento**: só existe a partir de uma avaliação. Tem nome, tipo, descrição, duração
+  prevista, frequência, sessões previstas e veterinário, com a situação **Planejado**, **Em
+  andamento**, **Concluído** ou **Inativado**. Pode ser editado; inativar não apaga as sessões
+  nem as evoluções e permite reativar; concluído é definitivo. A primeira evolução registrada
+  põe um tratamento planejado em andamento.
+- **Evolução**: uma por sessão realizada, ligada ao tratamento, com data, número da sessão
+  (atribuído pelo sistema), procedimentos realizados, o que foi feito, reação do animal,
+  observações, relatório, sinais vitais, escala de dor e fotografias. Pode originar uma
+  receita. É registrada no botão **Registrar sessão** do tratamento (ou do menu Evoluções),
+  escolhendo uma sessão agendada ainda sem evolução ou a sessão de agora, sem agendamento,
+  que entra na agenda já concluída; na agenda, cada sessão também tem **Registrar evolução**.
+- **Tela de evoluções** (Administrador e Veterinário): filtros por animal, tratamento,
+  período, veterinário e número da sessão. Dentro de um tratamento aparecem só as evoluções
+  dele, em ordem cronológica e com filtro, e o histórico completo do animal fica a um clique.
+- **Linha do tempo**: avaliações, início e encerramento (conclusão ou inativação) dos
+  tratamentos, evoluções, cirurgias e procedimentos, vacinações, receitas, pedidos de exame e
+  observações internas. Cada evento mostra em destaque a data em que foi feito, com
+  categoria, descrição resumida e responsável; o período (de/até) e as categorias filtram a
+  lista, e selecionar um evento abre o registro completo.
+- **Medicação**: as receitas vêm de uma avaliação ou de uma evolução (a origem é
+  obrigatória); **pedidos de exame** vêm de uma avaliação. Ambos podem ser impressos e são cancelados, nunca apagados.
+- **Alertas clínicos** no topo do prontuário, sem título nem moldura: cada um é só o nome e a
+  descrição, na cor da gravidade.
+- Mídias, documentos e observações internas restritas à equipe clínica.
+- Impressão de receita, de pedido de exame e de prontuário, e exportação da trilha de
+  auditoria em CSV.
 
 ### Comunicação
 - Mensagens entre tutor e clínica, com histórico e contagem de não lidas.
+  A conversa rola dentro do próprio quadro: a página não cresce conforme chegam mensagens.
 - Notificações no portal e no aplicativo, **entregues também por e-mail e por push no celular
   do tutor**. A entrega sai de uma fila no banco com novas tentativas em caso de falha, e cada
   usuário escolhe os canais que quer no próprio perfil.
@@ -241,7 +295,7 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 | HU-005 | Agenda geral da clínica | Web (Administrador/Apoio) |
 | HU-006 | Confirmar ou cancelar presença | Web, Mobile (Tutor) |
 | HU-007 | Registrar avaliação clínica | Web |
-| HU-008 | Registrar atendimento fisioterapêutico | Web |
+| HU-008 | Registrar a evolução da sessão (atendimento fisioterapêutico) | Web |
 | HU-009 | Registrar observações internas | Web |
 | HU-010 | Anexar mídias à sessão | Web |
 | HU-011 | Consultar prontuário | Web, Mobile |
@@ -250,7 +304,6 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 | HU-014 | Trocar mensagens | Web, Mobile |
 | HU-015 | Receber notificações | Web, Mobile |
 | HU-016 | Consultar indicadores do dia | Web |
-| HU-017 | Consultar relatórios de produtividade | Web |
 
 ### Regras de negócio
 
@@ -263,9 +316,9 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 | RN-005 Controle de acesso por perfil | `[Authorize(Roles = ...)]` nos controllers e verificação nos casos de uso |
 | RN-006 Bloqueio por tentativas | `AutenticarUsuarioUseCase`: 5 tentativas, bloqueio de 15 minutos |
 | RN-007 Unicidade de credenciais | Índice único em `Usuarios.Email` e verificação no cadastro |
-| RN-008 Visibilidade por perfil | Indicadores e relatórios filtram por veterinário quando o perfil é Veterinário. Cada paciente tem um **veterinário responsável** (`Pets.VeterinarioResponsavelId`): o profissional lista e acessa só os seus, e `AcessoAoPaciente` aplica a mesma regra em prontuário, vacinas, receitas, documentos, tratamentos e sessões. A troca é feita por `PATCH /api/pets/{id}/veterinario-responsavel` (`TransferirPacienteUseCase`), que leva junto os tratamentos em andamento e as sessões futuras, recusando a transferência se a agenda de quem recebe já estiver ocupada |
+| RN-008 Visibilidade por perfil | O tutor vê só os próprios pets; a equipe clínica, inclusive qualquer veterinário, vê todos os pacientes e tutores da clínica (`AcessoAoPaciente`, `AcessoAoTutor`). Cada paciente tem um **veterinário responsável** (`Pets.VeterinarioResponsavelId`), trocado em `PUT /api/pets/{id}`: ele define o recorte do painel do veterinário (indicadores e prevenção), não o acesso. Agenda e assinatura continuam pessoais: o veterinário agenda na própria agenda e registra avaliações, evoluções e receitas em nome próprio |
 | RN-009 Antecedência de cancelamento | `AtualizarStatusSessaoUseCase`, usando o prazo configurado na clínica |
-| RN-010 Campos obrigatórios da avaliação | `RegistrarAvaliacaoUseCase` aponta exatamente quais campos faltam |
+| RN-010 Campos obrigatórios da avaliação | `RegistrarAvaliacaoUseCase` aponta exatamente quais campos faltam entre motivo da consulta, observações e possível diagnóstico |
 | RN-011 Restrição de mídias e documentos | Formato e tamanho validados antes do armazenamento |
 
 ### Requisitos não funcionais
@@ -309,11 +362,30 @@ controller traduz isso no status correto (400, 401, 403, 404, 409 ou 423).
 
 ### Banco de dados
 
-O esquema tem **25 tabelas, 42 chaves estrangeiras e 77 índices**, criado por quatro
-migrações: a inicial; os canais de entrega das notificações, os aparelhos registrados para
-push e o código de recuperação de senha; o veterinário responsável por paciente; e o esquema
-de doses e a recorrência da carteira de vacinação. Nenhum relacionamento do domínio apaga em cascata: excluir um registro clínico
-precisa ser uma decisão explícita, o que preserva a integridade do histórico (RN-004).
+O esquema tem **26 tabelas, 50 chaves estrangeiras e 88 índices** (contando as chaves
+primárias), criado por cinco migrações: a inicial; os canais de entrega das notificações, os
+aparelhos registrados para push e o código de recuperação de senha; o veterinário responsável
+por paciente; o esquema de doses e a recorrência da carteira de vacinação; e o fluxo clínico
+(avaliação do animal → tratamento → evolução, com os pedidos de exame). Nenhum relacionamento
+do domínio apaga em cascata: excluir um registro clínico precisa ser uma decisão explícita, o
+que preserva a integridade do histórico (RN-004).
+
+A migração do fluxo clínico (`FluxoClinicoAvaliacaoTratamentoEvolucao`) converte os dados de
+um banco que já estava em uso, sem perder registros:
+
+- cada avaliação passa a pertencer ao animal; a queixa principal vira o motivo da consulta, a
+  hipótese diagnóstica vira o possível diagnóstico, e anamnese, exame físico e plano
+  terapêutico são reunidos no campo "Observações";
+- cada tratamento é ligado à primeira avaliação registrada nele. O que não tinha nenhuma
+  recebe uma avaliação de origem criada na conversão, identificada como tal. O objetivo
+  terapêutico vira o nome e a descrição, as sessões previstas partem das sessões agendadas, e
+  "Interrompido" passa a "Inativado";
+- as evoluções (atendimentos) recebem o número da sessão em ordem cronológica, e a reação do
+  animal das antigas fica como "Não registrada.";
+- as receitas antigas continuam sem origem; as novas exigem uma.
+
+O caminho de volta (`Down`) não existe: para desfazer a conversão, restaure o backup feito
+antes de subir a versão nova.
 
 ### Armazenamento de arquivos
 
@@ -373,7 +445,7 @@ clínica (`Aplicacao:FusoHorario`, padrão `America/Sao_Paulo`), e não o do ser
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 184 testes unitários; o critério é "Falhou: 0"
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 260 testes unitários; o critério é "Falhou: 0"
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de

@@ -9,9 +9,9 @@ namespace VetCare.API.UseCases
 {
     /// <summary>
     /// HU-009: observações internas do prontuário. O acesso é restrito a Administrador e
-    /// Veterinário (RN-003); o Tutor nunca alcança este caso de uso, nem para leitura. O
-    /// veterinário só lê e escreve nos pacientes sob sua responsabilidade, como em todo o
-    /// prontuário (<see cref="AcessoAoPaciente"/>).
+    /// Veterinário (RN-003); o Tutor nunca alcança este caso de uso, nem para leitura. Qualquer
+    /// veterinário lê e escreve em qualquer paciente da clínica, como em todo o prontuário
+    /// (<see cref="AcessoAoPaciente"/>).
     /// </summary>
     public class RegistrarObservacaoInternaUseCase
     {

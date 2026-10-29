@@ -1,4 +1,5 @@
 import { useCallback, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { KeyRound, Loader2, Pencil, Plus, Power, Search, Users } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useConfirmacao } from '../hooks/useConfirmacao';
@@ -6,7 +7,16 @@ import { useAuth } from '../contexts/auth';
 import type { PaginaDe, Perfil, Usuario } from '../types';
 import { Alerta, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Modal, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
-import { emailValido, formatarData } from '../utils/formato';
+import {
+  compactar,
+  DICA_SENHA,
+  formatarData,
+  normalizarCrmv,
+  validarEmail,
+  validarNome,
+  validarSenha,
+  validarTextoOpcional,
+} from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { paginaVazia } from '../utils/paginacao';
@@ -17,6 +27,9 @@ const PERFIS: { valor: Perfil; rotulo: string }[] = [
   { valor: 'Tutor', rotulo: 'Tutor(a)' },
   { valor: 'Apoio', rotulo: 'Apoio administrativo' },
 ];
+
+/** Perfis criados nesta tela. Tutores têm tela própria, que cria também o acesso deles. */
+const PERFIS_DA_EQUIPE = PERFIS.filter((perfil) => perfil.valor !== 'Tutor');
 
 const ESTILO_PERFIL: Record<Perfil, string> = {
   Administrador: 'bg-info-claro text-purple-800',
@@ -32,11 +45,10 @@ const FORM_VAZIO = {
   perfil: 'Veterinario' as Perfil,
   crmv: '',
   especialidade: '',
-  telefone: '',
-  endereco: '',
-  cpf: '',
   setor: '',
 };
+
+type CampoDoForm = keyof typeof FORM_VAZIO;
 
 /** HU-002: cadastro, edição, ativação/desativação e redefinição de senha dos usuários. */
 export function Usuarios() {
@@ -52,6 +64,7 @@ export function Usuarios() {
   const [modalAberto, setModalAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Usuario | null>(null);
   const [form, setForm] = useState(FORM_VAZIO);
+  const [erros, setErros] = useState<Partial<Record<CampoDoForm, string>>>({});
   const [erroForm, setErroForm] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -89,6 +102,7 @@ export function Usuarios() {
   function abrirNovo() {
     setEmEdicao(null);
     setForm(FORM_VAZIO);
+    setErros({});
     setErroForm('');
     setModalAberto(true);
   }
@@ -102,13 +116,67 @@ export function Usuarios() {
       perfil: usuario.perfil,
       crmv: usuario.crmv ?? '',
       especialidade: usuario.especialidade ?? '',
-      telefone: usuario.telefone ?? '',
-      endereco: usuario.endereco ?? '',
-      cpf: usuario.cpf ?? '',
       setor: usuario.setor ?? '',
     });
+    setErros({});
     setErroForm('');
     setModalAberto(true);
+  }
+
+  function atualizar(campo: CampoDoForm, valor: string) {
+    setForm((atual) => ({ ...atual, [campo]: valor }) as typeof FORM_VAZIO);
+    // O erro do campo some assim que ele é editado.
+    setErros((atuais) => (atuais[campo] ? { ...atuais, [campo]: undefined } : atuais));
+  }
+
+  /**
+   * As mesmas regras da API (ValidacaoDeCadastro), conferidas antes do envio e mostradas ao
+   * lado de cada campo. Devolve o CRMV já padronizado ("CRMV-DF 12345"), ou null com erro.
+   */
+  function validar(): { crmv: string } | null {
+    const encontrados: Partial<Record<CampoDoForm, string>> = {};
+
+    // Um cadastro antigo continua editável sem trocar de nome; o nome novo segue a regra.
+    if (!emEdicao || compactar(form.nome) !== emEdicao.nome) {
+      const erroDeNome = validarNome(form.nome);
+      if (erroDeNome) encontrados.nome = erroDeNome;
+    }
+
+    const erroDeEmail = validarEmail(form.email);
+    if (erroDeEmail) encontrados.email = erroDeEmail;
+
+    if (!emEdicao && form.senha) {
+      const erroDeSenha = validarSenha(form.senha);
+      if (erroDeSenha) encontrados.senha = `${erroDeSenha} Ou deixe em branco.`;
+    }
+
+    let crmv = '';
+
+    if (form.perfil === 'Veterinario') {
+      // Na edição o CRMV em branco mantém o atual; no cadastro ele é obrigatório.
+      if (!emEdicao || form.crmv.trim()) {
+        const resultado = normalizarCrmv(form.crmv);
+        if (resultado.erro) encontrados.crmv = resultado.erro;
+        crmv = resultado.valor ?? '';
+      }
+
+      const erroDeEspecialidade = validarTextoOpcional(form.especialidade, 'A especialidade', 3, 120);
+      if (erroDeEspecialidade) encontrados.especialidade = erroDeEspecialidade;
+    }
+
+    if (form.perfil === 'Apoio') {
+      const erroDeSetor = validarTextoOpcional(form.setor, 'O setor', 2, 80);
+      if (erroDeSetor) encontrados.setor = erroDeSetor;
+    }
+
+    setErros(encontrados);
+
+    if (Object.keys(encontrados).length > 0) {
+      setErroForm('Confira os campos destacados.');
+      return null;
+    }
+
+    return { crmv };
   }
 
   const { confirmar, confirmarEdicao } = useConfirmacao();
@@ -117,29 +185,14 @@ export function Usuarios() {
     evento.preventDefault();
     setErroForm('');
 
-    // As mesmas regras da API (CriarUsuarioDTO / AtualizarUsuarioDTO), conferidas antes do envio.
-    const nome = form.nome.trim();
+    const valido = validar();
+
+    if (!valido) {
+      return;
+    }
+
+    const nome = compactar(form.nome);
     const email = form.email.trim();
-
-    if (nome.length < 3 || nome.length > 120) {
-      setErroForm('O nome deve ter entre 3 e 120 caracteres.');
-      return;
-    }
-
-    if (!emailValido(email)) {
-      setErroForm('Informe um e-mail válido.');
-      return;
-    }
-
-    if (!emEdicao && form.senha && (form.senha.length < 6 || form.senha.length > 64)) {
-      setErroForm('A senha inicial deve ter entre 6 e 64 caracteres, ou ficar em branco.');
-      return;
-    }
-
-    if (form.perfil === 'Veterinario' && form.crmv.trim().length < 3) {
-      setErroForm('Informe o CRMV do veterinário.');
-      return;
-    }
 
     if (
       emEdicao &&
@@ -157,23 +210,23 @@ export function Usuarios() {
     try {
       if (emEdicao) {
         await api.put(`/api/usuarios/${emEdicao.id}`, {
-          nome: form.nome,
-          email: form.email,
-          crmv: form.crmv || null,
-          especialidade: form.especialidade || null,
-          telefone: form.telefone || null,
-          endereco: form.endereco || null,
-          cpf: form.cpf || null,
-          setor: form.setor || null,
+          nome,
+          email,
+          crmv: valido.crmv || null,
+          especialidade: compactar(form.especialidade) || null,
+          setor: compactar(form.setor) || null,
         });
 
         setAviso('Usuário atualizado com sucesso.');
       } else {
         await api.post('/api/usuarios', {
-          ...form,
           nome,
           email,
           senha: form.senha || null,
+          perfil: form.perfil,
+          crmv: form.perfil === 'Veterinario' ? valido.crmv : null,
+          especialidade: form.perfil === 'Veterinario' ? compactar(form.especialidade) || null : null,
+          setor: form.perfil === 'Apoio' ? compactar(form.setor) || null : null,
         });
 
         setAviso(
@@ -270,18 +323,14 @@ export function Usuarios() {
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
       {aviso && (
-        <div className="mb-4">
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-            {aviso}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
       )}
 
       <Card className="mb-6 p-4">
@@ -418,22 +467,45 @@ export function Usuarios() {
         titulo={emEdicao ? 'Editar usuário' : 'Novo usuário'}
         descricao={
           emEdicao
-            ? 'A atualização preserva o histórico de vínculos do usuário.'
-            : 'O perfil define quais recursos o usuário poderá acessar.'
+            ? 'A atualização preserva o histórico de vínculos do usuário. O perfil de acesso não muda.'
+            : 'Cadastro da equipe da clínica. O perfil define quais recursos o usuário poderá acessar.'
         }
         aoFechar={() => setModalAberto(false)}
       >
-        <form onSubmit={aoEnviar} className="space-y-4">
-          <Campo rotulo="Nome completo" obrigatorio>
-            <input className="vc-campo" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          {!emEdicao && (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Tutores são cadastrados na tela{' '}
+              <Link to="/tutores" className="font-semibold text-brand hover:underline" onClick={() => setModalAberto(false)}>
+                Tutores
+              </Link>
+              , que cria também o acesso deles ao portal e ao aplicativo.
+            </p>
+          )}
+
+          <Campo rotulo="Nome completo" obrigatorio erro={erros.nome} dica="Nome e sobrenome, só com letras.">
+            <input
+              className="vc-campo"
+              value={form.nome}
+              onChange={(e) => atualizar('nome', e.target.value)}
+              maxLength={120}
+              autoComplete="name"
+            />
           </Campo>
 
-          <Campo rotulo="E-mail" obrigatorio dica="Será usado como login e precisa ser único no sistema.">
+          <Campo
+            rotulo="E-mail"
+            obrigatorio
+            erro={erros.email}
+            dica="Será usado como login e precisa ser único no sistema."
+          >
             <input
               type="email"
               className="vc-campo"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) => atualizar('email', e.target.value)}
+              maxLength={180}
+              autoComplete="email"
             />
           </Campo>
 
@@ -443,9 +515,9 @@ export function Usuarios() {
                 <select
                   className="vc-campo"
                   value={form.perfil}
-                  onChange={(e) => setForm({ ...form, perfil: e.target.value as Perfil })}
+                  onChange={(e) => atualizar('perfil', e.target.value)}
                 >
-                  {PERFIS.map((perfil) => (
+                  {PERFIS_DA_EQUIPE.map((perfil) => (
                     <option key={perfil.valor} value={perfil.valor}>
                       {perfil.rotulo}
                     </option>
@@ -455,14 +527,16 @@ export function Usuarios() {
 
               <Campo
                 rotulo="Senha inicial"
-                dica="Deixe em branco para o usuário criar a própria senha pelo link enviado por e-mail (válido por 72 horas)."
+                erro={erros.senha}
+                dica={`${DICA_SENHA} Deixe em branco para o usuário criar a própria senha pelo link enviado por e-mail (válido por 72 horas).`}
               >
                 <input
                   type="password"
                   className="vc-campo"
                   value={form.senha}
-                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                  onChange={(e) => atualizar('senha', e.target.value)}
                   autoComplete="new-password"
+                  maxLength={64}
                 />
               </Campo>
             </>
@@ -471,54 +545,61 @@ export function Usuarios() {
           {/* Os campos abaixo dependem do perfil: o registro profissional é criado junto. */}
           {form.perfil === 'Veterinario' && (
             <div className="grid gap-4 sm:grid-cols-2">
-              <Campo rotulo="CRMV" obrigatorio>
-                <input className="vc-campo" value={form.crmv} onChange={(e) => setForm({ ...form, crmv: e.target.value })} />
+              <Campo
+                rotulo="CRMV"
+                obrigatorio={!emEdicao}
+                erro={erros.crmv}
+                dica="UF e número, como CRMV-DF 12345."
+              >
+                <input
+                  className="vc-campo"
+                  value={form.crmv}
+                  onChange={(e) => atualizar('crmv', e.target.value)}
+                  // Ao sair do campo o CRMV já aparece no formato que será gravado.
+                  onBlur={() => {
+                    const { valor } = normalizarCrmv(form.crmv);
+                    if (valor) setForm((atual) => ({ ...atual, crmv: valor }));
+                  }}
+                  placeholder="CRMV-DF 12345"
+                  maxLength={30}
+                />
               </Campo>
 
-              <Campo rotulo="Especialidade">
+              <Campo rotulo="Especialidade" erro={erros.especialidade}>
                 <input
                   className="vc-campo"
                   value={form.especialidade}
-                  onChange={(e) => setForm({ ...form, especialidade: e.target.value })}
+                  onChange={(e) => atualizar('especialidade', e.target.value)}
                   placeholder="Fisioterapia veterinária"
+                  maxLength={120}
                 />
               </Campo>
             </div>
           )}
 
-          {form.perfil === 'Tutor' && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Campo rotulo="Telefone">
-                <input
-                  className="vc-campo"
-                  value={form.telefone}
-                  onChange={(e) => setForm({ ...form, telefone: e.target.value })}
-                />
-              </Campo>
-
-              <Campo rotulo="CPF">
-                <input className="vc-campo" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
-              </Campo>
-
-              <div className="sm:col-span-2">
-                <Campo rotulo="Endereço">
-                  <input
-                    className="vc-campo"
-                    value={form.endereco}
-                    onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                  />
-                </Campo>
-              </div>
-            </div>
+          {/* O cadastro do tutor (telefone, CPF, endereço) é mantido na tela de Tutores. */}
+          {emEdicao && form.perfil === 'Tutor' && (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Telefone, CPF e endereço deste tutor são editados na tela{' '}
+              <Link to="/tutores" className="font-semibold text-brand hover:underline" onClick={() => setModalAberto(false)}>
+                Tutores
+              </Link>
+              .
+            </p>
           )}
 
           {form.perfil === 'Apoio' && (
-            <Campo rotulo="Setor" dica={emEdicao ? 'Deixe em branco para manter o setor atual.' : undefined}>
+            <Campo
+              rotulo="Setor"
+              erro={erros.setor}
+              dica={emEdicao ? 'Deixe em branco para manter o setor atual.' : 'Em branco, fica Recepção.'}
+            >
               <input
                 className="vc-campo"
                 value={form.setor}
-                onChange={(e) => setForm({ ...form, setor: e.target.value })}
+                onChange={(e) => atualizar('setor', e.target.value)}
                 placeholder="Recepção"
+                maxLength={80}
               />
             </Campo>
           )}

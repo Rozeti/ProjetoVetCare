@@ -26,6 +26,7 @@ namespace VetCare.Tests
             new SessaoRepository(Contexto),
             new VacinaRepository(Contexto),
             new PrescricaoRepository(Contexto),
+            new PedidoExameRepository(Contexto),
             new AlergiaRepository(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             Dependencias.Assinador(),
@@ -35,14 +36,12 @@ namespace VetCare.Tests
         {
             var avaliacao = new AvaliacaoClinica
             {
-                TratamentoId = Tratamento.Id,
+                PacienteId = Paciente.Id,
                 ProntuarioId = Prontuario.Id,
                 VeterinarioId = Veterinario.Id,
-                QueixaPrincipal = "Claudicação do membro posterior",
-                Anamnese = "Pós-operatório",
-                ExameFisico = "Atrofia muscular",
-                HipoteseDiagnostica = "Rigidez articular",
-                PlanoTerapeutico = "Hidroterapia"
+                MotivoConsulta = "Claudicação do membro posterior",
+                Observacoes = "Pós-operatório, com atrofia muscular",
+                DiagnosticoPossivel = "Rigidez articular"
             };
 
             Contexto.AvaliacoesClinicas.Add(avaliacao);

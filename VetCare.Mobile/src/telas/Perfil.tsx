@@ -18,7 +18,14 @@ import { useAtualizacao } from '../contextos/AtualizacoesContext';
 import type { Usuario } from '../tipos';
 import { Alerta, Avatar, Cartao } from '../componentes/ui';
 import { cores, espacos, raios } from '../tema';
-import { formatarData, formatarDataHora } from '../utils/formato';
+import {
+  formatarData,
+  formatarDataHora,
+  mascararTelefone,
+  normalizarTelefone,
+  validarEndereco,
+  validarSenha,
+} from '../utils/formato';
 
 const ROTULO_PERFIL: Record<Usuario['perfil'], string> = {
   Administrador: 'Administrador(a)',
@@ -106,23 +113,27 @@ export function Perfil() {
     setErroContato('');
     setSucessoContato('');
 
-    // Mesmos limites de AtualizarTutorDTO.
-    if (telefone.trim().length > 30) {
-      setErroContato('O telefone deve ter até 30 caracteres.');
+    // As mesmas regras da API (ValidacaoDeCadastro): telefone com DDD, endereço completo.
+    const telefoneNormalizado = normalizarTelefone(telefone);
+
+    if (telefoneNormalizado.erro) {
+      setErroContato(telefoneNormalizado.erro);
       return;
     }
 
-    if (endereco.trim().length > 250) {
-      setErroContato('O endereço deve ter até 250 caracteres.');
+    const erroDeEndereco = validarEndereco(endereco);
+
+    if (erroDeEndereco) {
+      setErroContato(erroDeEndereco);
       return;
     }
 
     setSalvandoContato(true);
 
     try {
-      // Campo esvaziado vai como texto vazio: nulo significaria "manter o valor atual" para a API.
+      // Endereço esvaziado vai como texto vazio: nulo significaria "manter o valor atual" para a API.
       await api.put(`/api/tutores/${usuario.tutorId}`, {
-        telefone: telefone.trim(),
+        telefone: telefoneNormalizado.valor,
         endereco: endereco.trim(),
       });
 
@@ -148,13 +159,10 @@ export function Perfil() {
       return;
     }
 
-    if (novaSenha.length < 6) {
-      setErroSenha('A nova senha deve ter no mínimo 6 caracteres.');
-      return;
-    }
+    const senhaInvalida = validarSenha(novaSenha);
 
-    if (novaSenha.length > 64) {
-      setErroSenha('A nova senha deve ter no máximo 64 caracteres.');
+    if (senhaInvalida) {
+      setErroSenha(senhaInvalida);
       return;
     }
 
@@ -272,7 +280,7 @@ export function Perfil() {
           <TextInput
             style={estilos.campo}
             value={telefone}
-            onChangeText={setTelefone}
+            onChangeText={(texto) => setTelefone(mascararTelefone(texto))}
             keyboardType="phone-pad"
             autoComplete="tel"
             placeholder="(00) 00000-0000"

@@ -8,7 +8,7 @@ namespace VetCare.API.DTOs
         [StringLength(80, MinimumLength = 1, ErrorMessage = "O nome deve ter até 80 caracteres.")]
         public string Nome { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "A espécie é obrigatória.")]
+        /// <summary>A clínica atende apenas cães: em branco, o paciente é cadastrado como Cachorro.</summary>
         [StringLength(40, ErrorMessage = "A espécie deve ter até 40 caracteres.")]
         public string Especie { get; set; } = string.Empty;
 
@@ -38,5 +38,12 @@ namespace VetCare.API.DTOs
         /// <summary>RN-001: a reatribuição de tutor preserva todo o histórico clínico.</summary>
         [Required(ErrorMessage = "O paciente precisa estar vinculado a um tutor.")]
         public Guid TutorId { get; set; }
+
+        /// <summary>
+        /// Troca o veterinário responsável pelo paciente. Sem valor, mantém o atual; todo
+        /// paciente precisa terminar a edição com um responsável. A troca não move tratamentos
+        /// nem sessões: qualquer veterinário da clínica atende qualquer paciente.
+        /// </summary>
+        public Guid? VeterinarioResponsavelId { get; set; }
     }
 }

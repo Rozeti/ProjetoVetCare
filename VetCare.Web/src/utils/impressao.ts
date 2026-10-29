@@ -1,5 +1,5 @@
-import type { Prescricao, Prontuario } from '../types';
-import { formatarData, formatarDataHora, formatarDia } from './formato';
+import type { PedidoExame, Prescricao, Prontuario } from '../types';
+import { formatarData, formatarDataDoEvento, formatarDataHora, formatarDia } from './formato';
 
 /**
  * Geração de documentos para impressão. Abrimos uma janela com HTML próprio em vez
@@ -116,6 +116,7 @@ export function imprimirReceita(prescricao: Prescricao, nomeClinica: string) {
       <div><span>Tutor</span>${escapar(prescricao.nomeTutor)}</div>
       <div><span>Emissão</span>${escapar(formatarData(prescricao.dataEmissao))}</div>
       ${prescricao.validaAte ? `<div><span>Válida até</span>${escapar(formatarDia(prescricao.validaAte))}</div>` : ''}
+      ${prescricao.origem ? `<div><span>Origem</span>${escapar(prescricao.origem)}</div>` : ''}
     </div>
 
     ${prescricao.status === 'Cancelada' ? '<div class="alerta"><strong>Receita cancelada.</strong> Este documento não tem validade.</div>' : ''}
@@ -136,6 +137,44 @@ export function imprimirReceita(prescricao: Prescricao, nomeClinica: string) {
   abrirParaImpressao(`Receita — ${prescricao.nomePaciente}`, corpo);
 }
 
+/** Pedido de exames emitido a partir de uma avaliação, com espaço para assinatura. */
+export function imprimirPedidoExame(pedido: PedidoExame, nomeClinica: string) {
+  const exames = pedido.exames
+    .split(/\r?\n/)
+    .map((exame) => exame.trim())
+    .filter(Boolean)
+    .map((exame) => `<div class="item"><strong>${escapar(exame)}</strong></div>`)
+    .join('');
+
+  const corpo = `
+    ${cabecalho(nomeClinica, 'Pedido de exames')}
+
+    <div class="dados">
+      <div><span>Paciente</span>${escapar(pedido.nomePaciente)}</div>
+      <div><span>Espécie / Raça</span>${escapar([pedido.especie, pedido.raca].filter(Boolean).join(' · '))}</div>
+      <div><span>Tutor</span>${escapar(pedido.nomeTutor)}</div>
+      <div><span>Emissão</span>${escapar(formatarData(pedido.dataEmissao))}</div>
+      ${pedido.dataAvaliacao ? `<div><span>Avaliação de origem</span>${escapar(formatarData(pedido.dataAvaliacao))}</div>` : ''}
+    </div>
+
+    ${pedido.status === 'Cancelado' ? '<div class="alerta"><strong>Pedido cancelado.</strong> Este documento não tem validade.</div>' : ''}
+
+    <h2>Exames solicitados</h2>
+    ${exames}
+
+    ${pedido.justificativa ? `<h2>Justificativa clínica</h2><div class="observacao">${escapar(pedido.justificativa)}</div>` : ''}
+
+    <div class="assinatura">
+      <hr />
+      <p><strong>${escapar(pedido.nomeVeterinario)}</strong></p>
+      <p>${escapar(pedido.crmv)}</p>
+    </div>
+
+    ${rodape()}`;
+
+  abrirParaImpressao(`Pedido de exames — ${pedido.nomePaciente}`, corpo);
+}
+
 /**
  * Prontuário completo em documento único. As observações internas não entram:
  * o que é impresso pode acabar nas mãos do tutor, e a RN-003 não admite exceções.
@@ -151,10 +190,10 @@ export function imprimirProntuario(prontuario: Prontuario, nomeClinica: string) 
     : '';
 
   const historico = prontuario.historico
-    .filter((item) => item.tipo !== 'Observação Interna')
+    .filter((item) => item.categoria !== 'Observação')
     .map(
       (item) => `<div class="item">
-        <strong>${escapar(item.tipo)} — ${escapar(formatarDataHora(item.data))}</strong>
+        <strong>${escapar(item.tipo)} — ${escapar(formatarDataDoEvento(item))}</strong>
         <p>${escapar(item.autor)}</p>
         ${Object.entries(item.campos)
           .map(([rotulo, valor]) => `<p><strong>${escapar(rotulo)}:</strong> ${escapar(valor)}</p>`)

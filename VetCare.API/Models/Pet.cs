@@ -7,10 +7,10 @@ namespace VetCare.API.Models
         public Guid TutorId { get; set; }
 
         /// <summary>
-        /// Profissional que conduz o acompanhamento do paciente. Um veterinário só enxerga
-        /// os pacientes sob sua responsabilidade; a transferência leva junto os tratamentos
-        /// em andamento e as sessões futuras. Fica vazio quando o cadastro veio do tutor
-        /// pelo aplicativo e a clínica ainda não designou ninguém.
+        /// Profissional que acompanha o paciente. Organiza a clínica (painel do veterinário,
+        /// filtros), mas não restringe o acesso: qualquer veterinário da clínica atende
+        /// qualquer paciente. É trocado na edição do cadastro. Fica vazio só quando o cadastro
+        /// veio do tutor pelo aplicativo e a clínica ainda não designou ninguém.
         /// </summary>
         public Guid? VeterinarioResponsavelId { get; set; }
 

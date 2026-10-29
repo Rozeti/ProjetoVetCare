@@ -70,7 +70,6 @@ namespace VetCare.API.UseCases
                 return Resultado<SessaoDTO>.NaoAutorizado("Este tratamento pertence a outra clínica.");
             }
 
-            // A mesma regra de acesso do prontuário: o veterinário só agenda para os seus pacientes.
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
             {
                 return Resultado<SessaoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
@@ -82,23 +81,14 @@ namespace VetCare.API.UseCases
                     "O paciente está inativo ou tem óbito registrado; não é possível agendar sessões.");
             }
 
-            if (tratamento.Status != StatusTratamento.EmAndamento)
+            if (!StatusTratamento.Ativo(tratamento.Status))
             {
                 return Resultado<SessaoDTO>.Invalido(
-                    "Não é possível agendar sessões para um tratamento que não está em andamento.");
+                    "Não é possível agendar sessões para um tratamento concluído ou inativado.");
             }
 
-            // O paciente é acompanhado por um único veterinário: as sessões entram na agenda
-            // dele. Para outro profissional atender, o paciente precisa ser transferido antes.
-            var responsavelId = tratamento.Paciente?.VeterinarioResponsavelId;
-
-            if (responsavelId.HasValue && responsavelId.Value != veterinarioId)
-            {
-                return Resultado<SessaoDTO>.Invalido(
-                    $"As sessões de {tratamento.Paciente?.Nome} ficam na agenda do veterinário responsável " +
-                    $"({tratamento.Paciente?.VeterinarioResponsavel?.Usuario?.Nome ?? "outro profissional"}). " +
-                    "Transfira o paciente antes de agendar com outro veterinário.");
-            }
+            // Qualquer veterinário da clínica pode atender o paciente: a sessão entra na agenda
+            // de quem vai atender, seja ou não o responsável (por exemplo, cobrindo uma ausência).
 
             var dataHora = NormalizarParaUtc(dto.DataHora);
 

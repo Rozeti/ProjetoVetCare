@@ -7,12 +7,20 @@ using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
-    /// <summary>HU-008: registro do atendimento fisioterapêutico de cada sessão.</summary>
+    /// <summary>
+    /// HU-008: evolução, o registro de cada sessão realizada dentro de um tratamento. A evolução
+    /// recebe o número da sessão no tratamento, diz o que foi feito e como o animal reagiu, e
+    /// pode gerar uma receita.
+    /// </summary>
     public class RegistrarAtendimentoUseCase
     {
         public const string TipoRegistro = "AtendimentoFisioterapeutico";
 
+        /// <summary>Observação da sessão criada no registro de uma evolução sem agendamento.</summary>
+        public const string SessaoSemAgendamento = "Sessão registrada no prontuário, sem agendamento prévio.";
+
         private readonly IAtendimentoRepository _atendimentos;
+        private readonly ITratamentoRepository _tratamentos;
         private readonly ISessaoRepository _sessoes;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IPetRepository _pets;
@@ -26,6 +34,7 @@ namespace VetCare.API.UseCases
 
         public RegistrarAtendimentoUseCase(
             IAtendimentoRepository atendimentos,
+            ITratamentoRepository tratamentos,
             ISessaoRepository sessoes,
             IProntuarioRepository prontuarios,
             IPetRepository pets,
@@ -38,6 +47,7 @@ namespace VetCare.API.UseCases
             UsuarioAtual usuarioAtual)
         {
             _atendimentos = atendimentos;
+            _tratamentos = tratamentos;
             _sessoes = sessoes;
             _prontuarios = prontuarios;
             _pets = pets;
@@ -58,55 +68,119 @@ namespace VetCare.API.UseCases
                 return Resultado<AtendimentoDTO>.Invalido("A escala de dor deve ser um valor entre 0 e 10.");
             }
 
-            if (string.IsNullOrWhiteSpace(dto.TecnicasAplicadas) || string.IsNullOrWhiteSpace(dto.EvolucaoClinica))
+            var pendente = ValidarCampos(dto.TecnicasAplicadas, dto.EvolucaoClinica, dto.ReacaoAnimal);
+
+            if (pendente != null)
+            {
+                return Resultado<AtendimentoDTO>.Invalido(pendente);
+            }
+
+            Sessao? sessao = null;
+            Tratamento? tratamento;
+
+            if (dto.SessaoId.HasValue)
+            {
+                sessao = await _sessoes.ObterPorIdComRelacionamentos(dto.SessaoId.Value);
+
+                if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
+                }
+
+                tratamento = sessao.Tratamento!;
+            }
+            else if (dto.TratamentoId.HasValue)
+            {
+                tratamento = await _tratamentos.ObterPorIdComRelacionamentos(dto.TratamentoId.Value);
+
+                if (tratamento == null || tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return Resultado<AtendimentoDTO>.NaoEncontrado("Tratamento não encontrado.");
+                }
+            }
+            else
             {
                 return Resultado<AtendimentoDTO>.Invalido(
-                    "Informe as técnicas aplicadas e a evolução clínica do atendimento.");
+                    "Informe a sessão agendada que foi realizada ou o tratamento da sessão.");
             }
 
-            var sessao = await _sessoes.ObterPorIdComRelacionamentos(dto.SessaoId);
-
-            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
-            }
-
-            if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
+            if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
             {
                 return Resultado<AtendimentoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
-            if (sessao.Status == StatusSessao.Cancelada)
+            if (sessao?.Status == StatusSessao.Cancelada)
             {
                 return Resultado<AtendimentoDTO>.Invalido(
-                    "Não é possível registrar atendimento em uma sessão cancelada.");
+                    "Não é possível registrar evolução em uma sessão cancelada.");
+            }
+
+            // Concluído e inativado não recebem novas evoluções; o histórico fica como está.
+            if (!StatusTratamento.Ativo(tratamento.Status))
+            {
+                return Resultado<AtendimentoDTO>.Conflito(
+                    $"O tratamento \"{tratamento.Nome}\" está {tratamento.Status.ToLowerInvariant()}. " +
+                    "Reative-o para registrar novas evoluções.");
             }
 
             // Uma sessão gera no máximo um atendimento (cardinalidade 1..0..1 do diagrama de classes).
-            if (await _atendimentos.ObterPorSessao(dto.SessaoId) != null)
+            if (sessao != null && await _atendimentos.ObterPorSessao(sessao.Id) != null)
             {
-                return Resultado<AtendimentoDTO>.Conflito("Esta sessão já possui um atendimento registrado.");
+                return Resultado<AtendimentoDTO>.Conflito("Esta sessão já possui uma evolução registrada.");
             }
 
-            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? sessao.VeterinarioId;
+            // Sem sessão agendada, quem registra é quem atendeu; a administração registra em
+            // nome do veterinário do tratamento.
+            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? sessao?.VeterinarioId ?? tratamento.VeterinarioId;
 
             if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)
             {
-                return Resultado<AtendimentoDTO>.NaoAutorizado("O atendimento deve ser registrado em seu próprio nome.");
+                return Resultado<AtendimentoDTO>.NaoAutorizado("A evolução deve ser registrada em seu próprio nome.");
             }
 
-            var pacienteId = sessao.Tratamento!.PacienteId;
+            var sessaoCriadaAgora = false;
+
+            if (sessao == null)
+            {
+                if (tratamento.Paciente?.EmAcompanhamento != true)
+                {
+                    return Resultado<AtendimentoDTO>.Conflito(
+                        "O paciente está inativo ou tem óbito registrado; não é possível registrar novas sessões.");
+                }
+
+                // A sessão realizada sem agendamento entra na agenda de quem atendeu, já concluída.
+                sessao = new Sessao
+                {
+                    TratamentoId = tratamento.Id,
+                    VeterinarioId = veterinarioId,
+                    DataHora = DateTime.UtcNow,
+                    Status = StatusSessao.Concluida,
+                    Observacoes = SessaoSemAgendamento,
+                    LembreteEnviado = true
+                };
+
+                await _sessoes.Adicionar(sessao);
+                await _sessoes.SalvarAlteracoes();
+                sessaoCriadaAgora = true;
+            }
+
+            var pacienteId = tratamento.PacienteId;
             var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(pacienteId);
 
             var atendimento = new AtendimentoFisioterapeutico
             {
-                SessaoId = dto.SessaoId,
+                SessaoId = sessao.Id,
                 TratamentoId = sessao.TratamentoId,
                 ProntuarioId = prontuario.Id,
                 VeterinarioId = veterinarioId,
+                // A sessão seguinte às já registradas no tratamento.
+                NumeroSessao = await _atendimentos.ContarPorTratamento(sessao.TratamentoId) + 1,
                 TecnicasAplicadas = dto.TecnicasAplicadas.Trim(),
                 EscalaDor = dto.EscalaDor,
                 EvolucaoClinica = dto.EvolucaoClinica.Trim(),
+                ReacaoAnimal = dto.ReacaoAnimal.Trim(),
+                Observacoes = (dto.Observacoes ?? string.Empty).Trim(),
+                Relatorio = (dto.Relatorio ?? string.Empty).Trim(),
                 SinaisVitais = dto.SinaisVitais.Trim(),
                 ProximosPassos = dto.ProximosPassos.Trim(),
                 PesoKg = dto.PesoKg,
@@ -117,6 +191,20 @@ namespace VetCare.API.UseCases
 
             await _atendimentos.Adicionar(atendimento);
             await _atendimentos.SalvarAlteracoes();
+
+            // A primeira evolução de um tratamento planejado marca o início de fato.
+            if (tratamento.Status == StatusTratamento.Planejado)
+            {
+                tratamento.Status = StatusTratamento.EmAndamento;
+
+                if (tratamento.DataInicio > DateTime.UtcNow)
+                {
+                    tratamento.DataInicio = DateTime.UtcNow;
+                }
+
+                _tratamentos.Atualizar(tratamento);
+                await _tratamentos.SalvarAlteracoes();
+            }
 
             if (!string.IsNullOrWhiteSpace(dto.ObservacaoInterna))
             {
@@ -137,7 +225,8 @@ namespace VetCare.API.UseCases
                 await AtualizarPesoDoPaciente(pacienteId, dto.PesoKg.Value);
             }
 
-            var sessaoConcluidaAgora = false;
+            // A sessão criada agora já nasce concluída.
+            var sessaoConcluidaAgora = sessaoCriadaAgora;
 
             if (dto.ConcluirSessao && sessao.Status != StatusSessao.Concluida)
             {
@@ -154,23 +243,27 @@ namespace VetCare.API.UseCases
             // Quem escreveu o registro clínico fica na trilha, não só quem o consultou.
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Criacao, TipoRegistro, atendimento.Id,
-                $"Atendimento de {sessao.Tratamento?.Paciente?.Nome} (dor {atendimento.EscalaDor}/10)");
+                $"Evolução nº {atendimento.NumeroSessao} do tratamento \"{tratamento.Nome}\" de {tratamento.Paciente?.Nome} (dor {atendimento.EscalaDor}/10)");
 
             // HU-015, CA-3: um único aviso cobre o registro e, quando for o caso, a conclusão da sessão.
-            var usuarioTutor = sessao.Tratamento?.Paciente?.Tutor?.UsuarioId;
+            var usuarioTutor = tratamento.Paciente?.Tutor?.UsuarioId;
 
             if (usuarioTutor.HasValue)
             {
                 await _notificacoes.NotificarNovoRegistroProntuario(
                     usuarioTutor.Value,
-                    sessao.Tratamento?.Paciente?.Nome ?? "seu pet",
-                    sessaoConcluidaAgora ? "Novo atendimento (sessão concluída)" : "Novo atendimento",
+                    tratamento.Paciente?.Nome ?? "seu pet",
+                    sessaoConcluidaAgora
+                        ? $"Nova evolução: sessão {atendimento.NumeroSessao} concluída"
+                        : $"Nova evolução: sessão {atendimento.NumeroSessao}",
                     pacienteId);
             }
 
+            atendimento.Tratamento = tratamento;
+
             return Resultado<AtendimentoDTO>.Ok(
                 await MapearParaDTO(atendimento),
-                "Atendimento registrado com sucesso.");
+                "Evolução registrada com sucesso.");
         }
 
         /// <summary>RN-004: a edição arquiva a versão anterior antes de aplicar as mudanças.</summary>
@@ -181,17 +274,24 @@ namespace VetCare.API.UseCases
                 return Resultado<AtendimentoDTO>.Invalido("A escala de dor deve ser um valor entre 0 e 10.");
             }
 
+            var pendente = ValidarCampos(dto.TecnicasAplicadas, dto.EvolucaoClinica, dto.ReacaoAnimal);
+
+            if (pendente != null)
+            {
+                return Resultado<AtendimentoDTO>.Invalido(pendente);
+            }
+
             var atendimento = await ObterDaClinica(id);
 
             if (atendimento == null)
             {
-                return Resultado<AtendimentoDTO>.NaoEncontrado("Atendimento não encontrado.");
+                return Resultado<AtendimentoDTO>.NaoEncontrado("Evolução não encontrada.");
             }
 
             if (_usuarioAtual.EhVeterinario && atendimento.VeterinarioId != _usuarioAtual.VeterinarioId)
             {
                 return Resultado<AtendimentoDTO>.NaoAutorizado(
-                    "Você só pode corrigir atendimentos registrados por você.");
+                    "Você só pode corrigir evoluções registradas por você.");
             }
 
             await _versoes.Arquivar(TipoRegistro, atendimento.Id, new
@@ -199,6 +299,9 @@ namespace VetCare.API.UseCases
                 atendimento.TecnicasAplicadas,
                 atendimento.EscalaDor,
                 atendimento.EvolucaoClinica,
+                atendimento.ReacaoAnimal,
+                atendimento.Observacoes,
+                atendimento.Relatorio,
                 atendimento.SinaisVitais,
                 atendimento.ProximosPassos,
                 atendimento.PesoKg,
@@ -212,6 +315,9 @@ namespace VetCare.API.UseCases
             atendimento.TecnicasAplicadas = dto.TecnicasAplicadas.Trim();
             atendimento.EscalaDor = dto.EscalaDor;
             atendimento.EvolucaoClinica = dto.EvolucaoClinica.Trim();
+            atendimento.ReacaoAnimal = dto.ReacaoAnimal.Trim();
+            atendimento.Observacoes = (dto.Observacoes ?? string.Empty).Trim();
+            atendimento.Relatorio = (dto.Relatorio ?? string.Empty).Trim();
             atendimento.SinaisVitais = dto.SinaisVitais.Trim();
             atendimento.ProximosPassos = dto.ProximosPassos.Trim();
             atendimento.PesoKg = dto.PesoKg;
@@ -228,11 +334,11 @@ namespace VetCare.API.UseCases
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Alteracao, TipoRegistro, atendimento.Id,
-                $"Correção do atendimento de {atendimento.Sessao?.Tratamento?.Paciente?.Nome}");
+                $"Correção da evolução nº {atendimento.NumeroSessao} de {atendimento.Sessao?.Tratamento?.Paciente?.Nome}");
 
             return Resultado<AtendimentoDTO>.Ok(
                 await MapearParaDTO(atendimento),
-                "Atendimento atualizado. A versão anterior foi preservada no histórico.");
+                "Evolução atualizada. A versão anterior foi preservada no histórico.");
         }
 
         public async Task<Resultado<AtendimentoDTO>> ObterPorId(Guid id)
@@ -240,8 +346,99 @@ namespace VetCare.API.UseCases
             var atendimento = await ObterDaClinica(id);
 
             return atendimento == null
-                ? Resultado<AtendimentoDTO>.NaoEncontrado("Atendimento não encontrado.")
+                ? Resultado<AtendimentoDTO>.NaoEncontrado("Evolução não encontrada.")
                 : Resultado<AtendimentoDTO>.Ok(await MapearParaDTO(atendimento));
+        }
+
+        /// <summary>
+        /// Tela de evoluções: filtra por animal, tratamento, intervalo de datas (dias da clínica),
+        /// profissional e número da sessão. Dentro de um tratamento as sessões vêm em ordem
+        /// cronológica. Toda a equipe clínica, inclusive qualquer veterinário, alcança as
+        /// evoluções de todos os pacientes da clínica.
+        /// </summary>
+        public async Task<Resultado<PaginaDe<EvolucaoResumoDTO>>> Listar(
+            Guid? pacienteId,
+            Guid? tratamentoId,
+            DateTime? inicio,
+            DateTime? fim,
+            Guid? veterinarioId,
+            int? numeroSessao,
+            ParametrosPagina parametros)
+        {
+            if (inicio.HasValue && fim.HasValue &&
+                RelogioDaClinica.Padrao.DiaDaClinica(fim.Value) < RelogioDaClinica.Padrao.DiaDaClinica(inicio.Value))
+            {
+                return Resultado<PaginaDe<EvolucaoResumoDTO>>.Invalido("A data final não pode ser anterior à inicial.");
+            }
+
+            if (numeroSessao is < 1)
+            {
+                return Resultado<PaginaDe<EvolucaoResumoDTO>>.Invalido("O número da sessão começa em 1.");
+            }
+
+            if (pacienteId.HasValue)
+            {
+                var pet = await _pets.ObterPorId(pacienteId.Value);
+
+                if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return Resultado<PaginaDe<EvolucaoResumoDTO>>.NaoEncontrado("Paciente não encontrado.");
+                }
+
+                if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
+                {
+                    return Resultado<PaginaDe<EvolucaoResumoDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+                }
+            }
+
+            if (tratamentoId.HasValue)
+            {
+                var tratamento = await _tratamentos.ObterPorIdComRelacionamentos(tratamentoId.Value);
+
+                if (tratamento == null || tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return Resultado<PaginaDe<EvolucaoResumoDTO>>.NaoEncontrado("Tratamento não encontrado.");
+                }
+
+                if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
+                {
+                    return Resultado<PaginaDe<EvolucaoResumoDTO>>.NaoAutorizado("Você não tem acesso a este tratamento.");
+                }
+            }
+
+            var relogio = RelogioDaClinica.Padrao;
+
+            var filtro = new FiltroDeEvolucoes
+            {
+                PacienteId = pacienteId,
+                TratamentoId = tratamentoId,
+                VeterinarioId = veterinarioId,
+                NumeroSessao = numeroSessao,
+                InicioUtc = inicio.HasValue ? relogio.ParaUtc(relogio.DiaDaClinica(inicio.Value)) : null,
+                FimUtc = fim.HasValue ? relogio.ParaUtc(relogio.DiaDaClinica(fim.Value).AddDays(1)) : null,
+                OrdemCronologica = tratamentoId.HasValue
+            };
+
+            var pagina = await _atendimentos.Listar(_usuarioAtual.ClinicaId, filtro, parametros);
+
+            return Resultado<PaginaDe<EvolucaoResumoDTO>>.Ok(pagina.Converter(a => new EvolucaoResumoDTO
+            {
+                Id = a.Id,
+                SessaoId = a.SessaoId,
+                TratamentoId = a.TratamentoId,
+                NomeTratamento = a.Tratamento?.Nome ?? string.Empty,
+                PacienteId = a.Tratamento?.PacienteId ?? Guid.Empty,
+                NomePaciente = a.Tratamento?.Paciente?.Nome ?? string.Empty,
+                NumeroSessao = a.NumeroSessao,
+                DataRegistro = a.DataRegistro,
+                VeterinarioId = a.VeterinarioId,
+                NomeVeterinario = a.Veterinario?.Usuario?.Nome ?? string.Empty,
+                TecnicasAplicadas = a.TecnicasAplicadas,
+                EvolucaoClinica = a.EvolucaoClinica,
+                ReacaoAnimal = a.ReacaoAnimal,
+                EscalaDor = a.EscalaDor,
+                Editado = a.DataUltimaEdicao.HasValue
+            }));
         }
 
         public async Task<Resultado<AtendimentoDTO?>> ObterPorSessao(Guid sessaoId)
@@ -273,7 +470,7 @@ namespace VetCare.API.UseCases
         {
             if (await ObterDaClinica(id) == null)
             {
-                return Resultado<List<HistoricoVersaoDTO>>.NaoEncontrado("Atendimento não encontrado.");
+                return Resultado<List<HistoricoVersaoDTO>>.NaoEncontrado("Evolução não encontrada.");
             }
 
             var versoes = await _versoes.ObterHistorico(TipoRegistro, id);
@@ -309,6 +506,20 @@ namespace VetCare.API.UseCases
             await _prontuarios.SalvarAlteracoes();
         }
 
+        private static string? ValidarCampos(string? procedimentos, string? descricao, string? reacao)
+        {
+            if (string.IsNullOrWhiteSpace(procedimentos))
+                return "Informe os procedimentos realizados na sessão.";
+
+            if (string.IsNullOrWhiteSpace(descricao))
+                return "Descreva o que foi realizado na sessão.";
+
+            if (string.IsNullOrWhiteSpace(reacao))
+                return "Informe como o animal reagiu à sessão.";
+
+            return null;
+        }
+
         private async Task AtualizarPesoDoPaciente(Guid pacienteId, decimal peso)
         {
             var pet = await _pets.ObterPorId(pacienteId);
@@ -327,18 +538,28 @@ namespace VetCare.API.UseCases
         {
             var midias = await _midias.ObterPorSessao(atendimento.SessaoId);
 
+            var tratamento = atendimento.Tratamento ?? atendimento.Sessao?.Tratamento;
+
             return new AtendimentoDTO
             {
                 Id = atendimento.Id,
                 SessaoId = atendimento.SessaoId,
                 TratamentoId = atendimento.TratamentoId,
+                NomeTratamento = tratamento?.Nome ?? string.Empty,
+                PacienteId = tratamento?.PacienteId ?? Guid.Empty,
+                NomePaciente = tratamento?.Paciente?.Nome ?? atendimento.Sessao?.Tratamento?.Paciente?.Nome ?? string.Empty,
                 ProntuarioId = atendimento.ProntuarioId,
+                NumeroSessao = atendimento.NumeroSessao,
                 DataRegistro = atendimento.DataRegistro,
                 DataUltimaEdicao = atendimento.DataUltimaEdicao,
+                VeterinarioId = atendimento.VeterinarioId,
                 NomeVeterinario = atendimento.Veterinario?.Usuario?.Nome ?? string.Empty,
                 TecnicasAplicadas = atendimento.TecnicasAplicadas,
                 EscalaDor = atendimento.EscalaDor,
                 EvolucaoClinica = atendimento.EvolucaoClinica,
+                ReacaoAnimal = atendimento.ReacaoAnimal,
+                Observacoes = atendimento.Observacoes,
+                Relatorio = atendimento.Relatorio,
                 SinaisVitais = atendimento.SinaisVitais,
                 ProximosPassos = atendimento.ProximosPassos,
                 PesoKg = atendimento.PesoKg,

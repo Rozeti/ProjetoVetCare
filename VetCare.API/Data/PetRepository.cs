@@ -53,6 +53,12 @@ namespace VetCare.API.Data
                 consulta = consulta.Where(p => p.Ativo == filtro.Ativo.Value);
             }
 
+            if (!string.IsNullOrWhiteSpace(filtro.Raca))
+            {
+                var raca = filtro.Raca.Trim().ToLowerInvariant();
+                consulta = consulta.Where(p => p.Raca.ToLower() == raca);
+            }
+
             if (!string.IsNullOrWhiteSpace(filtro.Busca))
             {
                 var termo = filtro.Busca.Trim().ToLowerInvariant();
@@ -90,35 +96,29 @@ namespace VetCare.API.Data
 
         public void Atualizar(Pet pet) => _context.Pets.Update(pet);
 
-        public async Task<bool> PossuiRegistrosClinicos(Guid petId)
+        public async Task<List<string>> ListarRacas(Guid clinicaId, FiltroDePacientes filtro)
         {
-            var temProntuarioComRegistros = await _context.Prontuarios
-                .Where(p => p.PacienteId == petId)
-                .AnyAsync(p => _context.AvaliacoesClinicas.Any(a => a.ProntuarioId == p.Id) ||
-                               _context.Atendimentos.Any(a => a.ProntuarioId == p.Id) ||
-                               _context.Prescricoes.Any(pr => pr.ProntuarioId == p.Id) ||
-                               _context.DocumentosClinicos.Any(d => d.ProntuarioId == p.Id) ||
-                               _context.ObservacoesInternas.Any(o => o.ProntuarioId == p.Id));
+            var consulta = _context.Pets.AsNoTracking().Where(p => p.ClinicaId == clinicaId && p.Raca != "");
 
-            if (temProntuarioComRegistros)
+            if (filtro.TutorId.HasValue)
             {
-                return true;
+                consulta = consulta.Where(p => p.TutorId == filtro.TutorId.Value);
             }
 
-            return await _context.Tratamentos.AnyAsync(t => t.PacienteId == petId) ||
-                   await _context.Vacinas.AnyAsync(v => v.PacienteId == petId);
-        }
+            if (filtro.VeterinarioResponsavelId.HasValue)
+            {
+                consulta = consulta.Where(p => p.VeterinarioResponsavelId == filtro.VeterinarioResponsavelId.Value);
+            }
 
-        public async Task Remover(Pet pet)
-        {
-            // Só o que nasce junto com o cadastro sai junto com ele: o prontuário vazio e os
-            // alertas clínicos. Qualquer registro além disso bloqueia a exclusão antes daqui.
-            var alertas = await _context.AlergiasCondicoes.Where(a => a.PacienteId == pet.Id).ToListAsync();
-            var prontuarios = await _context.Prontuarios.Where(p => p.PacienteId == pet.Id).ToListAsync();
+            var racas = await consulta.Select(p => p.Raca.Trim()).Distinct().ToListAsync();
 
-            _context.AlergiasCondicoes.RemoveRange(alertas);
-            _context.Prontuarios.RemoveRange(prontuarios);
-            _context.Pets.Remove(pet);
+            // A mesma raça digitada com maiúsculas diferentes aparece uma vez só.
+            return racas
+                .Where(r => r.Length > 0)
+                .GroupBy(r => r.ToLowerInvariant())
+                .Select(g => g.First())
+                .OrderBy(r => r, StringComparer.Create(new System.Globalization.CultureInfo("pt-BR"), true))
+                .ToList();
         }
 
         public async Task<bool> MicrochipEmUso(Guid clinicaId, string microchip, Guid? ignorarPetId = null)

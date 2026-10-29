@@ -38,19 +38,39 @@ checa "RNF-002 acesso sem token é negado (401)" "401" "$r"
 
 echo "== HU-002 gestão de usuários =="
 SUFIXO=$RANDOM
-r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Dra. Teste $SUFIXO\",\"email\":\"vet$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Veterinario\",\"crmv\":\"CRMV-DF $SUFIXO\",\"especialidade\":\"Fisioterapia\"}")
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Dra. Teste Silva\",\"email\":\"vet$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Veterinario\",\"crmv\":\"crmv df $SUFIXO\",\"especialidade\":\"Fisioterapia\"}")
 VETUSER=$(jsonval "$r" id); VETID=$(jsonval "$r" veterinarioId)
 checa "HU-002 CA-1 cadastro de veterinário" "veterinarioId" "$r"
+checa "CRMV gravado no formato do conselho" "\"crmv\":\"CRMV-DF $SUFIXO\"" "$r"
 
-r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Dup\",\"email\":\"vet$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Veterinario\",\"crmv\":\"OUTRO\"}")
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Duplicado Souza\",\"email\":\"vet$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Veterinario\",\"crmv\":\"CRMV-SP 1$SUFIXO\"}")
 checa "HU-002 CA-2 / RN-007 e-mail duplicado bloqueado" "já está em uso" "$r"
 
 r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Perfil Errado\",\"email\":\"x$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Chefe\"}")
 checa "RN-005 perfil inválido recusado" "Perfil inválido" "$r"
 
-r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Tutor Teste\",\"email\":\"tutor$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Tutor\",\"telefone\":\"61988887777\",\"endereco\":\"Brasilia\"}")
-TUTORUSER=$(jsonval "$r" id); TUTORID=$(jsonval "$r" tutorId)
-checa "HU-002 cadastro de tutor" "tutorId" "$r"
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Paula Rocha\",\"email\":\"paula$SUFIXO@vetcare.com\",\"perfil\":\"Tutor\"}")
+checa "tutor não é cadastrado na tela de usuários" "tela de Tutores" "$r"
+
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Ana Souza 2\",\"email\":\"ana$SUFIXO@vetcare.com\",\"perfil\":\"Apoio\"}")
+checa "nome com números é recusado" "sem números" "$r"
+
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Bruno Lima\",\"email\":\"bruno$SUFIXO@vetcare.com\",\"perfil\":\"Veterinario\",\"crmv\":\"CRMV-XX 123\"}")
+checa "CRMV com UF inexistente é recusado" "UF válida" "$r"
+
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Bruno Lima\",\"email\":\"bruno$SUFIXO@vetcare.com\",\"senha\":\"abcdefgh\",\"perfil\":\"Apoio\"}")
+checa "senha sem números é recusada" "letras e números" "$r"
+
+r=$(post /api/tutores "$ADMIN" "{\"nome\":\"Tutor Teste Lima\",\"email\":\"tutor$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"telefone\":\"61988887777\",\"endereco\":\"Brasilia, DF\"}")
+TUTORUSER=$(jsonval "$r" usuarioId); TUTORID=$(jsonval "$r" id)
+checa "HU-002 cadastro de tutor pela tela de tutores" "usuarioId" "$r"
+checa "telefone do tutor gravado com DDD e máscara" '"telefone":"(61) 98888-7777"' "$r"
+
+r=$(post /api/tutores "$ADMIN" "{\"nome\":\"Tutor Sem Contato\",\"email\":\"semcontato$SUFIXO@vetcare.com\",\"telefone\":\"8888-7777\"}")
+checa "telefone sem DDD é recusado" "DDD" "$r"
+
+r=$(post /api/tutores "$ADMIN" "{\"nome\":\"Tutor Cpf Errado\",\"email\":\"cpf$SUFIXO@vetcare.com\",\"telefone\":\"61988881111\",\"cpf\":\"123.456.789-00\"}")
+checa "CPF com dígito verificador errado é recusado" "CPF inválido" "$r"
 
 echo "== HU-003 pacientes =="
 r=$(post /api/pets "$ADMIN" "{\"nome\":\"Luna\",\"especie\":\"Cachorro\",\"raca\":\"Border Collie\",\"dataNascimento\":\"2021-03-15\",\"sexo\":\"Fêmea\",\"pesoAtualKg\":18.4,\"tutorId\":\"$TUTORID\",\"veterinarioResponsavelId\":\"$VETID\"}")
@@ -58,13 +78,35 @@ PETID=$(jsonval "$r" id)
 checa "HU-003 CA-1 cadastro vinculado ao tutor" "Luna" "$r"
 checa "Paciente nasce com veterinário responsável" "nomeVeterinarioResponsavel\":\"Dra. Teste" "$r"
 
-r=$(post /api/pets "$ADMIN" '{"nome":"SemTutor","especie":"Gato","raca":"SRD","dataNascimento":"2021-03-15","tutorId":"00000000-0000-0000-0000-000000000000"}')
+r=$(post /api/pets "$ADMIN" '{"nome":"SemTutor","especie":"Cachorro","raca":"SRD","dataNascimento":"2021-03-15","tutorId":"00000000-0000-0000-0000-000000000000"}')
 checa "HU-003 CA-2 / RN-001 tutor obrigatório" "tutor" "$r"
 
-echo "== Tratamento e agenda =="
-r=$(post /api/tratamentos "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"dataInicio\":\"$(date -u +%Y-%m-%d)\",\"objetivoTerapeutico\":\"Reabilitação pós-cirúrgica\"}")
+r=$(post /api/pets "$ADMIN" "{\"nome\":\"Mingau\",\"especie\":\"Gato\",\"raca\":\"SRD\",\"dataNascimento\":\"2021-03-15\",\"tutorId\":\"$TUTORID\",\"veterinarioResponsavelId\":\"$VETID\"}")
+checa "a clínica atende apenas cães" "apenas cães" "$r"
+
+echo "== HU-007 avaliação (RN-010) =="
+# A avaliação pertence ao animal e é o ponto de partida do fluxo clínico.
+r=$(post /api/avaliacoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"motivoConsulta\":\"Claudicação\",\"observacoes\":\"\",\"diagnosticoPossivel\":\"y\"}")
+checa "HU-007 CA-2 / RN-010 campo obrigatório ausente" "observa" "$r"
+
+r=$(post /api/avaliacoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"motivoConsulta\":\"Claudicação posterior\",\"observacoes\":\"Pós-operatório; atrofia muscular\",\"diagnosticoPossivel\":\"Rigidez articular\",\"observacaoInterna\":\"Tutor ansioso, dosar informações.\"}")
+AVALID=$(jsonval "$r" id)
+checa "HU-007 CA-1 avaliação completa registrada" "Claudica" "$r"
+
+r=$(put "/api/avaliacoes/$AVALID" "$ADMIN" '{"motivoConsulta":"Claudicação corrigida","observacoes":"Pós-operatório","diagnosticoPossivel":"Rigidez"}')
+checa "HU-007 CA-4 / RN-004 correção registra a edição" "dataUltimaEdicao\":\"2" "$r"
+
+r=$(get "/api/avaliacoes/$AVALID/historico" "$ADMIN")
+checa "RN-004 versão anterior arquivada" "conteudoAnterior" "$r"
+
+echo "== Tratamento a partir da avaliação e agenda =="
+r=$(post /api/tratamentos "$ADMIN" "{\"veterinarioId\":\"$VETID\",\"nome\":\"Sem origem\",\"tipo\":\"Fisioterapia\",\"descricao\":\"Teste\",\"duracaoPrevista\":\"1 mês\",\"frequencia\":\"semanal\",\"sessoesPrevistas\":4}")
+checa "tratamento sem avaliação de origem é recusado" "valia" "$r"
+
+r=$(post /api/tratamentos "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"veterinarioId\":\"$VETID\",\"nome\":\"Reabilitação pós-cirúrgica\",\"tipo\":\"Fisioterapia\",\"descricao\":\"Hidroterapia e laserterapia\",\"duracaoPrevista\":\"8 semanas\",\"frequencia\":\"2 sessões por semana\",\"sessoesPrevistas\":8}")
 TRATID=$(jsonval "$r" id)
-checa "tratamento criado" "Em Andamento" "$r"
+checa "tratamento criado a partir da avaliação (planejado)" "Planejado" "$r"
+checa "tratamento guarda a avaliação de origem" "\"avaliacaoId\":\"$AVALID\"" "$r"
 
 FUTURO=$(date -u -d "+3 days 13:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v+3d +%Y-%m-%dT13:00:00)
 r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$FUTURO\"}")
@@ -86,34 +128,64 @@ checa "HU-004 CA-3 visão semana" "sessaoId" "$r"
 r=$(get "/api/sessoes/agenda-geral?visao=mes" "$ADMIN")
 checa "HU-005 agenda geral consolidada" "veterinarios" "$r"
 
-echo "== HU-007 avaliação (RN-010) =="
-r=$(post /api/avaliacoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"queixaPrincipal\":\"Claudicação\",\"anamnese\":\"\",\"exameFisico\":\"x\",\"hipoteseDiagnostica\":\"y\",\"planoTerapeutico\":\"z\"}")
-checa "HU-007 CA-2 / RN-010 campo obrigatório ausente" "anamnese" "$r"
-
-r=$(post /api/avaliacoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"queixaPrincipal\":\"Claudicação posterior\",\"anamnese\":\"Pós-operatório\",\"exameFisico\":\"Atrofia muscular\",\"hipoteseDiagnostica\":\"Rigidez articular\",\"planoTerapeutico\":\"Hidroterapia\",\"observacaoInterna\":\"Tutor ansioso, dosar informações.\"}")
-AVALID=$(jsonval "$r" id)
-checa "HU-007 CA-1 avaliação completa registrada" "Claudica" "$r"
-
-r=$(put "/api/avaliacoes/$AVALID" "$ADMIN" '{"queixaPrincipal":"Claudicação corrigida","anamnese":"Pós-operatório","exameFisico":"Atrofia","hipoteseDiagnostica":"Rigidez","planoTerapeutico":"Hidroterapia e laser"}')
-checa "HU-007 CA-4 / RN-004 correção registra a edição" "dataUltimaEdicao\":\"2" "$r"
-
-r=$(get "/api/avaliacoes/$AVALID/historico" "$ADMIN")
-checa "RN-004 versão anterior arquivada" "conteudoAnterior" "$r"
-
-echo "== HU-008 atendimento =="
-r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Hidroterapia, Laserterapia\",\"escalaDor\":12,\"evolucaoClinica\":\"ok\"}")
+echo "== HU-008 evolução =="
+r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Hidroterapia, Laserterapia\",\"escalaDor\":12,\"evolucaoClinica\":\"ok\",\"reacaoAnimal\":\"ok\"}")
 checa "HU-008 CA-2 escala de dor fora do intervalo" "0 e 10" "$r"
 
-r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Hidroterapia, Laserterapia\",\"escalaDor\":6,\"evolucaoClinica\":\"Melhora do apoio\",\"pesoKg\":18.2,\"observacaoInterna\":\"Paciente reativo ao manuseio.\"}")
-ATENDID=$(jsonval "$r" id)
-checa "HU-008 CA-1 atendimento registrado" "escalaDor" "$r"
+r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Hidroterapia\",\"escalaDor\":4,\"evolucaoClinica\":\"Melhora do apoio\"}")
+checa "evolução exige a reação do animal" "reagiu" "$r"
 
-r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\"}")
-checa "uma sessão gera um único atendimento" "já possui" "$r"
+r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Hidroterapia, Laserterapia\",\"escalaDor\":6,\"evolucaoClinica\":\"Melhora do apoio\",\"reacaoAnimal\":\"Tolerou bem a esteira\",\"relatorio\":\"Sessão sem intercorrências\",\"pesoKg\":18.2,\"observacaoInterna\":\"Paciente reativo ao manuseio.\"}")
+ATENDID=$(jsonval "$r" id)
+checa "HU-008 CA-1 evolução registrada com o número da sessão" "\"numeroSessao\":1" "$r"
+
+r=$(get "/api/tratamentos/$TRATID" "$ADMIN")
+checa "a primeira evolução põe o tratamento em andamento" "Em Andamento" "$r"
+
+r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\",\"reacaoAnimal\":\"z\"}")
+checa "uma sessão gera uma única evolução" "já possui" "$r"
+
+# Sessão realizada sem agendamento: a evolução nasce do tratamento, e a sessão entra na
+# agenda já concluída.
+r=$(post /api/atendimentos "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Cinesioterapia\",\"escalaDor\":3,\"evolucaoClinica\":\"Exercícios de propriocepção\",\"reacaoAnimal\":\"Colaborativo\"}")
+checa "sessão sem agendamento registrada direto no tratamento" "\"numeroSessao\":2" "$r"
+SESSAOLIVRE=$(jsonval "$r" sessaoId)
+r=$(get "/api/sessoes/tratamento/$TRATID" "$ADMIN")
+checa "a sessão sem agendamento entra na agenda já concluída" "Conclu" "$(grep -o "\"id\":\"$SESSAOLIVRE\"[^}]*" <<<"$r")"
+
+r=$(post /api/atendimentos "$ADMIN" "{\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\",\"reacaoAnimal\":\"z\"}")
+checa "evolução exige a sessão ou o tratamento" "sessão agendada" "$r"
+
+r=$(get "/api/atendimentos?tratamentoId=$TRATID" "$ADMIN")
+checa "evoluções filtradas pelo tratamento" "\"nomeTratamento\":\"Reabilitação" "$r"
+
+echo "== Receitas e pedidos de exame =="
+r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"itens\":[{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
+checa "receita sem origem é recusada" "origem da receita" "$r"
+
+r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"atendimentoId\":\"$ATENDID\",\"itens\":[{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
+checa "receita emitida a partir da evolução" "Evolução nº 1" "$r"
+
+r=$(post /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"exames\":\"Raio-X do joelho\",\"justificativa\":\"Controle pós-operatório\"}")
+checa "pedido de exame emitido a partir da avaliação" "\"avaliacaoId\":\"$AVALID\"" "$r"
+
+echo "== Situação do tratamento =="
+r=$(put "/api/tratamentos/$TRATID" "$ADMIN" '{"status":"Inativado"}')
+checa "tratamento inativado" "Inativado" "$r"
+
+r=$(get "/api/atendimentos?tratamentoId=$TRATID" "$ADMIN")
+checa "inativar não apaga as evoluções" "\"numeroSessao\":1" "$r"
+
+r=$(put "/api/tratamentos/$TRATID" "$ADMIN" '{"status":"Em Andamento"}')
+checa "tratamento reativado" "Em Andamento" "$r"
+
+r=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/pets/$PETID" -H "Authorization: Bearer $ADMIN")
+checa "paciente não é excluído, só inativado (405)" "405" "$r"
 
 echo "== HU-011 / RN-003 prontuário =="
 r=$(get "/api/prontuarios/paciente/$PETID" "$ADMIN")
 checa "HU-011 CA-1 linha do tempo" "historico" "$r"
+checa "linha do tempo com categoria e responsável" "\"categoria\":\"Evolução\"" "$r"
 checa "HU-011 CA-3 série de peso" "evolucaoPeso" "$r"
 checa "RN-003 admin vê observações internas" "reativo ao manuseio" "$r"
 
@@ -186,16 +258,9 @@ checa "HU-015 CA-3 notificação de novo registro" "NovoRegistroProntuario" "$r"
 r=$(get /api/notificacoes "$VETTK")
 checa "HU-015 CA-3 veterinário notificado de nova mensagem" "NovaMensagem" "$r"
 
-echo "== HU-016 / HU-017 indicadores e relatórios =="
+echo "== HU-016 indicadores =="
 r=$(get /api/dashboard/indicadores "$ADMIN")
 checa "HU-016 CA-1 indicadores do dia" "confirmacoesPendentes" "$r"
-
-r=$(get /api/dashboard/relatorio-produtividade "$ADMIN")
-checa "HU-017 CA-1 atendimentos por veterinário" "porVeterinario" "$r"
-checa "HU-017 CA-2 ranking de técnicas" "tecnicasMaisAplicadas" "$r"
-
-r=$(get "/api/dashboard/relatorio-produtividade?inicio=2020-01-01&fim=2020-01-31" "$ADMIN")
-checa "HU-017 CA-3 período sem dados" '"semRegistros":true' "$r"
 
 echo "== RN-008 escopo por perfil =="
 r=$(get /api/dashboard/indicadores "$VETTK")
@@ -203,6 +268,24 @@ checa "RN-008 veterinário tem escopo próprio" '"escopo":"Veterinario"' "$r"
 
 r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/usuarios" -H "Authorization: Bearer $VETTK")
 checa "RN-005 veterinário não lista usuários (403)" "403" "$r"
+
+echo "== Qualquer veterinário atende qualquer paciente =="
+# Um colega cobre a ausência da veterinária responsável pela Luna, sem transferência.
+r=$(post /api/usuarios "$ADMIN" "{\"nome\":\"Dr. Cobertura Lima\",\"email\":\"cobertura$SUFIXO@vetcare.com\",\"senha\":\"senha123\",\"perfil\":\"Veterinario\",\"crmv\":\"CRMV-DF 2$SUFIXO\",\"especialidade\":\"Clínica geral\"}")
+VET2ID=$(jsonval "$r" veterinarioId)
+VET2TK=$(entrar "cobertura$SUFIXO@vetcare.com" senha123)
+
+r=$(get "/api/pets?busca=Luna" "$VET2TK")
+checa "o colega encontra o paciente na lista" "Luna" "$r"
+
+r=$(get "/api/prontuarios/paciente/$PETID" "$VET2TK")
+checa "o colega abre o prontuário do paciente" "historico" "$r"
+
+r=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH "$API/api/pets/$PETID/veterinario-responsavel" -H "Authorization: Bearer $ADMIN" -H "Content-Type: application/json" -d "{\"veterinarioId\":\"$VET2ID\"}")
+checa "a transferência de paciente deixou de existir (404)" "404" "$r"
+
+r=$(put "/api/pets/$PETID" "$ADMIN" "{\"nome\":\"Luna\",\"especie\":\"Cachorro\",\"raca\":\"Border Collie\",\"sexo\":\"Fêmea\",\"dataNascimento\":\"2021-03-15\",\"pesoAtualKg\":18.4,\"tutorId\":\"$TUTORID\",\"veterinarioResponsavelId\":\"$VET2ID\"}")
+checa "o responsável é trocado na edição do cadastro" "nomeVeterinarioResponsavel\":\"Dr. Cobertura" "$r"
 
 echo
 echo "================================"

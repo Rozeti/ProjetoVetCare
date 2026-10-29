@@ -23,6 +23,7 @@ namespace VetCare.API.Data
         public DbSet<AtendimentoFisioterapeutico> Atendimentos => Set<AtendimentoFisioterapeutico>();
         public DbSet<Prescricao> Prescricoes => Set<Prescricao>();
         public DbSet<ItemPrescricao> ItensPrescricao => Set<ItemPrescricao>();
+        public DbSet<PedidoExame> PedidosExame => Set<PedidoExame>();
         public DbSet<MidiaSessao> MidiasSessao => Set<MidiaSessao>();
         public DbSet<ObservacaoInterna> ObservacoesInternas => Set<ObservacaoInterna>();
         public DbSet<DocumentoClinico> DocumentosClinicos => Set<DocumentoClinico>();
@@ -222,15 +223,25 @@ namespace VetCare.API.Data
         {
             builder.Entity<Tratamento>(entidade =>
             {
-                entidade.Property(t => t.ObjetivoTerapeutico).HasMaxLength(1000).IsRequired();
+                entidade.Property(t => t.Nome).HasMaxLength(120).IsRequired();
+                entidade.Property(t => t.Tipo).HasMaxLength(60).IsRequired();
+                entidade.Property(t => t.Descricao).HasMaxLength(2000).IsRequired();
+                entidade.Property(t => t.DuracaoPrevista).HasMaxLength(60).IsRequired();
+                entidade.Property(t => t.Frequencia).HasMaxLength(60).IsRequired();
                 entidade.Property(t => t.ObservacoesGerais).HasMaxLength(2000);
                 entidade.Property(t => t.Status).HasMaxLength(20).IsRequired();
 
                 entidade.HasIndex(t => new { t.PacienteId, t.Status });
                 entidade.HasIndex(t => t.VeterinarioId);
+                entidade.HasIndex(t => t.AvaliacaoId);
 
                 entidade.HasOne(t => t.Paciente).WithMany().HasForeignKey(t => t.PacienteId);
                 entidade.HasOne(t => t.Veterinario).WithMany().HasForeignKey(t => t.VeterinarioId);
+
+                // Todo tratamento nasce de uma avaliação, que não pode sumir enquanto ele existir.
+                entidade.HasOne(t => t.Avaliacao)
+                        .WithMany(a => a.Tratamentos)
+                        .HasForeignKey(t => t.AvaliacaoId);
             });
 
             builder.Entity<Sessao>(entidade =>
@@ -268,17 +279,16 @@ namespace VetCare.API.Data
 
             builder.Entity<AvaliacaoClinica>(entidade =>
             {
-                entidade.Property(a => a.QueixaPrincipal).HasMaxLength(2000).IsRequired();
-                entidade.Property(a => a.Anamnese).HasMaxLength(4000).IsRequired();
-                entidade.Property(a => a.ExameFisico).HasMaxLength(4000).IsRequired();
-                entidade.Property(a => a.HipoteseDiagnostica).HasMaxLength(2000).IsRequired();
-                entidade.Property(a => a.PlanoTerapeutico).HasMaxLength(4000).IsRequired();
+                entidade.Property(a => a.MotivoConsulta).HasMaxLength(2000).IsRequired();
+                entidade.Property(a => a.Observacoes).HasMaxLength(8000).IsRequired();
+                entidade.Property(a => a.DiagnosticoPossivel).HasMaxLength(2000).IsRequired();
 
                 entidade.HasIndex(a => new { a.ProntuarioId, a.DataRegistro });
                 entidade.HasIndex(a => new { a.VeterinarioId, a.DataRegistro });
+                entidade.HasIndex(a => a.PacienteId);
 
+                entidade.HasOne(a => a.Paciente).WithMany().HasForeignKey(a => a.PacienteId);
                 entidade.HasOne(a => a.Prontuario).WithMany().HasForeignKey(a => a.ProntuarioId);
-                entidade.HasOne(a => a.Tratamento).WithMany().HasForeignKey(a => a.TratamentoId);
                 entidade.HasOne(a => a.Veterinario).WithMany().HasForeignKey(a => a.VeterinarioId);
             });
 
@@ -286,11 +296,17 @@ namespace VetCare.API.Data
             {
                 entidade.Property(a => a.TecnicasAplicadas).HasMaxLength(1000).IsRequired();
                 entidade.Property(a => a.EvolucaoClinica).HasMaxLength(4000).IsRequired();
+                entidade.Property(a => a.ReacaoAnimal).HasMaxLength(2000).IsRequired();
+                entidade.Property(a => a.Observacoes).HasMaxLength(4000).IsRequired();
+                entidade.Property(a => a.Relatorio).HasMaxLength(4000).IsRequired();
                 entidade.Property(a => a.SinaisVitais).HasMaxLength(500);
                 entidade.Property(a => a.ProximosPassos).HasMaxLength(2000);
 
                 entidade.HasIndex(a => new { a.ProntuarioId, a.DataRegistro });
                 entidade.HasIndex(a => new { a.VeterinarioId, a.DataRegistro });
+
+                // Filtros da tela de evoluções: por tratamento e pelo número da sessão.
+                entidade.HasIndex(a => new { a.TratamentoId, a.NumeroSessao });
 
                 // Uma sessão gera no máximo um atendimento.
                 entidade.HasIndex(a => a.SessaoId).IsUnique();
@@ -310,6 +326,26 @@ namespace VetCare.API.Data
 
                 entidade.HasOne(p => p.Prontuario).WithMany().HasForeignKey(p => p.ProntuarioId);
                 entidade.HasOne(p => p.Paciente).WithMany().HasForeignKey(p => p.PacienteId);
+                entidade.HasOne(p => p.Veterinario).WithMany().HasForeignKey(p => p.VeterinarioId);
+
+                // Origem da receita: a avaliação ou a evolução em que foi prescrita.
+                entidade.HasOne(p => p.Avaliacao).WithMany().HasForeignKey(p => p.AvaliacaoId).IsRequired(false);
+                entidade.HasOne(p => p.Atendimento).WithMany().HasForeignKey(p => p.AtendimentoId).IsRequired(false);
+            });
+
+            builder.Entity<PedidoExame>(entidade =>
+            {
+                entidade.Property(p => p.Exames).HasMaxLength(2000).IsRequired();
+                entidade.Property(p => p.Justificativa).HasMaxLength(2000).IsRequired();
+                entidade.Property(p => p.Status).HasMaxLength(20).IsRequired();
+                entidade.Property(p => p.MotivoCancelamento).HasMaxLength(300).IsRequired();
+
+                entidade.HasIndex(p => new { p.ProntuarioId, p.DataEmissao });
+                entidade.HasIndex(p => p.AvaliacaoId);
+
+                entidade.HasOne(p => p.Paciente).WithMany().HasForeignKey(p => p.PacienteId);
+                entidade.HasOne(p => p.Prontuario).WithMany().HasForeignKey(p => p.ProntuarioId);
+                entidade.HasOne(p => p.Avaliacao).WithMany().HasForeignKey(p => p.AvaliacaoId);
                 entidade.HasOne(p => p.Veterinario).WithMany().HasForeignKey(p => p.VeterinarioId);
             });
 

@@ -2,12 +2,15 @@ using VetCare.API.Common;
 using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Security;
+using VetCare.API.Services;
 
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// Consulta da trilha de auditoria. Restrita ao Administrador: saber quem acessou
-    /// cada prontuário é informação sensível por si só.
+    /// Consulta da trilha de auditoria, restrita ao Administrador. A tela mostra só o que
+    /// mudou nos dados (criação, alteração, inativação e exclusão de pacientes, tutores,
+    /// usuários e registros clínicos); logins, consultas e downloads continuam gravados no
+    /// banco, mas não aparecem aqui.
     /// </summary>
     public class ConsultarAuditoriaUseCase
     {
@@ -28,8 +31,19 @@ namespace VetCare.API.UseCases
             DateTime? fim,
             ParametrosPagina parametros)
         {
+            var acoes = string.IsNullOrWhiteSpace(acao)
+                ? AuditoriaService.Acoes.AlteracoesDeDados
+                : AuditoriaService.Acoes.AlteracoesDeDados.Where(a => a == acao).ToList();
+
+            // Uma ação fora da lista (um login, por exemplo) não tem o que mostrar.
+            if (acoes.Count == 0)
+            {
+                return Resultado<PaginaDe<RegistroAuditoriaDTO>>.Ok(
+                    PaginaDe<RegistroAuditoriaDTO>.Criar(Array.Empty<RegistroAuditoriaDTO>(), 1, parametros.Tamanho, 0));
+            }
+
             var pagina = await _auditoria.Listar(
-                _usuarioAtual.ClinicaId, usuarioId, acao, entidade, inicio, fim, parametros);
+                _usuarioAtual.ClinicaId, usuarioId, acoes, entidade, inicio, fim, parametros);
 
             return Resultado<PaginaDe<RegistroAuditoriaDTO>>.Ok(pagina.Converter(registro => new RegistroAuditoriaDTO
             {

@@ -32,6 +32,13 @@ namespace VetCare.API.Controllers
             return this.Responder(await _useCase.ObterPorId(id));
         }
 
+        /// <summary>Avaliações do animal, cada uma com os tratamentos que originou.</summary>
+        [HttpGet("paciente/{pacienteId:guid}")]
+        public async Task<IActionResult> ListarPorPaciente(Guid pacienteId)
+        {
+            return this.Responder(await _useCase.ListarPorPaciente(pacienteId));
+        }
+
         /// <summary>HU-007, CA-4: correção preservando a rastreabilidade da versão anterior.</summary>
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Atualizar(Guid id, AtualizarAvaliacaoDTO dto)

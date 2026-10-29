@@ -8,8 +8,9 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// HU-011: monta a visão completa do prontuário — alertas clínicos, linha do tempo,
-    /// séries de evolução, carteira de vacinação, receitas, documentos e tratamentos.
+    /// HU-011: monta a visão completa do prontuário — alertas clínicos, avaliações com os
+    /// tratamentos que originaram, linha do tempo clínica, séries de evolução, carteira de
+    /// vacinação, receitas, pedidos de exame, documentos e tratamentos.
     ///
     /// RN-003 / RNF-003: as observações internas só são incluídas quando o solicitante é
     /// Administrador ou Veterinário. Para o Tutor elas nem chegam a ser consultadas, de
@@ -23,6 +24,7 @@ namespace VetCare.API.UseCases
         private readonly ISessaoRepository _sessoes;
         private readonly IVacinaRepository _vacinas;
         private readonly IPrescricaoRepository _prescricoes;
+        private readonly IPedidoExameRepository _pedidosExame;
         private readonly IAlergiaRepository _alergias;
         private readonly AuditoriaService _auditoria;
         private readonly AssinadorDeArquivos _assinador;
@@ -35,6 +37,7 @@ namespace VetCare.API.UseCases
             ISessaoRepository sessoes,
             IVacinaRepository vacinas,
             IPrescricaoRepository prescricoes,
+            IPedidoExameRepository pedidosExame,
             IAlergiaRepository alergias,
             AuditoriaService auditoria,
             AssinadorDeArquivos assinador,
@@ -46,6 +49,7 @@ namespace VetCare.API.UseCases
             _sessoes = sessoes;
             _vacinas = vacinas;
             _prescricoes = prescricoes;
+            _pedidosExame = pedidosExame;
             _alergias = alergias;
             _auditoria = auditoria;
             _assinador = assinador;
@@ -61,8 +65,8 @@ namespace VetCare.API.UseCases
                 return Resultado<ProntuarioDTO>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            // HU-013, CA-1 e CA-2: o tutor só acessa o prontuário dos próprios pets, e o
-            // veterinário só o dos pacientes sob sua responsabilidade.
+            // HU-013, CA-1 e CA-2: o tutor só acessa o prontuário dos próprios pets; a equipe
+            // clínica, inclusive qualquer veterinário, acessa o de todos os pacientes da clínica.
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
                 return Resultado<ProntuarioDTO>.NaoAutorizado("Você não tem acesso ao prontuário deste paciente.");
@@ -77,7 +81,8 @@ namespace VetCare.API.UseCases
             var tratamentos = await _tratamentos.ObterPorPaciente(pacienteId);
             var vacinas = await _vacinas.ObterPorPaciente(pacienteId);
             var prescricoes = await _prescricoes.ObterPorProntuario(prontuario.Id);
-            var alertas = await _alergias.ObterPorPaciente(pacienteId, apenasAtivas: true);
+            var pedidosExame = await _pedidosExame.ObterPorProntuario(prontuario.Id);
+            var registrosClinicos = await _alergias.ObterPorPaciente(pacienteId, apenasAtivas: false);
 
             var exibeObservacoes = _usuarioAtual.PodeVerObservacoesInternas;
 
@@ -108,147 +113,29 @@ namespace VetCare.API.UseCases
                 UltimaAtualizacao = prontuario.UltimaAtualizacao,
                 DataObito = pet.DataObito,
                 ExibeObservacoesInternas = exibeObservacoes,
-                AlertasClinicos = alertas.Select(GerenciarAlergiasUseCase.MapearParaDTO).ToList(),
-                Historico = MontarLinhaDoTempo(avaliacoes, atendimentos, midias, observacoes),
+                AlertasClinicos = registrosClinicos.Where(a => a.Ativa).Select(GerenciarAlergiasUseCase.MapearParaDTO).ToList(),
+                Avaliacoes = avaliacoes
+                    .Select(a => RegistrarAvaliacaoUseCase.MapearParaDTO(
+                        a,
+                        tratamentos,
+                        prescricoes.Count(p => p.AvaliacaoId == a.Id),
+                        pedidosExame.Count(p => p.AvaliacaoId == a.Id)))
+                    .ToList(),
+                Historico = new LinhaDoTempo(_assinador, midias, observacoes).Montar(
+                    avaliacoes, tratamentos, atendimentos, registrosClinicos, vacinas, prescricoes, pedidosExame),
                 EvolucaoPeso = MontarSerieDePeso(atendimentos, pet),
                 EvolucaoDor = MontarSerieDeDor(atendimentos),
                 Vacinas = vacinas.Select(GerenciarVacinasUseCase.MapearParaDTO).ToList(),
                 Prescricoes = prescricoes.Select(p => GerenciarPrescricoesUseCase.MapearParaDTO(p, pet)).ToList(),
+                PedidosExame = pedidosExame.Select(p => GerenciarPedidosExameUseCase.MapearParaDTO(p, pet)).ToList(),
                 Documentos = documentos.Select(d => GerenciarDocumentosUseCase.MapearParaDTO(d, _assinador)).ToList(),
-                Tratamentos = await MapearTratamentos(tratamentos)
+                Tratamentos = await MapearTratamentos(tratamentos, atendimentos)
             };
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Consulta, "Prontuario", prontuario.Id, $"Paciente {pet.Nome}");
 
             return Resultado<ProntuarioDTO>.Ok(dto);
-        }
-
-        /// <summary>HU-011, CA-1: avaliações e atendimentos em ordem cronológica.</summary>
-        private List<ItemLinhaTempoDTO> MontarLinhaDoTempo(
-            List<AvaliacaoClinica> avaliacoes,
-            List<AtendimentoFisioterapeutico> atendimentos,
-            List<MidiaSessao> midias,
-            List<ObservacaoInterna> observacoes)
-        {
-            var observacoesSoltas = observacoes.Where(o => o.AvaliacaoId == null && o.AtendimentoId == null).ToList();
-            var historico = new List<ItemLinhaTempoDTO>(avaliacoes.Count + atendimentos.Count + observacoesSoltas.Count);
-
-            foreach (var avaliacao in avaliacoes)
-            {
-                historico.Add(new ItemLinhaTempoDTO
-                {
-                    Id = avaliacao.Id,
-                    Data = avaliacao.DataRegistro,
-                    Tipo = "Avaliação Clínica",
-                    Autor = avaliacao.Veterinario?.Usuario?.Nome ?? string.Empty,
-                    Descricao = avaliacao.QueixaPrincipal,
-                    Detalhes = avaliacao.PlanoTerapeutico,
-                    Editado = avaliacao.DataUltimaEdicao.HasValue,
-                    Campos = new Dictionary<string, string>
-                    {
-                        ["Queixa principal"] = avaliacao.QueixaPrincipal,
-                        ["Anamnese"] = avaliacao.Anamnese,
-                        ["Exame físico"] = avaliacao.ExameFisico,
-                        ["Hipótese diagnóstica"] = avaliacao.HipoteseDiagnostica,
-                        ["Plano terapêutico"] = avaliacao.PlanoTerapeutico
-                    },
-                    ObservacoesInternas = observacoes
-                        .Where(o => o.AvaliacaoId == avaliacao.Id)
-                        .Select(RegistrarObservacaoInternaUseCase.MapearParaDTO)
-                        .ToList()
-                });
-            }
-
-            foreach (var atendimento in atendimentos)
-            {
-                // HU-011, CA-4: as mídias aparecem junto da sessão a que pertencem.
-                var midiasDoAtendimento = midias
-                    .Where(m => m.SessaoId == atendimento.SessaoId)
-                    .Select(m => AnexarMidiaUseCase.MapearParaDTO(m, _assinador))
-                    .ToList();
-
-                historico.Add(new ItemLinhaTempoDTO
-                {
-                    Id = atendimento.Id,
-                    Data = atendimento.DataRegistro,
-                    Tipo = "Atendimento",
-                    Autor = atendimento.Veterinario?.Usuario?.Nome ?? string.Empty,
-                    Descricao = $"Dor {atendimento.EscalaDor}/10 — {atendimento.TecnicasAplicadas}",
-                    Detalhes = atendimento.EvolucaoClinica,
-                    Editado = atendimento.DataUltimaEdicao.HasValue,
-                    EscalaDor = atendimento.EscalaDor,
-                    PesoKg = atendimento.PesoKg,
-                    Campos = MontarCamposDoAtendimento(atendimento),
-                    Midias = midiasDoAtendimento,
-                    ObservacoesInternas = observacoes
-                        .Where(o => o.AtendimentoId == atendimento.Id)
-                        .Select(RegistrarObservacaoInternaUseCase.MapearParaDTO)
-                        .ToList()
-                });
-            }
-
-            // Observações internas soltas entram como item próprio para não se perderem.
-            foreach (var observacao in observacoesSoltas)
-            {
-                historico.Add(new ItemLinhaTempoDTO
-                {
-                    Id = observacao.Id,
-                    Data = observacao.DataRegistro,
-                    Tipo = "Observação Interna",
-                    Autor = observacao.Autor?.Nome ?? string.Empty,
-                    Descricao = "Anotação restrita à equipe clínica",
-                    Detalhes = observacao.Conteudo,
-                    ObservacoesInternas = new List<ObservacaoInternaDTO>
-                    {
-                        RegistrarObservacaoInternaUseCase.MapearParaDTO(observacao)
-                    }
-                });
-            }
-
-            return historico.OrderByDescending(h => h.Data).ToList();
-        }
-
-        private static Dictionary<string, string> MontarCamposDoAtendimento(AtendimentoFisioterapeutico atendimento)
-        {
-            var campos = new Dictionary<string, string>
-            {
-                ["Técnicas aplicadas"] = atendimento.TecnicasAplicadas,
-                ["Escala de dor"] = $"{atendimento.EscalaDor}/10",
-                ["Evolução clínica"] = atendimento.EvolucaoClinica
-            };
-
-            if (!string.IsNullOrWhiteSpace(atendimento.ProximosPassos))
-            {
-                campos["Próximos passos"] = atendimento.ProximosPassos;
-            }
-
-            if (!string.IsNullOrWhiteSpace(atendimento.SinaisVitais))
-            {
-                campos["Sinais vitais"] = atendimento.SinaisVitais;
-            }
-
-            if (atendimento.PesoKg.HasValue)
-            {
-                campos["Peso"] = $"{atendimento.PesoKg.Value:0.##} kg";
-            }
-
-            if (atendimento.TemperaturaCelsius.HasValue)
-            {
-                campos["Temperatura"] = $"{atendimento.TemperaturaCelsius.Value:0.#} °C";
-            }
-
-            if (atendimento.FrequenciaCardiaca.HasValue)
-            {
-                campos["Frequência cardíaca"] = $"{atendimento.FrequenciaCardiaca.Value} bpm";
-            }
-
-            if (atendimento.FrequenciaRespiratoria.HasValue)
-            {
-                campos["Frequência respiratória"] = $"{atendimento.FrequenciaRespiratoria.Value} mpm";
-            }
-
-            return campos;
         }
 
         /// <summary>HU-011, CA-3: série de peso ao longo do tempo para o gráfico de evolução.</summary>
@@ -260,7 +147,7 @@ namespace VetCare.API.UseCases
                 .Select(a => new PontoEvolucaoDTO { Data = a.DataRegistro, Valor = a.PesoKg!.Value })
                 .ToList();
 
-            // Sem registros de peso nos atendimentos, o peso do cadastro serve de ponto único.
+            // Sem registros de peso nas evoluções, o peso do cadastro serve de ponto único.
             if (serie.Count == 0 && pet.PesoAtualKg.HasValue)
             {
                 serie.Add(new PontoEvolucaoDTO { Data = DateTime.UtcNow, Valor = pet.PesoAtualKg.Value });
@@ -277,14 +164,18 @@ namespace VetCare.API.UseCases
                 .ToList();
         }
 
-        /// <summary>Os totais de sessões de todos os tratamentos saem numa única consulta.</summary>
-        private async Task<List<TratamentoDTO>> MapearTratamentos(List<Tratamento> tratamentos)
+        /// <summary>Os totais de sessões saem numa única consulta; as evoluções já estão em mãos.</summary>
+        private async Task<List<TratamentoDTO>> MapearTratamentos(
+            List<Tratamento> tratamentos,
+            List<AtendimentoFisioterapeutico> atendimentos)
         {
             var contagens = await _sessoes.ContarPorTratamentos(tratamentos.Select(t => t.Id));
 
             return tratamentos
                 .Select(t => GerenciarTratamentosUseCase.MapearParaDTO(
-                    t, contagens.GetValueOrDefault(t.Id, new ContagemDeSessoes(0, 0))))
+                    t,
+                    contagens.GetValueOrDefault(t.Id, new ContagemDeSessoes(0, 0)),
+                    atendimentos.Count(a => a.TratamentoId == t.Id)))
                 .ToList();
         }
     }

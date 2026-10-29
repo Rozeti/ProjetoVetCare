@@ -11,5 +11,16 @@ namespace VetCare.API.DTOs
         public string Cpf { get; set; } = string.Empty;
         public bool Ativo { get; set; }
         public int QuantidadePets { get; set; }
+
+        /// <summary>Animais vinculados ao tutor.</summary>
+        public List<PetDoTutorDTO> Pets { get; set; } = new();
+    }
+
+    public class PetDoTutorDTO
+    {
+        public Guid Id { get; set; }
+        public string Nome { get; set; } = string.Empty;
+        public string Especie { get; set; } = string.Empty;
+        public bool Ativo { get; set; }
     }
 }

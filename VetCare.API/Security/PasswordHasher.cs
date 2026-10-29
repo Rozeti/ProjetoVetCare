@@ -9,7 +9,7 @@ namespace VetCare.API.Security
     /// </summary>
     public class PasswordHasher
     {
-        public const int TamanhoMinimoDaSenha = 6;
+        public const int TamanhoMinimoDaSenha = 8;
         public const int TamanhoMaximoDaSenha = 64;
 
         private const int Iteracoes = 210_000;
@@ -67,16 +67,26 @@ namespace VetCare.API.Security
         }
 
         /// <summary>Mensagem de validação compartilhada por todos os pontos que recebem uma senha nova.</summary>
+        /// <summary>
+        /// Mínimo de 8 caracteres, com pelo menos uma letra e um número, e no máximo 64. Vale
+        /// para toda senha escolhida por alguém (cadastro, troca, recuperação e primeiro acesso);
+        /// senhas antigas mais curtas continuam entrando até a próxima troca.
+        /// </summary>
         public static string? ValidarForca(string? senha)
         {
             if (string.IsNullOrWhiteSpace(senha) || senha.Length < TamanhoMinimoDaSenha)
             {
-                return $"A senha deve ter no mínimo {TamanhoMinimoDaSenha} caracteres.";
+                return $"A senha deve ter no mínimo {TamanhoMinimoDaSenha} caracteres, com letras e números.";
             }
 
             if (senha.Length > TamanhoMaximoDaSenha)
             {
                 return $"A senha deve ter no máximo {TamanhoMaximoDaSenha} caracteres.";
+            }
+
+            if (!senha.Any(char.IsLetter) || !senha.Any(char.IsDigit))
+            {
+                return "A senha precisa ter letras e números.";
             }
 
             return null;

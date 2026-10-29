@@ -310,6 +310,7 @@ static void AdicionarRepositorios(IServiceCollection servicos)
     servicos.AddScoped<IAvaliacaoRepository, AvaliacaoRepository>();
     servicos.AddScoped<IAtendimentoRepository, AtendimentoRepository>();
     servicos.AddScoped<IPrescricaoRepository, PrescricaoRepository>();
+    servicos.AddScoped<IPedidoExameRepository, PedidoExameRepository>();
     servicos.AddScoped<IMidiaRepository, MidiaRepository>();
     servicos.AddScoped<IObservacaoInternaRepository, ObservacaoInternaRepository>();
     servicos.AddScoped<IDocumentoRepository, DocumentoRepository>();
@@ -375,7 +376,6 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<GerenciarVeterinariosUseCase>();
     servicos.AddScoped<GerenciarClinicaUseCase>();
     servicos.AddScoped<GerenciarPacientesUseCase>();
-    servicos.AddScoped<TransferirPacienteUseCase>();
     servicos.AddScoped<GerenciarAlergiasUseCase>();
     servicos.AddScoped<GerenciarVacinasUseCase>();
     servicos.AddScoped<GerenciarTratamentosUseCase>();
@@ -387,6 +387,7 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<RegistrarAtendimentoUseCase>();
     servicos.AddScoped<RegistrarObservacaoInternaUseCase>();
     servicos.AddScoped<GerenciarPrescricoesUseCase>();
+    servicos.AddScoped<GerenciarPedidosExameUseCase>();
     servicos.AddScoped<AnexarMidiaUseCase>();
     servicos.AddScoped<GerenciarDocumentosUseCase>();
     servicos.AddScoped<ConsultarProntuarioUseCase>();
@@ -394,7 +395,6 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<NotificacoesUseCase>();
     servicos.AddScoped<DispositivosUseCase>();
     servicos.AddScoped<ConsultarIndicadoresUseCase>();
-    servicos.AddScoped<GerarRelatorioProdutividadeUseCase>();
     servicos.AddScoped<ConsultarAuditoriaUseCase>();
 }
 

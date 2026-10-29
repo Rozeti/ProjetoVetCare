@@ -101,6 +101,7 @@ namespace VetCare.Tests
             {
                 Nome = "Bruno Lima",
                 Email = "bruno@teste.com",
+                Telefone = "(61) 98888-1111",
                 Senha = "SenhaDaClinica1"
             });
 
@@ -118,7 +119,7 @@ namespace VetCare.Tests
         {
             var cadastro = await CriarCasoDeTutores(ComoAdministrador()).Cadastrar(new CriarTutorDTO
             {
-                Nome = "Carla", Email = "carla@teste.com", Senha = "123"
+                Nome = "Carla Mendes", Email = "carla@teste.com", Telefone = "(61) 97777-2222", Senha = "123"
             });
 
             cadastro.Sucesso.Should().BeFalse();
@@ -131,7 +132,7 @@ namespace VetCare.Tests
         {
             var outro = await CriarCasoDeTutores(ComoAdministrador()).Cadastrar(new CriarTutorDTO
             {
-                Nome = "Outro Tutor", Email = "outro@teste.com", Senha = "Senha123"
+                Nome = "Outro Tutor", Email = "outro@teste.com", Telefone = "(61) 96666-3333", Senha = "Senha123"
             });
 
             var leitura = await CriarCasoDeTutores(ComoTutor()).ObterPorId(outro.Dados!.Id);

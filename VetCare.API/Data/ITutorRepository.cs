@@ -12,13 +12,13 @@ namespace VetCare.API.Data
         /// <summary>Vínculos de vários usuários numa só consulta, para as listagens paginadas.</summary>
         Task<List<Tutor>> ObterPorUsuarios(IEnumerable<Guid> usuariosIds);
 
-        /// <summary>
-        /// Com <paramref name="veterinarioId"/>, devolve só os tutores ligados a ele: os que
-        /// têm algum paciente sob sua responsabilidade e os que ainda não têm paciente.
-        /// </summary>
-        Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros, Guid? veterinarioId = null);
+        /// <summary>Tutores da clínica, com busca por nome, e-mail ou telefone.</summary>
+        Task<PaginaDe<Tutor>> Listar(Guid clinicaId, string? busca, ParametrosPagina parametros);
 
-        Task<List<Tutor>> ListarTodos(Guid clinicaId, Guid? veterinarioId = null);
+        Task<List<Tutor>> ListarTodos(Guid clinicaId);
+
+        /// <summary>Se outro tutor da clínica já usa o CPF (comparado só pelos dígitos).</summary>
+        Task<bool> CpfEmUso(Guid clinicaId, string cpf, Guid? ignorarTutorId = null);
         void Atualizar(Tutor tutor);
         Task SalvarAlteracoes();
     }

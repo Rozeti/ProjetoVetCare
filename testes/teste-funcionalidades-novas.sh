@@ -145,8 +145,9 @@ checa "receitas do paciente listadas" "Meloxicam" "$r"
 PRESC=$(val "$r" id)
 
 r=$(get "/api/prescricoes/$PRESC" "$TUTOR")
-checa "tutor acessa a própria receita" "Condroitina" "$r"
+checa "tutor acessa a própria receita" "\"pacienteId\":\"$PET\"" "$r"
 checa "receita traz CRMV para impressão" '"crmv"' "$r"
+checa "receita informa a origem (avaliação ou evolução)" '"origem":"[AE]' "$r"
 
 r=$(envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"itens\":[]}")
 checa "receita sem medicamento é recusada" "medicamento" "$r"
@@ -167,8 +168,15 @@ echo "== Auditoria =="
 r=$(get '/api/auditoria?tamanho=5' "$ADMIN")
 checa "trilha de auditoria acessível ao administrador" '"itens"' "$r"
 
-r=$(get '/api/auditoria?entidade=Prontuario&tamanho=5' "$ADMIN")
-checa "consulta ao prontuário foi registrada" "Prontuario" "$r"
+r=$(get '/api/auditoria?acao=Login&tamanho=5' "$ADMIN")
+checa "logins ficam fora da trilha" '"total":0' "$r"
+
+r=$(get '/api/auditoria?tamanho=100' "$ADMIN")
+if grep -q '"acao":"\(Login\|LoginNegado\|Consulta\|Download\)"' <<<"$r"; then
+  echo "  FALHA a trilha mostra logins, consultas ou downloads"; falhou=$((falhou+1))
+else
+  echo "  OK   a trilha mostra só criações, alterações, inativações e exclusões"; ok=$((ok+1))
+fi
 
 r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/auditoria" -H "Authorization: Bearer $VETTK")
 checa "auditoria fechada ao veterinário" "403" "$r"

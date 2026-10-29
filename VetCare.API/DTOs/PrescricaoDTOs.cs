@@ -9,6 +9,13 @@ namespace VetCare.API.DTOs
         public Guid PacienteId { get; set; }
 
         public Guid? VeterinarioId { get; set; }
+
+        /// <summary>
+        /// Origem da receita: a avaliação ou a evolução (atendimento) em que foi prescrita.
+        /// Informe exatamente uma das duas.
+        /// </summary>
+        public Guid? AvaliacaoId { get; set; }
+
         public Guid? AtendimentoId { get; set; }
         public DateTime? ValidaAte { get; set; }
 
@@ -59,6 +66,13 @@ namespace VetCare.API.DTOs
         public DateTime? ValidaAte { get; set; }
         public string Orientacoes { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+
+        public Guid? AvaliacaoId { get; set; }
+        public Guid? AtendimentoId { get; set; }
+
+        /// <summary>Descrição da origem, por exemplo "Avaliação de 12/04/2026" ou "Evolução nº 3 — RPG".</summary>
+        public string Origem { get; set; } = string.Empty;
+
         public List<ItemPrescricaoDTO> Itens { get; set; } = new();
     }
 

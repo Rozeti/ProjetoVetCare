@@ -33,30 +33,19 @@ namespace VetCare.API.UseCases
         }
 
         /// <summary>
-        /// O veterinário vê os tutores dos pacientes sob sua responsabilidade (e os que ainda
-        /// não têm paciente); administração e apoio veem todos. O recorte vem do token.
+        /// A equipe clínica inteira (administração, apoio e todos os veterinários) vê todos os
+        /// tutores da clínica, assim como vê todos os pacientes.
         /// </summary>
         public async Task<Resultado<PaginaDe<TutorDTO>>> Listar(string? busca, ParametrosPagina parametros)
         {
-            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId == null)
-            {
-                return Resultado<PaginaDe<TutorDTO>>.Ok(
-                    PaginaDe<TutorDTO>.Criar(Array.Empty<TutorDTO>(), 1, parametros.Tamanho, 0));
-            }
-
-            var pagina = await _tutores.Listar(_usuarioAtual.ClinicaId, busca, parametros, RecorteDoVeterinario);
+            var pagina = await _tutores.Listar(_usuarioAtual.ClinicaId, busca, parametros);
             return Resultado<PaginaDe<TutorDTO>>.Ok(pagina.Converter(MapearParaDTO));
         }
 
-        /// <summary>Lista completa usada pelos seletores de tutor nos formulários, no mesmo recorte da listagem.</summary>
+        /// <summary>Lista completa usada pelos seletores de tutor nos formulários.</summary>
         public async Task<Resultado<List<TutorDTO>>> ListarParaSelecao()
         {
-            if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId == null)
-            {
-                return Resultado<List<TutorDTO>>.Ok(new List<TutorDTO>());
-            }
-
-            var tutores = await _tutores.ListarTodos(_usuarioAtual.ClinicaId, RecorteDoVeterinario);
+            var tutores = await _tutores.ListarTodos(_usuarioAtual.ClinicaId);
             return Resultado<List<TutorDTO>>.Ok(tutores.Select(MapearParaDTO).ToList());
         }
 
@@ -69,8 +58,8 @@ namespace VetCare.API.UseCases
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
             }
 
-            // HU-013, CA-1: o tutor enxerga apenas o próprio cadastro; o veterinário, os
-            // tutores dos seus pacientes. Para os demais o cadastro simplesmente não existe.
+            // HU-013, CA-1: o tutor enxerga apenas o próprio cadastro. Para ele os demais
+            // cadastros simplesmente não existem.
             if (!AcessoAoTutor.Permitido(_usuarioAtual, tutor))
             {
                 return Resultado<TutorDTO>.NaoEncontrado("Tutor não encontrado.");
@@ -78,8 +67,6 @@ namespace VetCare.API.UseCases
 
             return Resultado<TutorDTO>.Ok(MapearParaDTO(tutor));
         }
-
-        private Guid? RecorteDoVeterinario => _usuarioAtual.EhVeterinario ? _usuarioAtual.VeterinarioId : null;
 
         /// <summary>
         /// Cadastra o tutor. Quando UsuarioId não é informado, cria também o usuário de
@@ -91,6 +78,27 @@ namespace VetCare.API.UseCases
             Usuario usuario;
             var usuarioNovo = false;
             var senhaDefinidaPelaClinica = !string.IsNullOrWhiteSpace(dto.Senha);
+
+            // Contato: o telefone é obrigatório (é por ele que a clínica fala com o tutor); CPF e
+            // endereço são opcionais, mas, quando vêm, precisam estar corretos.
+            var (telefone, erroDeTelefone) = ValidacaoDeCadastro.Telefone(dto.Telefone, obrigatorio: true, "o telefone do tutor");
+
+            if (erroDeTelefone != null)
+            {
+                return Resultado<TutorDTO>.Invalido(erroDeTelefone);
+            }
+
+            var (cpf, erroDeCpf) = ValidacaoDeCadastro.Cpf(dto.Cpf);
+
+            if (erroDeCpf != null)
+            {
+                return Resultado<TutorDTO>.Invalido(erroDeCpf);
+            }
+
+            if (ValidacaoDeCadastro.Endereco(dto.Endereco) is { } erroDeEndereco)
+            {
+                return Resultado<TutorDTO>.Invalido(erroDeEndereco);
+            }
 
             if (dto.UsuarioId.HasValue && dto.UsuarioId.Value != Guid.Empty)
             {
@@ -116,10 +124,14 @@ namespace VetCare.API.UseCases
                         "Informe nome e e-mail para criar o acesso do tutor, ou envie o UsuarioId de um usuário existente.");
                 }
 
-                // RN-007: unicidade de credenciais.
-                if (await _usuarios.EmailExiste(dto.Email))
+                if (ValidacaoDeCadastro.Nome(dto.Nome) is { } erroDeNome)
                 {
-                    return Resultado<TutorDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+                    return Resultado<TutorDTO>.Invalido(erroDeNome);
+                }
+
+                if (ValidacaoDeCadastro.Email(dto.Email) is { } erroDeEmail)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeEmail);
                 }
 
                 if (senhaDefinidaPelaClinica && PasswordHasher.ValidarForca(dto.Senha) is { } erroDeSenha)
@@ -127,10 +139,16 @@ namespace VetCare.API.UseCases
                     return Resultado<TutorDTO>.Invalido(erroDeSenha);
                 }
 
+                // RN-007: unicidade de credenciais.
+                if (await _usuarios.EmailExiste(dto.Email.Trim()))
+                {
+                    return Resultado<TutorDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+                }
+
                 usuario = new Usuario
                 {
                     ClinicaId = _usuarioAtual.ClinicaId,
-                    Nome = dto.Nome.Trim(),
+                    Nome = ValidacaoDeCadastro.Compactar(dto.Nome),
                     Email = dto.Email.Trim().ToLowerInvariant(),
                     SenhaHash = _hasher.Gerar(senhaDefinidaPelaClinica ? dto.Senha! : _hasher.GerarSenhaProvisoria()),
                     Perfil = Perfis.Tutor
@@ -142,12 +160,17 @@ namespace VetCare.API.UseCases
                 usuarioNovo = true;
             }
 
+            if (!string.IsNullOrEmpty(cpf) && await _tutores.CpfEmUso(_usuarioAtual.ClinicaId, cpf))
+            {
+                return Resultado<TutorDTO>.Conflito("Já existe um tutor cadastrado com este CPF.");
+            }
+
             var tutor = new Tutor
             {
                 UsuarioId = usuario.Id,
-                Telefone = dto.Telefone.Trim(),
-                Endereco = dto.Endereco.Trim(),
-                Cpf = dto.Cpf.Trim()
+                Telefone = telefone!,
+                Endereco = ValidacaoDeCadastro.Compactar(dto.Endereco),
+                Cpf = cpf!
             };
 
             await _tutores.Adicionar(tutor);
@@ -185,13 +208,85 @@ namespace VetCare.API.UseCases
             {
                 return Resultado<TutorDTO>.NaoAutorizado(_usuarioAtual.EhTutor
                     ? "Você só pode alterar o seu próprio cadastro."
-                    : "Este tutor não tem pacientes sob sua responsabilidade.");
+                    : "Você não tem acesso a este tutor.");
             }
 
-            tutor.Telefone = dto.Telefone?.Trim() ?? tutor.Telefone;
-            tutor.Endereco = dto.Endereco?.Trim() ?? tutor.Endereco;
-            tutor.Cpf = dto.Cpf?.Trim() ?? tutor.Cpf;
+            // Nome e e-mail são o acesso da pessoa: só a equipe clínica os altera.
+            if (_usuarioAtual.EhTutor && (dto.Nome != null || dto.Email != null))
+            {
+                return Resultado<TutorDTO>.NaoAutorizado("Nome e e-mail são alterados pela clínica. Fale com a recepção.");
+            }
 
+            var usuario = tutor.Usuario!;
+
+            if (dto.Nome != null)
+            {
+                var nome = ValidacaoDeCadastro.Compactar(dto.Nome);
+
+                if (nome != usuario.Nome && ValidacaoDeCadastro.Nome(nome) is { } erroDeNome)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeNome);
+                }
+
+                usuario.Nome = nome;
+            }
+
+            if (dto.Email != null)
+            {
+                if (ValidacaoDeCadastro.Email(dto.Email) is { } erroDeEmail)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeEmail);
+                }
+
+                if (await _usuarios.EmailExiste(dto.Email.Trim(), usuario.Id))
+                {
+                    return Resultado<TutorDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+                }
+
+                usuario.Email = dto.Email.Trim().ToLowerInvariant();
+            }
+
+            // O telefone continua obrigatório: enviado em branco, é recusado em vez de apagado.
+            if (dto.Telefone != null)
+            {
+                var (telefone, erroDeTelefone) = ValidacaoDeCadastro.Telefone(dto.Telefone, obrigatorio: true, "o telefone do tutor");
+
+                if (erroDeTelefone != null)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeTelefone);
+                }
+
+                tutor.Telefone = telefone!;
+            }
+
+            if (dto.Cpf != null)
+            {
+                var (cpf, erroDeCpf) = ValidacaoDeCadastro.Cpf(dto.Cpf);
+
+                if (erroDeCpf != null)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeCpf);
+                }
+
+                if (!string.IsNullOrEmpty(cpf) && await _tutores.CpfEmUso(_usuarioAtual.ClinicaId, cpf, tutor.Id))
+                {
+                    return Resultado<TutorDTO>.Conflito("Já existe outro tutor cadastrado com este CPF.");
+                }
+
+                tutor.Cpf = cpf!;
+            }
+
+            if (dto.Endereco != null)
+            {
+                if (ValidacaoDeCadastro.Endereco(dto.Endereco) is { } erroDeEndereco)
+                {
+                    return Resultado<TutorDTO>.Invalido(erroDeEndereco);
+                }
+
+                tutor.Endereco = ValidacaoDeCadastro.Compactar(dto.Endereco);
+            }
+
+            _usuarios.Atualizar(usuario);
             _tutores.Atualizar(tutor);
             await _tutores.SalvarAlteracoes();
 
@@ -204,6 +299,8 @@ namespace VetCare.API.UseCases
 
         private TutorDTO MapearParaDTO(Tutor tutor)
         {
+            var visiveis = AcessoAoTutor.PacientesVisiveis(tutor);
+
             return new TutorDTO
             {
                 Id = tutor.Id,
@@ -214,8 +311,11 @@ namespace VetCare.API.UseCases
                 Endereco = tutor.Endereco,
                 Cpf = tutor.Cpf,
                 Ativo = tutor.Usuario?.Ativo ?? false,
-                // O veterinário conta só os pacientes que enxerga.
-                QuantidadePets = AcessoAoTutor.ContarPacientesVisiveis(_usuarioAtual, tutor)
+                QuantidadePets = visiveis.Count,
+                Pets = visiveis
+                    .OrderBy(p => p.Nome)
+                    .Select(p => new PetDoTutorDTO { Id = p.Id, Nome = p.Nome, Especie = p.Especie, Ativo = p.Ativo })
+                    .ToList()
             };
         }
     }

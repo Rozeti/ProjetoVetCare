@@ -63,7 +63,20 @@ namespace VetCare.API.UseCases
 
         public async Task<Resultado<VeterinarioDTO>> Cadastrar(CriarVeterinarioDTO dto)
         {
-            if (await _veterinarios.CrmvExiste(dto.Crmv))
+            // As mesmas regras do cadastro pela tela de Usuários (ValidacaoDeCadastro).
+            var (crmv, erroDeCrmv) = ValidacaoDeCadastro.Crmv(dto.Crmv);
+
+            if (erroDeCrmv != null)
+            {
+                return Resultado<VeterinarioDTO>.Invalido(erroDeCrmv);
+            }
+
+            if (ValidacaoDeCadastro.TextoOpcional(dto.Especialidade, "A especialidade", 3, 120) is { } erroDeEspecialidade)
+            {
+                return Resultado<VeterinarioDTO>.Invalido(erroDeEspecialidade);
+            }
+
+            if (await _veterinarios.CrmvExiste(crmv!))
             {
                 return Resultado<VeterinarioDTO>.Conflito("Já existe um veterinário cadastrado com este CRMV.");
             }
@@ -96,9 +109,14 @@ namespace VetCare.API.UseCases
                         "Informe nome e e-mail para criar o acesso do veterinário, ou envie o UsuarioId de um usuário existente.");
                 }
 
-                if (await _usuarios.EmailExiste(dto.Email))
+                if (ValidacaoDeCadastro.Nome(dto.Nome) is { } erroDeNome)
                 {
-                    return Resultado<VeterinarioDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+                    return Resultado<VeterinarioDTO>.Invalido(erroDeNome);
+                }
+
+                if (ValidacaoDeCadastro.Email(dto.Email) is { } erroDeEmail)
+                {
+                    return Resultado<VeterinarioDTO>.Invalido(erroDeEmail);
                 }
 
                 if (senhaDefinidaPelaClinica && PasswordHasher.ValidarForca(dto.Senha) is { } erroDeSenha)
@@ -106,10 +124,15 @@ namespace VetCare.API.UseCases
                     return Resultado<VeterinarioDTO>.Invalido(erroDeSenha);
                 }
 
+                if (await _usuarios.EmailExiste(dto.Email.Trim()))
+                {
+                    return Resultado<VeterinarioDTO>.Conflito("Este e-mail já está em uso por outro usuário.");
+                }
+
                 usuario = new Usuario
                 {
                     ClinicaId = _usuarioAtual.ClinicaId,
-                    Nome = dto.Nome.Trim(),
+                    Nome = ValidacaoDeCadastro.Compactar(dto.Nome),
                     Email = dto.Email.Trim().ToLowerInvariant(),
                     SenhaHash = _hasher.Gerar(senhaDefinidaPelaClinica ? dto.Senha! : _hasher.GerarSenhaProvisoria()),
                     Perfil = Perfis.Veterinario
@@ -124,10 +147,10 @@ namespace VetCare.API.UseCases
             var veterinario = new Veterinario
             {
                 UsuarioId = usuario.Id,
-                Crmv = dto.Crmv.Trim(),
+                Crmv = crmv!,
                 Especialidade = string.IsNullOrWhiteSpace(dto.Especialidade)
                     ? "Fisioterapia veterinária"
-                    : dto.Especialidade.Trim()
+                    : ValidacaoDeCadastro.Compactar(dto.Especialidade)
             };
 
             await _veterinarios.Adicionar(veterinario);
@@ -160,19 +183,31 @@ namespace VetCare.API.UseCases
                 return Resultado<VeterinarioDTO>.NaoEncontrado("Veterinário não encontrado.");
             }
 
-            if (await _veterinarios.CrmvExiste(dto.Crmv, id))
+            var (crmv, erroDeCrmv) = ValidacaoDeCadastro.Crmv(dto.Crmv);
+
+            if (erroDeCrmv != null)
+            {
+                return Resultado<VeterinarioDTO>.Invalido(erroDeCrmv);
+            }
+
+            if (ValidacaoDeCadastro.TextoOpcional(dto.Especialidade, "A especialidade", 3, 120) is { } erroDeEspecialidade)
+            {
+                return Resultado<VeterinarioDTO>.Invalido(erroDeEspecialidade);
+            }
+
+            if (await _veterinarios.CrmvExiste(crmv!, id))
             {
                 return Resultado<VeterinarioDTO>.Conflito("Já existe outro veterinário cadastrado com este CRMV.");
             }
 
-            veterinario.Crmv = dto.Crmv.Trim();
+            veterinario.Crmv = crmv!;
 
             // Especialidade omitida mantém a atual; só o que veio preenchido é alterado.
             if (dto.Especialidade != null)
             {
                 veterinario.Especialidade = string.IsNullOrWhiteSpace(dto.Especialidade)
                     ? "Fisioterapia veterinária"
-                    : dto.Especialidade.Trim();
+                    : ValidacaoDeCadastro.Compactar(dto.Especialidade);
             }
 
             _veterinarios.Atualizar(veterinario);

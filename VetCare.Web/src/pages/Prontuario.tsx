@@ -1,22 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
-  ArrowRightLeft,
   ClipboardList,
   Download,
   FileText,
+  FlaskConical,
   Loader2,
-  Lock,
   Paperclip,
   Pencil,
-  Plus,
+  Pill,
   Printer,
   ShieldAlert,
   Stethoscope,
+  Syringe,
 } from 'lucide-react';
-import { api, mensagemDeErro, urlDoArquivo } from '../services/api';
+import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contexts/auth';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
@@ -25,60 +25,71 @@ import type {
   Avaliacao,
   Documento,
   ItemLinhaTempo,
+  Pet,
   Prontuario as ProntuarioDTO,
-  TipoItemLinhaTempo,
+  Tratamento,
 } from '../types';
-import {
-  Alerta,
-  CabecalhoPagina,
-  Card,
-  Carregando,
-  Etiqueta,
-  SemDados,
-} from '../components/ui';
-import { GraficoEvolucao } from '../components/GraficoEvolucao';
-import {
-  estiloEscalaDor,
-  estiloStatusTratamento,
-  formatarData,
-  formatarDataHora,
-  formatarDia,
-  formatarPeso,
-  formatarTamanho,
-} from '../utils/formato';
+import { Alerta, CabecalhoPagina, Card, Carregando, SemDados } from '../components/ui';
+import { formatarData, formatarDia, formatarTamanho } from '../utils/formato';
 import { AlertasClinicos } from '../components/AlertasClinicos';
 import { imprimirProntuario } from '../utils/impressao';
 import { ModalAvaliacao } from './componentes/ModalAvaliacao';
 import { ModalRegistrarAtendimento } from './componentes/ModalRegistrarAtendimento';
 import { ModalTratamento } from './componentes/ModalTratamento';
 import { ModalAlertaClinico } from './componentes/ModalAlertaClinico';
-import { ModalTransferirPaciente } from './componentes/ModalTransferirPaciente';
+import { ModalCadastroPaciente } from './componentes/ModalCadastroPaciente';
 import { CarteiraVacinacao } from './componentes/CarteiraVacinacao';
-import { Receituario } from './componentes/Receituario';
+import { ModalReceita, Receituario, type EvolucaoParaReceita, type OrigemDaReceita } from './componentes/Receituario';
+import { ModalPedidoExame, PedidosExame } from './componentes/PedidosExame';
+import { LinhaDoTempo, ModalRegistroCompleto } from './componentes/LinhaDoTempoClinica';
+import { AvaliacoesDoPaciente } from './componentes/AvaliacoesDoPaciente';
+import { TratamentosDoPaciente } from './componentes/TratamentosDoPaciente';
 
-type Aba = 'linha-do-tempo' | 'evolucao' | 'vacinas' | 'receitas' | 'tratamentos' | 'documentos';
+type Aba =
+  | 'linha-do-tempo'
+  | 'avaliacoes'
+  | 'tratamentos'
+  | 'vacinas'
+  | 'medicacao'
+  | 'exames'
+  | 'documentos';
 
-const ABAS: Aba[] = ['linha-do-tempo', 'evolucao', 'vacinas', 'receitas', 'tratamentos', 'documentos'];
+const ABAS: Aba[] = ['linha-do-tempo', 'avaliacoes', 'tratamentos', 'vacinas', 'medicacao', 'exames', 'documentos'];
+
+/**
+ * Endereços antigos continuam abrindo a aba equivalente: a de receitas virou Medicação, e a
+ * de gráficos saiu do prontuário.
+ */
+const ABAS_RENOMEADAS: Record<string, Aba> = {
+  evolucao: 'tratamentos',
+  graficos: 'linha-do-tempo',
+  receitas: 'medicacao',
+};
 
 const TIPOS_DE_DOCUMENTO = ['Contrato', 'Exame', 'Laudo', 'Outro'];
 
-/** HU-011: prontuário com linha do tempo, mídias e indicadores de evolução. */
+/**
+ * HU-011: prontuário do animal. O fluxo clínico segue animal → avaliações → tratamentos
+ * originados das avaliações → evoluções registradas nas sessões de cada tratamento. A linha
+ * do tempo reúne os principais eventos; receitas vêm de uma avaliação ou evolução, e pedidos
+ * de exame, de uma avaliação.
+ */
 export function Prontuario() {
   const { pacienteId = '' } = useParams();
   const [parametros, setParametros] = useSearchParams();
-  const { podeVerObservacoesInternas, temPerfil, ehTutor, ehVeterinario, usuario } = useAuth();
+  const { podeVerObservacoesInternas, temPerfil, ehTutor } = useAuth();
 
   const podeRegistrar = temPerfil('Administrador', 'Veterinario');
+  const podeEditarCadastro = temPerfil('Administrador', 'Veterinario', 'Apoio');
   const podeAnexarDocumento = temPerfil('Administrador', 'Veterinario', 'Apoio');
-  const administraResponsaveis = temPerfil('Administrador', 'Apoio');
 
   // O tutor não alcança a lista geral de pacientes: ele volta para os próprios pets.
   const voltarPara = ehTutor ? '/meus-pets' : '/pacientes';
   const rotuloVoltar = ehTutor ? 'Voltar para meus pets' : 'Voltar para pacientes';
 
   // A aba vem na URL (?aba=vacinas) para que atalhos de outras telas abram direto nela.
-  const abaDaUrl = parametros.get('aba');
-  const aba: Aba = ABAS.includes(abaDaUrl as Aba) ? (abaDaUrl as Aba) : 'linha-do-tempo';
+  const abaDaUrl = parametros.get('aba') ?? '';
+  const aba: Aba = ABAS.includes(abaDaUrl as Aba) ? (abaDaUrl as Aba) : (ABAS_RENOMEADAS[abaDaUrl] ?? 'linha-do-tempo');
 
   function mudarAba(nova: Aba) {
     if (nova === 'linha-do-tempo') parametros.delete('aba');
@@ -86,13 +97,30 @@ export function Prontuario() {
     setParametros(parametros, { replace: true });
   }
 
+  // Atalhos de outras telas ("Emitir receita desta evolução") chegam com a origem na URL.
+  const evolucaoDaUrl = parametros.get('evolucao');
+  const avaliacaoDaUrl = parametros.get('avaliacao');
+  const origemDaUrl: OrigemDaReceita | null = evolucaoDaUrl
+    ? { atendimentoId: evolucaoDaUrl }
+    : avaliacaoDaUrl
+      ? { avaliacaoId: avaliacaoDaUrl }
+      : null;
+
   const [aviso, setAviso] = useState('');
+  const [foco, setFoco] = useState<{ avaliacao?: string; tratamento?: string }>({});
+
   const [modalAvaliacao, setModalAvaliacao] = useState(false);
   const [avaliacaoEmCorrecao, setAvaliacaoEmCorrecao] = useState<Avaliacao | null>(null);
-  const [atendimentoEmCorrecao, setAtendimentoEmCorrecao] = useState<Atendimento | null>(null);
-  const [modalTratamento, setModalTratamento] = useState(false);
+  const [origemDoTratamento, setOrigemDoTratamento] = useState<Avaliacao | null>(null);
+  const [tratamentoEmEdicao, setTratamentoEmEdicao] = useState<Tratamento | null>(null);
+  const [evolucaoAberta, setEvolucaoAberta] = useState<{ atendimento: Atendimento; corrigir: boolean } | null>(null);
+  // Tratamento cuja sessão realizada está sendo registrada (vira a evolução seguinte dele).
+  const [sessaoDoTratamento, setSessaoDoTratamento] = useState<Tratamento | null>(null);
+  const [receita, setReceita] = useState<{ aberta: boolean; origem: OrigemDaReceita | null }>({ aberta: false, origem: null });
+  const [pedidoExame, setPedidoExame] = useState<{ aberto: boolean; avaliacaoId?: string }>({ aberto: false });
+  const [registroAberto, setRegistroAberto] = useState<ItemLinhaTempo | null>(null);
   const [modalAlerta, setModalAlerta] = useState(false);
-  const [modalTransferencia, setModalTransferencia] = useState(false);
+  const [petEmEdicao, setPetEmEdicao] = useState<Pet | null>(null);
   const [tipoDocumento, setTipoDocumento] = useState('Exame');
   const [enviandoDocumento, setEnviandoDocumento] = useState(false);
   const [nomeClinica, setNomeClinica] = useState('Clínica VetSPA');
@@ -118,6 +146,7 @@ export function Prontuario() {
       'avaliacoes',
       'atendimentos',
       'prescricoes',
+      'pedidosexame',
       'vacinas',
       'alergias',
       'documentos',
@@ -141,6 +170,65 @@ export function Prontuario() {
       .catch(() => undefined);
   }, []);
 
+  /** Leva à aba e rola até o registro, que ganha destaque. */
+  function irPara(destino: Aba, ancora?: string) {
+    setRegistroAberto(null);
+    mudarAba(destino);
+
+    if (ancora) {
+      window.setTimeout(() => document.getElementById(ancora)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    }
+  }
+
+  function verAvaliacao(id: string) {
+    setFoco({ avaliacao: id });
+    irPara('avaliacoes', `avaliacao-${id}`);
+  }
+
+  function verTratamento(id: string) {
+    setFoco({ tratamento: id });
+    irPara('tratamentos', `tratamento-${id}`);
+  }
+
+  function concluido(mensagem: string) {
+    setAviso(mensagem);
+    recarregar();
+  }
+
+  function fecharReceita() {
+    setReceita({ aberta: false, origem: null });
+
+    if (origemDaUrl) {
+      parametros.delete('evolucao');
+      parametros.delete('avaliacao');
+      setParametros(parametros, { replace: true });
+    }
+  }
+
+  /** Evolução completa, com fotos e correção, para Administrador e Veterinário. */
+  async function abrirEvolucao(id: string, corrigir = false) {
+    setErro('');
+
+    try {
+      const { data } = await api.get<Atendimento>(`/api/atendimentos/${id}`);
+      setRegistroAberto(null);
+      setEvolucaoAberta({ atendimento: data, corrigir });
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível abrir a evolução.'));
+    }
+  }
+
+  async function abrirCadastro() {
+    setErro('');
+
+    try {
+      const { data } = await api.get<Pet>(`/api/pets/${pacienteId}`);
+      setPetEmEdicao(data);
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível abrir o cadastro do paciente.'));
+    }
+  }
+
   /** HU-012: anexo de contratos, exames externos e laudos. */
   async function enviarDocumento(arquivo: File) {
     setErro('');
@@ -153,8 +241,7 @@ export function Prontuario() {
 
     try {
       await api.post('/api/documentos', corpo);
-      setAviso('Documento anexado com sucesso.');
-      recarregar();
+      concluido('Documento anexado com sucesso.');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível anexar o documento.'));
     } finally {
@@ -182,24 +269,6 @@ export function Prontuario() {
     }
   }
 
-  /** RN-004: a correção de um registro clínico abre o mesmo formulário já preenchido. */
-  async function corrigirRegistro(item: ItemLinhaTempo) {
-    setErro('');
-
-    try {
-      if (item.tipo === 'Avaliação Clínica') {
-        const { data } = await api.get<Avaliacao>(`/api/avaliacoes/${item.id}`);
-        setAvaliacaoEmCorrecao(data);
-        setModalAvaliacao(true);
-      } else if (item.tipo === 'Atendimento') {
-        const { data } = await api.get<Atendimento>(`/api/atendimentos/${item.id}`);
-        setAtendimentoEmCorrecao(data);
-      }
-    } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível abrir o registro para correção.'));
-    }
-  }
-
   if (carregando) {
     return <Carregando texto="Carregando prontuário..." />;
   }
@@ -216,6 +285,9 @@ export function Prontuario() {
     );
   }
 
+  // Registros novos só com o paciente vivo; a correção do que já existe continua possível.
+  const podeAgir = podeRegistrar && !prontuario.dataObito;
+
   const dosesPendentes = prontuario.vacinas.filter(
     (v) => v.situacaoDose === 'Vencida' || v.situacaoDose === 'A vencer',
   ).length;
@@ -223,22 +295,100 @@ export function Prontuario() {
   // Doses vencidas entram nos alertas clínicos, ao lado das alergias e comorbidades.
   const dosesVencidas = prontuario.vacinas.filter((v) => v.situacaoDose === 'Vencida');
 
-  // A administração transfere qualquer paciente; o veterinário só passa adiante o que está com ele.
-  const podeTransferir =
-    !prontuario.dataObito &&
-    (administraResponsaveis ||
-      (ehVeterinario &&
-        !!prontuario.veterinarioResponsavelId &&
-        prontuario.veterinarioResponsavelId === usuario?.veterinarioId));
+  const evolucoes = prontuario.historico.filter((item) => item.categoria === 'Evolução');
+  const evolucoesParaReceita: EvolucaoParaReceita[] = evolucoes.map((item) => ({
+    id: item.id,
+    data: item.data,
+    numeroSessao: item.numeroSessao ?? 0,
+    nomeTratamento: prontuario.tratamentos.find((t) => t.id === item.tratamentoId)?.nome ?? 'Tratamento',
+  }));
 
   const abas: { valor: Aba; rotulo: string; contador?: number; alerta?: boolean }[] = [
     { valor: 'linha-do-tempo', rotulo: 'Linha do tempo', contador: prontuario.historico.length },
-    { valor: 'evolucao', rotulo: 'Evolução' },
-    { valor: 'vacinas', rotulo: 'Vacinação', contador: dosesPendentes, alerta: dosesPendentes > 0 },
-    { valor: 'receitas', rotulo: 'Receitas', contador: prontuario.prescricoes.length },
+    { valor: 'avaliacoes', rotulo: 'Avaliações', contador: prontuario.avaliacoes.length },
     { valor: 'tratamentos', rotulo: 'Tratamentos', contador: prontuario.tratamentos.length },
+    { valor: 'vacinas', rotulo: 'Vacinação', contador: dosesPendentes, alerta: dosesPendentes > 0 },
+    { valor: 'medicacao', rotulo: 'Medicação', contador: prontuario.prescricoes.length },
+    { valor: 'exames', rotulo: 'Exames', contador: prontuario.pedidosExame.length },
     { valor: 'documentos', rotulo: 'Documentos', contador: prontuario.documentos.length },
   ];
+
+  function emitirReceita(origem: OrigemDaReceita) {
+    setRegistroAberto(null);
+    setEvolucaoAberta(null);
+    setSessaoDoTratamento(null);
+    setReceita({ aberta: true, origem });
+  }
+
+  /** Fecha o registro da sessão; se algo foi salvo, o prontuário é relido. */
+  function fecharEvolucao(salvou: boolean) {
+    setEvolucaoAberta(null);
+    setSessaoDoTratamento(null);
+    if (salvou) recarregar();
+  }
+
+  function criarTratamento(avaliacao: Avaliacao) {
+    setRegistroAberto(null);
+    setOrigemDoTratamento(avaliacao);
+  }
+
+  function pedirExames(avaliacaoId?: string) {
+    setRegistroAberto(null);
+    setPedidoExame({ aberto: true, avaliacaoId });
+  }
+
+  function corrigirAvaliacao(avaliacao: Avaliacao) {
+    setRegistroAberto(null);
+    setAvaliacaoEmCorrecao(avaliacao);
+    setModalAvaliacao(true);
+  }
+
+  /** Atalhos do registro completo, conforme a categoria do evento e o perfil. */
+  function acoesDoRegistro(item: ItemLinhaTempo): ReactNode {
+    const botao = (rotulo: string, icone: ReactNode, aoClicar: () => void, primario = false) => (
+      <button
+        key={rotulo}
+        type="button"
+        className={primario ? 'vc-botao-primario' : 'vc-botao-secundario'}
+        onClick={aoClicar}
+      >
+        {icone}
+        {rotulo}
+      </button>
+    );
+
+    switch (item.categoria) {
+      case 'Avaliação': {
+        const avaliacao = prontuario!.avaliacoes.find((a) => a.id === item.id);
+        return [
+          botao('Ver em Avaliações', <ClipboardList size={15} />, () => verAvaliacao(item.id)),
+          avaliacao && podeRegistrar && botao('Corrigir', <Pencil size={15} />, () => corrigirAvaliacao(avaliacao)),
+          avaliacao && podeAgir && botao('Emitir receita', <Pill size={15} />, () => emitirReceita({ avaliacaoId: item.id })),
+          avaliacao && podeAgir && botao('Pedir exames', <FlaskConical size={15} />, () => pedirExames(item.id)),
+          avaliacao &&
+            podeAgir &&
+            botao('Criar tratamento', <Stethoscope size={15} />, () => criarTratamento(avaliacao), true),
+        ];
+      }
+      case 'Tratamento':
+        return botao('Abrir tratamento', <Stethoscope size={15} />, () => verTratamento(item.id), true);
+      case 'Evolução':
+        return [
+          item.tratamentoId &&
+            botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
+          podeAgir && botao('Emitir receita', <Pill size={15} />, () => emitirReceita({ atendimentoId: item.id })),
+          podeRegistrar && botao('Abrir evolução', <Activity size={15} />, () => abrirEvolucao(item.id), true),
+        ];
+      case 'Receita':
+        return botao('Ver medicação', <Pill size={15} />, () => irPara('medicacao'), true);
+      case 'Exame':
+        return botao('Ver pedidos de exame', <FlaskConical size={15} />, () => irPara('exames'), true);
+      case 'Vacinação':
+        return botao('Abrir carteira de vacinação', <Syringe size={15} />, () => irPara('vacinas'), true);
+      default:
+        return null;
+    }
+  }
 
   return (
     <>
@@ -272,51 +422,57 @@ export function Prontuario() {
               Imprimir
             </button>
 
-            {podeTransferir && (
-              <button type="button" className="vc-botao-secundario" onClick={() => setModalTransferencia(true)}>
-                <ArrowRightLeft size={16} />
-                {prontuario.veterinarioResponsavelId ? 'Transferir' : 'Definir veterinário'}
+            {podeEditarCadastro && (
+              <button type="button" className="vc-botao-secundario" onClick={abrirCadastro}>
+                <Pencil size={16} />
+                Editar cadastro
               </button>
             )}
 
             {podeRegistrar && (
-              <>
-                <button type="button" className="vc-botao-secundario" onClick={() => setModalAlerta(true)}>
-                  <ShieldAlert size={16} />
-                  Alerta clínico
-                </button>
-                <button type="button" className="vc-botao-secundario" onClick={() => setModalTratamento(true)}>
-                  <Plus size={16} />
-                  Tratamento
-                </button>
-                <button
-                  type="button"
-                  className="vc-botao-primario"
-                  onClick={() => {
-                    setAvaliacaoEmCorrecao(null);
-                    setModalAvaliacao(true);
-                  }}
-                >
-                  <ClipboardList size={16} />
-                  Registrar avaliação
-                </button>
-              </>
+              <button type="button" className="vc-botao-secundario" onClick={() => setModalAlerta(true)}>
+                <ShieldAlert size={16} />
+                Alerta clínico
+              </button>
+            )}
+
+            {podeAgir && (
+              <button
+                type="button"
+                className="vc-botao-primario"
+                onClick={() => {
+                  setAvaliacaoEmCorrecao(null);
+                  setModalAvaliacao(true);
+                }}
+              >
+                <ClipboardList size={16} />
+                Registrar avaliação
+              </button>
             )}
           </>
         }
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
       {aviso && (
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
+      )}
+
+      {/* Todo paciente precisa de um responsável; só o cadastrado pelo tutor no aplicativo chega sem. */}
+      {!prontuario.veterinarioResponsavelId && !prontuario.dataObito && podeEditarCadastro && (
         <div className="mb-4">
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-            {aviso}
+          <Alerta tipo="aviso">
+            Este paciente foi cadastrado pelo tutor e ainda não tem veterinário responsável.{' '}
+            <button type="button" className="font-semibold underline" onClick={abrirCadastro}>
+              Defina o responsável em Editar cadastro
+            </button>
+            .
           </Alerta>
         </div>
       )}
@@ -384,30 +540,44 @@ export function Prontuario() {
         ))}
       </div>
 
-      {aba === 'linha-do-tempo' && (
-        <LinhaDoTempo
-          itens={prontuario.historico}
-          exibeObservacoes={podeVerObservacoesInternas}
-          aoCorrigir={podeRegistrar ? corrigirRegistro : undefined}
+      {aba === 'linha-do-tempo' && <LinhaDoTempo itens={prontuario.historico} aoSelecionar={setRegistroAberto} />}
+
+      {aba === 'avaliacoes' && (
+        <AvaliacoesDoPaciente
+          avaliacoes={prontuario.avaliacoes}
+          emFoco={foco.avaliacao}
+          aoRegistrar={
+            podeAgir
+              ? () => {
+                  setAvaliacaoEmCorrecao(null);
+                  setModalAvaliacao(true);
+                }
+              : undefined
+          }
+          aoCriarTratamento={podeAgir ? criarTratamento : undefined}
+          aoEmitirReceita={podeAgir ? (avaliacao) => emitirReceita({ avaliacaoId: avaliacao.id }) : undefined}
+          aoPedirExames={podeAgir ? (avaliacao) => pedirExames(avaliacao.id) : undefined}
+          aoCorrigir={podeRegistrar ? corrigirAvaliacao : undefined}
+          aoVerTratamento={verTratamento}
         />
       )}
 
-      {aba === 'evolucao' && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="p-5">
-            <GraficoEvolucao titulo="Evolução de peso" pontos={prontuario.evolucaoPeso} unidade="kg" cor="#0284c7" />
-          </Card>
-
-          <Card className="p-5">
-            <GraficoEvolucao
-              titulo="Escala de dor"
-              pontos={prontuario.evolucaoDor}
-              cor="#dc2626"
-              minimoFixo={0}
-              maximoFixo={10}
-            />
-          </Card>
-        </div>
+      {aba === 'tratamentos' && (
+        <TratamentosDoPaciente
+          pacienteId={pacienteId}
+          tratamentos={prontuario.tratamentos}
+          evolucoes={evolucoes}
+          emFoco={foco.tratamento}
+          podeGerenciar={podeAgir}
+          exibeLinkDeEvolucoes={podeRegistrar}
+          aoEditar={setTratamentoEmEdicao}
+          aoRegistrarSessao={podeAgir ? setSessaoDoTratamento : undefined}
+          aoAbrirEvolucao={setRegistroAberto}
+          aoVerAvaliacao={verAvaliacao}
+          aoVerHistorico={() => irPara('linha-do-tempo')}
+          aoAtualizar={concluido}
+          aoFalhar={setErro}
+        />
       )}
 
       {aba === 'vacinas' && (
@@ -420,13 +590,13 @@ export function Prontuario() {
             recarregar();
           }}
         />
-        )}
+      )}
 
-      {aba === 'receitas' && (
+      {aba === 'medicacao' && (
         <Receituario
-          pacienteId={pacienteId}
           prescricoes={prontuario.prescricoes}
           nomeClinica={nomeClinica}
+          aoEmitir={podeAgir ? () => setReceita({ aberta: true, origem: null }) : undefined}
           aoAtualizar={(mensagem) => {
             if (mensagem) setAviso(mensagem);
             recarregar();
@@ -434,62 +604,17 @@ export function Prontuario() {
         />
       )}
 
-      {aba === 'tratamentos' && (
-        <div className="space-y-4">
-          {prontuario.tratamentos.length === 0 ? (
-            <Card>
-              <SemDados
-                icone={<Stethoscope size={40} />}
-                titulo="Nenhum tratamento registrado"
-                descricao="Abra um tratamento para começar a agendar sessões e registrar a evolução."
-                acao={
-                  podeRegistrar ? (
-                    <button type="button" className="vc-botao-sutil" onClick={() => setModalTratamento(true)}>
-                      <Plus size={16} />
-                      Novo tratamento
-                    </button>
-                  ) : undefined
-                }
-              />
-            </Card>
-          ) : (
-            prontuario.tratamentos.map((tratamento) => (
-              <Card key={tratamento.id} className="p-5">
-                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-900">{tratamento.objetivoTerapeutico}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {tratamento.nomeVeterinario} · Início em {formatarData(tratamento.dataInicio)}
-                      {tratamento.dataFim && ` · Encerrado em ${formatarData(tratamento.dataFim)}`}
-                    </p>
-                  </div>
-
-                  <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
-                    {tratamento.status}
-                  </Etiqueta>
-                </div>
-
-                {tratamento.observacoesGerais && (
-                  <p className="mb-3 text-sm text-slate-600">{tratamento.observacoesGerais}</p>
-                )}
-
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <Activity size={14} />
-                  {tratamento.sessoesConcluidas} de {tratamento.totalSessoes} sessões concluídas
-                </div>
-
-                {tratamento.totalSessoes > 0 && (
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-brand transition-all"
-                      style={{ width: `${(tratamento.sessoesConcluidas / tratamento.totalSessoes) * 100}%` }}
-                    />
-                  </div>
-                )}
-              </Card>
-            ))
-          )}
-        </div>
+      {aba === 'exames' && (
+        <PedidosExame
+          pedidos={prontuario.pedidosExame}
+          nomeClinica={nomeClinica}
+          avaliacoes={prontuario.avaliacoes}
+          aoPedir={podeAgir ? () => pedirExames() : undefined}
+          aoAtualizar={(mensagem) => {
+            if (mensagem) setAviso(mensagem);
+            recarregar();
+          }}
+        />
       )}
 
       {aba === 'documentos' && (
@@ -553,11 +678,7 @@ export function Prontuario() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => baixarDocumento(documento)}
-                    className="vc-botao-secundario"
-                  >
+                  <button type="button" onClick={() => baixarDocumento(documento)} className="vc-botao-secundario">
                     <Download size={15} />
                     Baixar
                   </button>
@@ -568,9 +689,18 @@ export function Prontuario() {
         </Card>
       )}
 
+      <ModalRegistroCompleto
+        item={registroAberto}
+        exibeObservacoes={podeVerObservacoesInternas}
+        acoes={registroAberto ? acoesDoRegistro(registroAberto) : undefined}
+        aoFechar={() => setRegistroAberto(null)}
+      />
+
       <ModalAvaliacao
         aberto={modalAvaliacao}
-        tratamentos={prontuario.tratamentos}
+        pacienteId={pacienteId}
+        veterinarioResponsavelId={prontuario.veterinarioResponsavelId}
+        nomeVeterinarioResponsavel={prontuario.nomeVeterinarioResponsavel}
         avaliacao={avaliacaoEmCorrecao}
         aoFechar={() => {
           setModalAvaliacao(false);
@@ -578,24 +708,74 @@ export function Prontuario() {
         }}
         aoSalvar={() => {
           setModalAvaliacao(false);
-          setAviso(
+          concluido(
             avaliacaoEmCorrecao
               ? 'Avaliação corrigida. A versão anterior foi preservada no histórico.'
-              : 'Avaliação clínica registrada com sucesso.',
+              : 'Avaliação registrada. A partir dela você pode criar tratamentos, emitir receitas e pedir exames.',
           );
           setAvaliacaoEmCorrecao(null);
-          recarregar();
+          if (!avaliacaoEmCorrecao) mudarAba('avaliacoes');
+        }}
+      />
+
+      <ModalTratamento
+        aberto={!!origemDoTratamento || !!tratamentoEmEdicao}
+        avaliacao={origemDoTratamento}
+        tratamento={tratamentoEmEdicao}
+        veterinarioResponsavelId={prontuario.veterinarioResponsavelId}
+        nomeVeterinarioResponsavel={prontuario.nomeVeterinarioResponsavel}
+        aoFechar={() => {
+          setOrigemDoTratamento(null);
+          setTratamentoEmEdicao(null);
+        }}
+        aoSalvar={(mensagem) => {
+          const novo = !!origemDoTratamento;
+          setOrigemDoTratamento(null);
+          setTratamentoEmEdicao(null);
+          concluido(mensagem);
+          if (novo) mudarAba('tratamentos');
         }}
       />
 
       <ModalRegistrarAtendimento
-        atendimento={atendimentoEmCorrecao}
+        key={sessaoDoTratamento?.id ?? evolucaoAberta?.atendimento.id ?? 'nenhuma'}
+        atendimento={evolucaoAberta?.atendimento}
+        tratamento={sessaoDoTratamento}
+        corrigir={evolucaoAberta?.corrigir}
         descricao={`${prontuario.nomePaciente} · ${prontuario.nomeTutor}`}
-        aoFechar={() => setAtendimentoEmCorrecao(null)}
-        aoSalvar={() => {
-          setAtendimentoEmCorrecao(null);
-          setAviso('Atendimento atualizado.');
+        aoEmitirReceita={(atendimento) => {
+          // A evolução recém-registrada precisa constar entre as origens da receita.
           recarregar();
+          emitirReceita({ atendimentoId: atendimento.id });
+        }}
+        permiteReceita={podeAgir}
+        aoFechar={() => fecharEvolucao(false)}
+        aoSalvar={() => fecharEvolucao(true)}
+      />
+
+      <ModalReceita
+        aberto={receita.aberta || (!!origemDaUrl && podeAgir)}
+        pacienteId={pacienteId}
+        avaliacoes={prontuario.avaliacoes}
+        evolucoes={evolucoesParaReceita}
+        origem={receita.aberta ? receita.origem : origemDaUrl}
+        aoFechar={fecharReceita}
+        aoSalvar={(mensagem) => {
+          fecharReceita();
+          concluido(mensagem);
+          mudarAba('medicacao');
+        }}
+      />
+
+      <ModalPedidoExame
+        aberto={pedidoExame.aberto}
+        avaliacoes={prontuario.avaliacoes}
+        avaliacaoId={pedidoExame.avaliacaoId}
+        aoFechar={() => setPedidoExame({ aberto: false })}
+        aoSalvar={(mensagem) => {
+          setPedidoExame({ aberto: false });
+          concluido(mensagem);
+          mudarAba('exames');
         }}
       />
 
@@ -606,209 +786,19 @@ export function Prontuario() {
         aoFechar={() => setModalAlerta(false)}
         aoSalvar={(mensagem) => {
           setModalAlerta(false);
-          setAviso(mensagem);
-          recarregar();
+          concluido(mensagem);
         }}
       />
 
-      <ModalTransferirPaciente
-        paciente={
-          modalTransferencia
-            ? {
-                id: pacienteId,
-                nome: prontuario.nomePaciente,
-                veterinarioResponsavelId: prontuario.veterinarioResponsavelId,
-                nomeVeterinarioResponsavel: prontuario.nomeVeterinarioResponsavel,
-              }
-            : null
-        }
-        aoFechar={() => setModalTransferencia(false)}
-        aoTransferir={(mensagem) => {
-          setModalTransferencia(false);
-          setAviso(mensagem);
-          recarregar();
-        }}
-      />
-
-      <ModalTratamento
-        aberto={modalTratamento}
-        pacienteId={pacienteId}
-        veterinarioResponsavelId={prontuario.veterinarioResponsavelId}
-        nomeVeterinarioResponsavel={prontuario.nomeVeterinarioResponsavel}
-        aoFechar={() => setModalTratamento(false)}
-        aoSalvar={() => {
-          setModalTratamento(false);
-          setAviso('Tratamento aberto com sucesso.');
-          recarregar();
+      <ModalCadastroPaciente
+        aberto={!!petEmEdicao}
+        pet={petEmEdicao}
+        aoFechar={() => setPetEmEdicao(null)}
+        aoSalvar={(mensagem) => {
+          setPetEmEdicao(null);
+          concluido(mensagem);
         }}
       />
     </>
-  );
-}
-
-/** HU-011, CA-1: avaliações e atendimentos em ordem cronológica, com mídias na posição correspondente. */
-function LinhaDoTempo({
-  itens,
-  exibeObservacoes,
-  aoCorrigir,
-}: {
-  itens: ItemLinhaTempo[];
-  exibeObservacoes: boolean;
-  /** Presente apenas para quem pode corrigir registros clínicos (RN-004). */
-  aoCorrigir?: (item: ItemLinhaTempo) => void;
-}) {
-  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
-
-  function alternar(id: string) {
-    setExpandidos((atual) => {
-      const novo = new Set(atual);
-      if (novo.has(id)) novo.delete(id);
-      else novo.add(id);
-      return novo;
-    });
-  }
-
-  if (itens.length === 0) {
-    return (
-      <Card>
-        <SemDados
-          icone={<ClipboardList size={40} />}
-          titulo="Prontuário ainda sem registros"
-          descricao="Assim que a primeira avaliação ou atendimento for registrado, o histórico aparece aqui em ordem cronológica."
-        />
-      </Card>
-    );
-  }
-
-  const icone: Record<TipoItemLinhaTempo, typeof ClipboardList> = {
-    'Avaliação Clínica': ClipboardList,
-    Atendimento: Stethoscope,
-    'Observação Interna': Lock,
-  };
-
-  return (
-    <ol className="relative space-y-4 border-l-2 border-slate-200 pl-6">
-      {itens.map((item) => {
-        const Icone = icone[item.tipo] ?? ClipboardList;
-        const aberto = expandidos.has(item.id);
-        const corrigivel = !!aoCorrigir && item.tipo !== 'Observação Interna';
-
-        return (
-          <li key={item.id} className="relative">
-            <span className="absolute -left-[33px] flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-brand text-white">
-              <Icone size={12} />
-            </span>
-
-            <Card className="p-5">
-              <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-slate-900">{item.tipo}</h3>
-
-                    {item.escalaDor != null && (
-                      <Etiqueta className={estiloEscalaDor(item.escalaDor)}>Dor {item.escalaDor}/10</Etiqueta>
-                    )}
-
-                    {item.pesoKg != null && (
-                      <Etiqueta className="bg-slate-100 text-slate-600">{formatarPeso(item.pesoKg)}</Etiqueta>
-                    )}
-
-                    {/* RN-004: a edição é sinalizada, preservando a rastreabilidade. */}
-                    {item.editado && (
-                      <Etiqueta className="bg-alerta-claro text-amber-800">
-                        <Pencil size={11} />
-                        Editado
-                      </Etiqueta>
-                    )}
-                  </div>
-
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {formatarDataHora(item.data)}
-                    {item.autor && ` · ${item.autor}`}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {corrigivel && (
-                    <button
-                      type="button"
-                      onClick={() => aoCorrigir?.(item)}
-                      className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-brand"
-                      title="Corrigir este registro; a versão anterior fica no histórico"
-                    >
-                      <Pencil size={14} />
-                      Corrigir
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => alternar(item.id)}
-                    className="text-sm font-medium text-brand hover:underline"
-                  >
-                    {aberto ? 'Recolher' : 'Ver detalhes'}
-                  </button>
-                </div>
-              </div>
-
-              <p className="text-sm font-medium text-slate-800">{item.descricao}</p>
-              {item.detalhes && <p className="mt-1 text-sm text-slate-600">{item.detalhes}</p>}
-
-              {aberto && Object.keys(item.campos).length > 0 && (
-                <dl className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
-                  {Object.entries(item.campos).map(([rotulo, valor]) => (
-                    <div key={rotulo}>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{rotulo}</dt>
-                      <dd className="mt-0.5 text-sm text-slate-700">{valor}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-
-              {/* HU-011, CA-4: fotos e vídeos exibidos na linha do tempo. */}
-              {item.midias.length > 0 && (
-                <ul className="mt-4 grid gap-2 sm:grid-cols-4">
-                  {item.midias.map((midia) => (
-                    <li key={midia.id} className="overflow-hidden rounded-xl border border-slate-200">
-                      {midia.tipo === 'Video' ? (
-                        <video src={urlDoArquivo(midia.urlArquivo)} controls className="h-24 w-full bg-slate-900 object-cover" />
-                      ) : (
-                        <a href={urlDoArquivo(midia.urlArquivo)} target="_blank" rel="noreferrer">
-                          <img
-                            src={urlDoArquivo(midia.urlArquivo)}
-                            alt={midia.nomeArquivo}
-                            className="h-24 w-full object-cover transition hover:opacity-90"
-                            loading="lazy"
-                          />
-                        </a>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {/* RN-003: o bloco só existe quando o perfil autoriza; para o tutor a lista chega vazia da API. */}
-              {exibeObservacoes && item.observacoesInternas.length > 0 && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-800">
-                    <Lock size={12} />
-                    Observação interna — não visível ao tutor
-                  </p>
-
-                  {item.observacoesInternas.map((observacao) => (
-                    <div key={observacao.id} className="mt-2 first:mt-0">
-                      <p className="text-sm text-amber-900">{observacao.conteudo}</p>
-                      <p className="mt-0.5 text-xs text-amber-700">
-                        {observacao.autor} · {formatarDataHora(observacao.dataRegistro)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </li>
-        );
-      })}
-    </ol>
   );
 }

@@ -180,11 +180,9 @@ function Conteudo({ veterinarioId, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) 
         )}
 
         {aviso && (
-          <div className="mt-4">
-            <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-              {aviso}
-            </Alerta>
-          </div>
+          <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+            {aviso}
+          </Alerta>
         )}
 
         <div className="mt-4 flex justify-end">

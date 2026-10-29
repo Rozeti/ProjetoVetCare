@@ -3,12 +3,16 @@ import { Loader2, Lock } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import { useAuth } from '../../contexts/auth';
-import type { Avaliacao, Tratamento } from '../../types';
+import type { Avaliacao } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
+import { SeletorVeterinario } from '../../components/SeletorVeterinario';
 
 interface Props {
   aberto: boolean;
-  tratamentos: Tratamento[];
+  pacienteId: string;
+  /** Veterinário que acompanha o paciente, sugerido para assinar. Nulo quando ainda não há responsável. */
+  veterinarioResponsavelId?: string | null;
+  nomeVeterinarioResponsavel?: string;
   /** Quando informada, o modal corrige esta avaliação em vez de registrar uma nova (RN-004). */
   avaliacao?: Avaliacao | null;
   aoFechar: () => void;
@@ -16,37 +20,33 @@ interface Props {
 }
 
 const FORM_VAZIO = {
-  tratamentoId: '',
-  queixaPrincipal: '',
-  anamnese: '',
-  exameFisico: '',
-  hipoteseDiagnostica: '',
-  planoTerapeutico: '',
+  motivoConsulta: '',
+  observacoes: '',
+  diagnosticoPossivel: '',
   observacaoInterna: '',
 };
 
 type Campos = keyof typeof FORM_VAZIO;
 
-/** Mesmos limites das colunas do prontuário (CriarAvaliacaoDTO). */
-const LIMITES: Record<Exclude<Campos, 'tratamentoId'>, number> = {
-  queixaPrincipal: 2000,
-  anamnese: 4000,
-  exameFisico: 4000,
-  hipoteseDiagnostica: 2000,
-  planoTerapeutico: 4000,
+/** Mesmos limites de CriarAvaliacaoDTO; a correção aceita observações mais longas. */
+const LIMITES: Record<Campos, number> = {
+  motivoConsulta: 2000,
+  observacoes: 4000,
+  diagnosticoPossivel: 2000,
   observacaoInterna: 2000,
 };
 
-/** RN-010: os cinco campos clínicos, na ordem em que aparecem na tela. */
-const CAMPOS_CLINICOS: { campo: Exclude<Campos, 'tratamentoId' | 'observacaoInterna'>; rotulo: string }[] = [
-  { campo: 'queixaPrincipal', rotulo: 'a queixa principal' },
-  { campo: 'anamnese', rotulo: 'a anamnese' },
-  { campo: 'exameFisico', rotulo: 'o exame físico' },
-  { campo: 'hipoteseDiagnostica', rotulo: 'a hipótese diagnóstica' },
-  { campo: 'planoTerapeutico', rotulo: 'o plano terapêutico' },
+/** RN-010: os campos clínicos obrigatórios, na ordem em que aparecem na tela. */
+const CAMPOS_CLINICOS: { campo: Exclude<Campos, 'observacaoInterna'>; rotulo: string }[] = [
+  { campo: 'motivoConsulta', rotulo: 'o motivo da consulta' },
+  { campo: 'observacoes', rotulo: 'as observações' },
+  { campo: 'diagnosticoPossivel', rotulo: 'o possível diagnóstico' },
 ];
 
-/** HU-007: registro e correção da avaliação clínica com os cinco campos exigidos pela RN-010. */
+/**
+ * HU-007: a avaliação é o primeiro registro clínico de uma consulta. Ela pertence ao animal
+ * e, depois de registrada, pode originar tratamentos, receitas e pedidos de exame.
+ */
 export function ModalAvaliacao({ aberto, ...props }: Props) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos
   // novos, o que dispensa um efeito para limpá-los.
@@ -57,29 +57,37 @@ export function ModalAvaliacao({ aberto, ...props }: Props) {
   return <Formulario {...props} />;
 }
 
-function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 'aberto'>) {
-  const { podeVerObservacoesInternas } = useAuth();
+function Formulario({
+  pacienteId,
+  veterinarioResponsavelId,
+  nomeVeterinarioResponsavel,
+  avaliacao,
+  aoFechar,
+  aoSalvar,
+}: Omit<Props, 'aberto'>) {
+  const { podeVerObservacoesInternas, ehVeterinario } = useAuth();
 
   const emEdicao = !!avaliacao;
-  const ativos = tratamentos.filter((t) => t.status === 'Em Andamento');
+  // O veterinário assina a própria avaliação; administração e apoio escolhem quem assina, com o
+  // responsável pelo paciente já sugerido. Sem responsável, quem assina passa a acompanhá-lo.
+  const escolheVeterinario = !emEdicao && !ehVeterinario;
 
-  // Com um único tratamento em andamento a escolha é óbvia e já vem resolvida.
   const [form, setForm] = useState(
     avaliacao
       ? {
           ...FORM_VAZIO,
-          tratamentoId: avaliacao.tratamentoId,
-          queixaPrincipal: avaliacao.queixaPrincipal,
-          anamnese: avaliacao.anamnese,
-          exameFisico: avaliacao.exameFisico,
-          hipoteseDiagnostica: avaliacao.hipoteseDiagnostica,
-          planoTerapeutico: avaliacao.planoTerapeutico,
+          motivoConsulta: avaliacao.motivoConsulta,
+          observacoes: avaliacao.observacoes,
+          diagnosticoPossivel: avaliacao.diagnosticoPossivel,
         }
-      : { ...FORM_VAZIO, tratamentoId: ativos.length === 1 ? ativos[0].id : '' },
+      : FORM_VAZIO,
   );
+  const [veterinarioId, setVeterinarioId] = useState(veterinarioResponsavelId ?? '');
   const [erros, setErros] = useState<Partial<Record<Campos, string>>>({});
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+
+  const limiteObservacoes = emEdicao ? 8000 : LIMITES.observacoes;
 
   function atualizar(campo: Campos, valor: string) {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -87,21 +95,21 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
     setErros((atuais) => (atuais[campo] ? { ...atuais, [campo]: undefined } : atuais));
   }
 
+  function limiteDe(campo: Campos) {
+    return campo === 'observacoes' ? limiteObservacoes : LIMITES[campo];
+  }
+
   /** RN-010 conferida antes de enviar, com o erro ao lado do campo que falta. */
   function validar(): boolean {
     const encontrados: Partial<Record<Campos, string>> = {};
-
-    if (!emEdicao && !form.tratamentoId) {
-      encontrados.tratamentoId = 'Selecione o tratamento ao qual esta avaliação pertence.';
-    }
 
     for (const { campo, rotulo } of CAMPOS_CLINICOS) {
       const valor = form[campo].trim();
 
       if (!valor) {
         encontrados[campo] = `Preencha ${rotulo}.`;
-      } else if (valor.length > LIMITES[campo]) {
-        encontrados[campo] = `Use no máximo ${LIMITES[campo]} caracteres.`;
+      } else if (valor.length > limiteDe(campo)) {
+        encontrados[campo] = `Use no máximo ${limiteDe(campo)} caracteres.`;
       }
     }
 
@@ -115,6 +123,11 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
 
     if (faltando.length > 0) {
       setErro(`Campos obrigatórios pendentes: ${faltando.join(', ')}.`);
+    }
+
+    if (escolheVeterinario && !veterinarioId) {
+      setErro((atual) => atual || 'Selecione o veterinário responsável pela avaliação.');
+      return false;
     }
 
     return Object.keys(encontrados).length === 0;
@@ -143,11 +156,9 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
     setSalvando(true);
 
     const campos = {
-      queixaPrincipal: form.queixaPrincipal.trim(),
-      anamnese: form.anamnese.trim(),
-      exameFisico: form.exameFisico.trim(),
-      hipoteseDiagnostica: form.hipoteseDiagnostica.trim(),
-      planoTerapeutico: form.planoTerapeutico.trim(),
+      motivoConsulta: form.motivoConsulta.trim(),
+      observacoes: form.observacoes.trim(),
+      diagnosticoPossivel: form.diagnosticoPossivel.trim(),
     };
 
     try {
@@ -156,7 +167,8 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
         await api.put(`/api/avaliacoes/${avaliacao.id}`, campos);
       } else {
         await api.post('/api/avaliacoes', {
-          tratamentoId: form.tratamentoId,
+          pacienteId,
+          veterinarioId: veterinarioId || null,
           ...campos,
           observacaoInterna: form.observacaoInterna.trim() || null,
         });
@@ -171,8 +183,8 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
     }
   }
 
-  function contador(campo: Exclude<Campos, 'tratamentoId'>) {
-    return `${form[campo].length}/${LIMITES[campo]}`;
+  function contador(campo: Campos) {
+    return `${form[campo].length}/${limiteDe(campo)}`;
   }
 
   return (
@@ -182,128 +194,94 @@ function Formulario({ tratamentos, avaliacao, aoFechar, aoSalvar }: Omit<Props, 
       descricao={
         emEdicao
           ? 'A versão anterior fica guardada no histórico do prontuário (RN-004).'
-          : 'Todos os cinco campos clínicos são obrigatórios para concluir a avaliação.'
+          : 'Depois de registrada, a avaliação pode originar tratamentos, receitas e pedidos de exame.'
       }
       aoFechar={aoFechar}
-      largura="max-w-3xl"
+      largura="max-w-2xl"
     >
-      {!emEdicao && ativos.length === 0 ? (
-        <Alerta tipo="aviso">
-          Este paciente não possui tratamento em andamento. Abra um tratamento antes de registrar a avaliação clínica.
-        </Alerta>
-      ) : (
-        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
-          {!emEdicao && (
-            <Campo rotulo="Tratamento" obrigatorio erro={erros.tratamentoId}>
-              <select
-                className="vc-campo"
-                value={form.tratamentoId}
-                onChange={(e) => atualizar('tratamentoId', e.target.value)}
-              >
-                <option value="">Selecione o tratamento</option>
-                {ativos.map((tratamento) => (
-                  <option key={tratamento.id} value={tratamento.id}>
-                    {tratamento.objetivoTerapeutico.slice(0, 70)}
-                  </option>
-                ))}
-              </select>
-            </Campo>
-          )}
+      <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+        <Campo rotulo="Motivo da consulta" obrigatorio erro={erros.motivoConsulta} dica={contador('motivoConsulta')}>
+          <textarea
+            className="vc-campo"
+            rows={2}
+            value={form.motivoConsulta}
+            onChange={(e) => atualizar('motivoConsulta', e.target.value)}
+            placeholder="O que trouxe o animal à clínica."
+            maxLength={LIMITES.motivoConsulta}
+          />
+        </Campo>
 
-          <Campo rotulo="Queixa principal" obrigatorio erro={erros.queixaPrincipal} dica={contador('queixaPrincipal')}>
+        <Campo rotulo="Observações" obrigatorio erro={erros.observacoes} dica={contador('observacoes')}>
+          <textarea
+            className="vc-campo"
+            rows={4}
+            value={form.observacoes}
+            onChange={(e) => atualizar('observacoes', e.target.value)}
+            placeholder="Histórico relatado pelo tutor, achados do exame físico, medicações em uso."
+            maxLength={limiteObservacoes}
+          />
+        </Campo>
+
+        <Campo
+          rotulo="Possível diagnóstico"
+          obrigatorio
+          erro={erros.diagnosticoPossivel}
+          dica={contador('diagnosticoPossivel')}
+        >
+          <textarea
+            className="vc-campo"
+            rows={2}
+            value={form.diagnosticoPossivel}
+            onChange={(e) => atualizar('diagnosticoPossivel', e.target.value)}
+            maxLength={LIMITES.diagnosticoPossivel}
+          />
+        </Campo>
+
+        {escolheVeterinario && (
+          <SeletorVeterinario
+            valor={veterinarioId}
+            aoMudar={setVeterinarioId}
+            obrigatorio
+            dica={
+              veterinarioResponsavelId
+                ? `Sugerido: ${nomeVeterinarioResponsavel}, responsável pelo paciente. Qualquer veterinário da clínica pode assinar.`
+                : 'O paciente ainda não tem veterinário responsável: quem assinar a avaliação passa a acompanhá-lo.'
+            }
+          />
+        )}
+
+        {/* HU-009 / RN-003: anotação restrita à equipe clínica, só no registro inicial. */}
+        {!emEdicao && podeVerObservacoesInternas && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+            <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800" htmlFor="avaliacao-observacao-interna">
+              <Lock size={15} />
+              Observação interna
+              <span className="ml-auto text-xs font-normal text-amber-700">{contador('observacaoInterna')}</span>
+            </label>
             <textarea
+              id="avaliacao-observacao-interna"
               className="vc-campo"
               rows={2}
-              value={form.queixaPrincipal}
-              onChange={(e) => atualizar('queixaPrincipal', e.target.value)}
-              placeholder="Motivo que trouxe o paciente à clínica."
-              maxLength={LIMITES.queixaPrincipal}
+              value={form.observacaoInterna}
+              onChange={(e) => atualizar('observacaoInterna', e.target.value)}
+              placeholder="Anotação que não deve ser exibida ao tutor."
+              maxLength={LIMITES.observacaoInterna}
             />
-          </Campo>
-
-          <Campo rotulo="Anamnese" obrigatorio erro={erros.anamnese} dica={contador('anamnese')}>
-            <textarea
-              className="vc-campo"
-              rows={3}
-              value={form.anamnese}
-              onChange={(e) => atualizar('anamnese', e.target.value)}
-              placeholder="Histórico relatado pelo tutor, cirurgias anteriores, medicações em uso."
-              maxLength={LIMITES.anamnese}
-            />
-          </Campo>
-
-          <Campo rotulo="Exame físico" obrigatorio erro={erros.exameFisico} dica={contador('exameFisico')}>
-            <textarea
-              className="vc-campo"
-              rows={3}
-              value={form.exameFisico}
-              onChange={(e) => atualizar('exameFisico', e.target.value)}
-              placeholder="Achados do exame: amplitude de movimento, massa muscular, marcha."
-              maxLength={LIMITES.exameFisico}
-            />
-          </Campo>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Campo
-              rotulo="Hipótese diagnóstica"
-              obrigatorio
-              erro={erros.hipoteseDiagnostica}
-              dica={contador('hipoteseDiagnostica')}
-            >
-              <textarea
-                className="vc-campo"
-                rows={3}
-                value={form.hipoteseDiagnostica}
-                onChange={(e) => atualizar('hipoteseDiagnostica', e.target.value)}
-                maxLength={LIMITES.hipoteseDiagnostica}
-              />
-            </Campo>
-
-            <Campo rotulo="Plano terapêutico" obrigatorio erro={erros.planoTerapeutico} dica={contador('planoTerapeutico')}>
-              <textarea
-                className="vc-campo"
-                rows={3}
-                value={form.planoTerapeutico}
-                onChange={(e) => atualizar('planoTerapeutico', e.target.value)}
-                placeholder="Técnicas, frequência das sessões e metas."
-                maxLength={LIMITES.planoTerapeutico}
-              />
-            </Campo>
           </div>
+        )}
 
-          {/* HU-009 / RN-003: anotação restrita à equipe clínica, só no registro inicial. */}
-          {!emEdicao && podeVerObservacoesInternas && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800" htmlFor="avaliacao-observacao-interna">
-                <Lock size={15} />
-                Observação interna
-                <span className="ml-auto text-xs font-normal text-amber-700">{contador('observacaoInterna')}</span>
-              </label>
-              <textarea
-                id="avaliacao-observacao-interna"
-                className="vc-campo"
-                rows={2}
-                value={form.observacaoInterna}
-                onChange={(e) => atualizar('observacaoInterna', e.target.value)}
-                placeholder="Anotação que não deve ser exibida ao tutor."
-                maxLength={LIMITES.observacaoInterna}
-              />
-            </div>
-          )}
+        {erro && <Alerta tipo="erro">{erro}</Alerta>}
 
-          {erro && <Alerta tipo="erro">{erro}</Alerta>}
-
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="vc-botao-secundario" onClick={aoFechar} disabled={salvando}>
-              Cancelar
-            </button>
-            <button type="submit" className="vc-botao-primario" disabled={salvando}>
-              {salvando && <Loader2 className="animate-spin" size={16} />}
-              {emEdicao ? 'Salvar correção' : 'Registrar avaliação'}
-            </button>
-          </div>
-        </form>
-      )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className="vc-botao-secundario" onClick={aoFechar} disabled={salvando}>
+            Cancelar
+          </button>
+          <button type="submit" className="vc-botao-primario" disabled={salvando}>
+            {salvando && <Loader2 className="animate-spin" size={16} />}
+            {emEdicao ? 'Salvar correção' : 'Registrar avaliação'}
+          </button>
+        </div>
+      </form>
     </Modal>
   );
 }

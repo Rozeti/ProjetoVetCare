@@ -7,6 +7,12 @@ namespace VetCare.API.Models
         public Guid ProntuarioId { get; set; }
         public Guid PacienteId { get; set; }
         public Guid VeterinarioId { get; set; }
+
+        /// <summary>
+        /// Origem da receita: a avaliação ou a evolução em que foi prescrita. Toda receita nova tem
+        /// exatamente uma das duas; as anteriores à reorganização do fluxo clínico podem não ter.
+        /// </summary>
+        public Guid? AvaliacaoId { get; set; }
         public Guid? AtendimentoId { get; set; }
 
         public DateTime DataEmissao { get; set; } = DateTime.UtcNow;
@@ -19,6 +25,8 @@ namespace VetCare.API.Models
         public Prontuario? Prontuario { get; set; }
         public Pet? Paciente { get; set; }
         public Veterinario? Veterinario { get; set; }
+        public AvaliacaoClinica? Avaliacao { get; set; }
+        public AtendimentoFisioterapeutico? Atendimento { get; set; }
         public ICollection<ItemPrescricao> Itens { get; set; } = new List<ItemPrescricao>();
     }
 

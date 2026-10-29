@@ -107,7 +107,7 @@ o contêiner parado, a API não consegue salvar nada e mostra erro de conexão.
 
 ### As tabelas
 
-O banco se chama `vetcare_db` e tem **25 tabelas**. As principais:
+O banco se chama `vetcare_db` e tem **26 tabelas**. As principais:
 
 | Tabela | Guarda |
 |---|---|
@@ -115,7 +115,7 @@ O banco se chama `vetcare_db` e tem **25 tabelas**. As principais:
 | `Usuarios` | Todas as contas de acesso, com a senha criptografada |
 | `Veterinarios`, `Tutores`, `ApoiosAdministrativos` | Os dados específicos de cada perfil |
 | `Pets` | Os pacientes |
-| `Tratamentos`, `Sessoes`, `Atendimentos`, `AvaliacoesClinicas` | O andamento clínico |
+| `AvaliacoesClinicas`, `Tratamentos`, `Sessoes`, `Atendimentos` (as evoluções), `PedidosExame` | O fluxo clínico: avaliação → tratamento → evoluções das sessões |
 | `Prontuarios`, `ObservacoesInternas`, `VersoesRegistrosClinicos` | O histórico e as versões antigas |
 | `Vacinas`, `Prescricoes`, `ItensPrescricao`, `AlergiasCondicoes` | Carteira, receitas e alertas |
 | `Mensagens`, `Notificacoes`, `DispositivosDoUsuario` | A comunicação e os aparelhos que recebem push |
@@ -125,7 +125,7 @@ O banco se chama `vetcare_db` e tem **25 tabelas**. As principais:
 | `RegistrosAuditoria` | Quem fez o quê e quando |
 
 Você **não precisa criar nenhuma tabela**. Quando a API inicia e encontra um banco vazio, ela
-cria as 25 tabelas sozinha e cadastra a clínica mais uma conta de administrador. É só isso que
+cria as 26 tabelas sozinha e cadastra a clínica mais uma conta de administrador. É só isso que
 existe hoje — o resto você cadastra pelo sistema.
 
 ---
@@ -223,6 +223,10 @@ Na primeira vez isso demora de 3 a 10 minutos: o Docker está baixando o Postgre
 construindo a API e o portal. Nas próximas vezes leva segundos.
 
 O `-d` significa "deixe rodando em segundo plano". Você pode fechar o terminal que continua no ar.
+
+Já tinha o sistema rodando e baixou uma versão nova? Use `docker compose up -d --build`, para
+o Docker reconstruir a API e o portal com o código novo. Se o banco já tem dados, faça antes o
+backup da [Parte 8](#parte-8--fazer-backup): algumas versões convertem os registros ao iniciar.
 
 ### Passo 6 — Confira se subiu
 
@@ -355,11 +359,12 @@ computador está montando o pacote e enviando para o celular. Depois disso abre 
 
 ### Passo 3 — Entre como tutor
 
-Use o e-mail e a senha de um usuário com **perfil Tutor** — o mesmo que você criou no portal.
+Use o e-mail e a senha de um **tutor** — o mesmo que você criou em Tutores, no portal.
 O aplicativo é só para tutores: administrador e veterinário usam o portal web.
 
 Ele mostra os pets do tutor, a agenda com confirmação e cancelamento de sessão, o prontuário
-(sem as observações internas), a carteira de vacinação, as receitas, as mensagens e os avisos.
+(sem as observações internas), a carteira de vacinação, a medicação (as receitas), as mensagens
+e os avisos.
 
 ### Como o aplicativo acha a API sozinho
 
@@ -577,20 +582,51 @@ no `.env`).
 Faça nesta ordem, porque cada passo depende do anterior:
 
 1. **Usuários → Novo usuário.** Crie um veterinário (perfil Veterinário, preencha o CRMV).
-2. **Usuários → Novo usuário.** Crie um tutor (perfil Tutor, com telefone).
-3. **Pacientes → Novo paciente.** Cadastre um pet, escolha o tutor do passo 2 e o
+   *A tela de Usuários cadastra só a equipe: Administrador, Veterinário e Apoio. Tente
+   preencher um nome sem sobrenome, um e-mail sem ".com" ou um CRMV sem a UF: cada erro
+   aparece embaixo do próprio campo. O CRMV pode ser digitado como "df 12345" que vira
+   "CRMV-DF 12345" ao sair do campo, e a senha inicial, se preenchida, precisa de 8
+   caracteres com letras e números.*
+2. **Tutores → Novo tutor.** Crie um tutor com nome completo, e-mail e telefone com DDD.
+   *O telefone e o CPF ganham máscara enquanto você digita; o CPF é opcional, mas o sistema
+   confere os dígitos e não aceita o mesmo CPF em dois tutores. Na edição, a equipe também
+   corrige o nome e o e-mail do tutor.*
+3. **Pacientes → Novo paciente.** Cadastre um cão, escolha o tutor do passo 2 e o
    veterinário do passo 1 como responsável.
-   *O sistema não deixa salvar sem tutor — é a RN-001. E só o veterinário responsável (além
-   da administração) vê o paciente e o tutor dele: entre com o veterinário para conferir, em
-   Pacientes e em Tutores. Para passar o paciente a outro profissional, use o botão
-   "Transferir" na lista ou no prontuário; os tratamentos em andamento, as sessões futuras e
-   o tutor vão junto. Toda exclusão, cancelamento e edição abre uma janela de confirmação
-   antes de gravar.*
-4. **Abra o prontuário do pet → Tratamentos → Novo tratamento.** Descreva o objetivo.
-5. **Prontuário → Registrar avaliação.** Preencha os cinco campos clínicos.
-   *Tente deixar um em branco: o sistema recusa e diz qual falta — é a RN-010.*
-6. **Agenda geral → Nova sessão.** Marque um horário.
-   *Tente marcar outra sessão no mesmo horário do mesmo veterinário: o sistema recusa — é a RN-002.*
+   *A clínica atende apenas cães: não há escolha de espécie, e a raça tem sugestões. A API
+   também recusa outra espécie.*
+   *O sistema não deixa salvar sem tutor nem sem veterinário responsável — é a RN-001. Mesmo
+   assim, qualquer veterinário da clínica vê e atende o paciente: crie um segundo veterinário e
+   entre com ele para conferir, em Pacientes e em Tutores. É isso que permite a um colega
+   atender o pet quando o responsável falta, sem transferência. A lista de pacientes só tem
+   dois botões por linha, **visualizar** (abre o prontuário) e **inativar**: paciente não é
+   excluído. Use os filtros de raça e de veterinário ao lado da busca. Em **Tutores**, cada
+   tutor aparece com os animais vinculados a ele. Para trocar o veterinário responsável, use
+   "Editar cadastro" no prontuário. Toda exclusão, cancelamento e edição abre uma janela de
+   confirmação antes de gravar, e o aviso de que deu certo aparece sobre a tela, no canto
+   inferior direito, sem empurrar o conteúdo.*
+4. **Abra o prontuário do pet → Registrar avaliação.** Preencha o motivo da consulta, as
+   observações e o possível diagnóstico.
+   *Tente deixar um em branco: o sistema recusa e diz qual falta — é a RN-010. A avaliação é
+   o começo do fluxo clínico: é dela que saem tratamentos, receitas e pedidos de exame.*
+5. **Prontuário → Avaliações → Criar tratamento** (no cartão da avaliação). Preencha nome,
+   tipo, descrição, duração prevista, frequência e sessões previstas, e escolha **Planejado**
+   ou **Em andamento**.
+   *Não existe "Novo tratamento" solto: todo tratamento nasce de uma avaliação. Na aba
+   Tratamentos ele mostra a avaliação de origem, e os botões editar, concluir e inativar —
+   inativar não apaga nada e pode ser desfeito; concluir é definitivo.*
+6. **Prontuário → Tratamentos → Registrar sessão** (no cartão do tratamento). É assim que a
+   sessão de fisioterapia realizada é registrada: preencha procedimentos, o que foi feito,
+   reação do animal, observações, relatório e sinais vitais, salve e anexe as fotos.
+   *Cada sessão registrada vira uma evolução: o sistema numera a sessão sozinho (1, 2, 3...),
+   a barra do tratamento avança e a primeira evolução põe um tratamento planejado em andamento.
+   No campo "Sessão" aparecem as sessões agendadas até hoje e ainda sem evolução; se a sessão
+   não estava agendada, escolha "Sessão de agora, sem agendamento", que entra na agenda já
+   concluída. O mesmo botão **Registrar sessão** existe no menu **Evoluções**, onde você
+   escolhe o animal e o tratamento.*
+   Para marcar as próximas sessões, use **Agenda geral → Nova sessão**.
+   *Tente marcar outra sessão no mesmo horário do mesmo veterinário: o sistema recusa — é a
+   RN-002. Na agenda, cada sessão também tem o botão **Registrar evolução**.*
 7. **Prontuário → Vacinação → Registrar.** Lance uma vacina com data da próxima dose.
    *Marque "Faz parte de um esquema com várias doses" e informe "dose 1 de 3": o sistema exige que a
    dose 2 venha depois da 1 e recusa uma dose 2 sem a 1 lançada. Escolha a recorrência
@@ -607,9 +643,19 @@ Faça nesta ordem, porque cada passo depende do anterior:
 10. **Entre como Apoio administrativo** (crie um usuário com esse perfil) e vá em **Agenda
     geral**: a recepção confirma e cancela sessões, mas não as conclui, que é tarefa do
     veterinário.
-11. **Prontuário → Receitas → Nova receita.** Adicione dois medicamentos, escolha o
-    **veterinário responsável** e emita. Depois clique em imprimir.
-    *A validade vai de 1 a 365 dias; cancelar uma receita pede o motivo.*
+11. **Prontuário → Avaliações → Emitir receita** (ou **Medicação → Nova receita**, escolhendo
+    a origem). Adicione dois medicamentos, escolha o **veterinário responsável** e emita.
+    Depois clique em imprimir.
+    *Toda receita vem de uma avaliação ou de uma evolução — a evolução também tem o botão
+    "Emitir receita desta evolução". A validade vai de 1 a 365 dias; cancelar uma receita pede
+    o motivo. No mesmo cartão da avaliação, **Pedir exames** gera o pedido de exames, que fica
+    na aba Exames e também pode ser impresso.*
+12. **Prontuário → Linha do tempo.** Clique num evento para abrir o registro completo.
+    *Cada evento mostra à esquerda a data (e a hora) em que foi feito. Os campos **De** e
+    **Até** filtram por período, e os botões de categoria filtram por tipo — por exemplo,
+    desligue "Evolução" para ver só avaliações, tratamentos, vacinas, receitas e exames.*
+13. **Menu Evoluções** (administrador e veterinário). Filtre por animal, tratamento, período,
+    veterinário e número da sessão; clique numa linha para abrir a evolução.
 
 > Sobre o campo "Veterinário responsável": ele aparece para você porque está logado como
 > administrador, que não é um profissional habilitado a prescrever. A receita é um documento
@@ -618,7 +664,7 @@ Faça nesta ordem, porque cada passo depende do anterior:
 > vazia, é porque ainda não existe veterinário cadastrado: volte ao passo 1.
 
 Depois **saia e entre como o tutor** que você criou. Ele deve ver o próprio pet, a agenda e o
-prontuário — **sem** as observações internas, e sem os menus Usuários, Relatórios e Auditoria.
+prontuário — **sem** as observações internas, e sem os menus Usuários e Auditoria.
 
 ### Teste 3 — O tutor cadastra um pet e a clínica vê na hora
 
@@ -680,7 +726,7 @@ npm --prefix testes i puppeteer-core@23
 node testes/teste-navegador.mjs
 ```
 
-Ele gera prints em `capturas/` e termina com `OK: 28   FALHAS: 0`.
+Ele gera prints em `capturas/` e termina com `OK: 44   FALHAS: 0`.
 
 E os testes das regras isoladas, que não precisam do sistema no ar:
 
@@ -688,7 +734,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Falhou: 0` (são 184 testes hoje; o número cresce a cada regra nova).
+Esperado: `Falhou: 0` (são 260 testes hoje; o número cresce a cada regra nova).
 
 ---
 
@@ -741,16 +787,25 @@ O paciente continua lá. Isso prova que ele está no disco, e não na memória.
 
 ### Jeito 4 — A trilha de auditoria
 
-Entre como administrador e abra o menu **Auditoria**. Cada cadastro, alteração, exclusão e até
-cada consulta a prontuário aparece ali, com quem fez, quando e de qual endereço de rede. É a
-mesma informação da tabela `RegistrosAuditoria`, só que numa tela legível — e dá para exportar
-em CSV para abrir no Excel.
+Entre como administrador e abra o menu **Auditoria**. Cada criação, alteração, inativação e
+exclusão de paciente, tutor, usuário e registro clínico aparece ali, com quem fez, quando e de
+qual endereço de rede — e dá para exportar em CSV para abrir no Excel. Logins e consultas a
+prontuário continuam gravados na tabela `RegistrosAuditoria`, mas ficam fora da tela, que se
+concentra no que mudou nos dados.
 
 ---
 
 ## Parte 8 — Fazer backup
 
 Os dados são seus e ninguém mais tem cópia. Faça backup antes de qualquer mexida grande:
+
+> **Atualizando para a versão com o novo fluxo clínico?** Faça o backup **antes** do
+> `docker compose up -d --build`. Ao iniciar, a API converte os registros existentes: cada
+> avaliação passa a pertencer ao animal, as antigas anamnese, exame físico e plano terapêutico
+> viram o campo "Observações", cada tratamento é ligado à primeira avaliação dele (ou a uma
+> avaliação de origem criada para ele, quando não tinha nenhuma), "Interrompido" vira
+> "Inativado" e as evoluções recebem o número da sessão. Essa conversão não tem volta
+> automática: para desfazer, só restaurando o backup.
 
 ```
 docker compose exec postgres pg_dump -U postgres vetcare_db > backup-vetcare.sql

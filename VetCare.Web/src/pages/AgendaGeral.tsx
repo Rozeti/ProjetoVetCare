@@ -159,18 +159,14 @@ export function AgendaGeral() {
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
       {aviso && (
-        <div className="mb-4">
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-            {aviso}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
       )}
 
       <Card className="mb-6 p-4">
@@ -269,7 +265,7 @@ export function AgendaGeral() {
         <Card>
           <SemDados
             icone={<CalendarRange size={40} />}
-            titulo="Não há atendimentos neste período"
+            titulo="Não há sessões neste período"
             descricao={
               ocultos.size > 0
                 ? 'Nenhuma sessão para os profissionais atualmente exibidos. Reative algum profissional na legenda acima.'

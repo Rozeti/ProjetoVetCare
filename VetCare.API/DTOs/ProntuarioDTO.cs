@@ -39,8 +39,12 @@ namespace VetCare.API.DTOs
 
         public List<PontoEvolucaoDTO> EvolucaoDor { get; set; } = new();
 
+        /// <summary>Avaliações do animal, cada uma com os tratamentos que originou.</summary>
+        public List<AvaliacaoDTO> Avaliacoes { get; set; } = new();
+
         public List<VacinaDTO> Vacinas { get; set; } = new();
         public List<PrescricaoDTO> Prescricoes { get; set; } = new();
+        public List<PedidoExameDTO> PedidosExame { get; set; } = new();
         public List<DocumentoDTO> Documentos { get; set; } = new();
         public List<TratamentoDTO> Tratamentos { get; set; } = new();
     }

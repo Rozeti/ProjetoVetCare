@@ -93,11 +93,12 @@ namespace VetCare.API.UseCases
             var janela = Math.Clamp(dias, 1, 365);
             var vacinas = await _vacinas.ObterVencendo(_usuarioAtual.ClinicaId, janela);
 
-            // RN-008: o veterinário só vê a prevenção dos pacientes sob sua responsabilidade.
+            // RN-008: no painel, o veterinário vê a prevenção dos pacientes sob sua
+            // responsabilidade. Ele alcança qualquer paciente, mas o painel é o do seu dia.
             if (_usuarioAtual.EhVeterinario)
             {
                 vacinas = vacinas
-                    .Where(v => AcessoAoPaciente.Permitido(_usuarioAtual, v.Vacina.Paciente))
+                    .Where(v => v.Vacina.Paciente?.VeterinarioResponsavelId == _usuarioAtual.VeterinarioId)
                     .ToList();
             }
 

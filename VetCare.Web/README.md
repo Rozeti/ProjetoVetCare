@@ -31,15 +31,18 @@ Scripts disponíveis:
 ```
 src/
 ├── components/     Layout com sidebar fixa, alertas clínicos, paginação, seletor de
-│   │               veterinário, janela de confirmação e gráfico de evolução
-│   └── ui/         primitivos (Modal com foco preso, Campo, Loader, etiquetas)
+│   │               veterinário e janela de confirmação
+│   └── ui/         primitivos (Modal com foco preso, Campo, Loader, etiquetas e
+│                   avisos que flutuam no canto inferior direito)
 ├── contexts/       AuthContext (sessão, perfil e permissões) e AtualizacoesContext
 │                   (long polling de GET /api/atualizacoes que acorda as telas)
 ├── hooks/          useCarregamento (estado de carga e erro) e useConfirmacao
 ├── pages/          uma tela por História de Usuário
-│   └── componentes/ carteira de vacinação, receituário, modais de agendamento,
-│                   atendimento, avaliação, tratamento, alerta clínico, bloqueios
-│                   de agenda e transferência de paciente
+│   └── componentes/ abas do prontuário (linha do tempo com data e filtro por
+│                   período, avaliações, tratamentos com as evoluções, medicação,
+│                   pedidos de exame, carteira de vacinação) e os modais de cadastro
+│                   do paciente, avaliação, tratamento, sessão e evolução, receita,
+│                   pedido de exame, alerta clínico, agendamento e bloqueios
 ├── services/       cliente HTTP e tratamento de erros da API
 ├── types/          contratos compartilhados com a API
 └── utils/          formatação, validações compartilhadas, paginação e impressão
@@ -53,8 +56,8 @@ em vez de ver uma tela de erro.
 
 | Perfil | Páginas |
 |---|---|
-| Administrador | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações, Relatórios, Auditoria, Usuários, Configurações, Perfil |
-| Veterinário | Painel, Agenda (com bloqueios), Pacientes, Tutores, Mensagens, Notificações, Relatórios, Perfil |
+| Administrador | Painel, Agenda geral, Pacientes, Tutores, Evoluções, Mensagens, Notificações, Auditoria, Usuários, Configurações, Perfil |
+| Veterinário | Painel, Agenda (com bloqueios), Pacientes, Tutores, Evoluções, Mensagens, Notificações, Perfil |
 | Apoio | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações, Usuários (somente consulta), Perfil |
 | Tutor | Meus pets, Minha agenda, Mensagens, Notificações, Perfil |
 

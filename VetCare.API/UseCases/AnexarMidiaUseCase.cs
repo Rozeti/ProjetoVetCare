@@ -123,7 +123,7 @@ namespace VetCare.API.UseCases
 
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, sessao.Tratamento?.Paciente))
             {
-                return Resultado<List<MidiaDTO>>.NaoAutorizado("Esta sessão não pertence a um pet sob sua responsabilidade.");
+                return Resultado<List<MidiaDTO>>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
             var midias = await _midias.ObterPorSessao(sessaoId);

@@ -130,11 +130,25 @@ try {
   await esperarTexto('Pacientes');
   const temTabela = await pagina.$('table');
   registrar('HU-003 lista de pacientes renderiza', !!temTabela);
+
+  // A lista só visualiza e inativa; o cadastro, a vacina e a transferência ficam no prontuário.
+  const acoesPorLinha = await pagina
+    .$$eval('table tbody tr', (linhas) =>
+      linhas.map((l) => l.querySelectorAll('td:last-child a, td:last-child button').length),
+    )
+    .catch(() => []);
+  registrar(
+    'Pacientes: ações da lista reduzidas a visualizar e inativar',
+    acoesPorLinha.length > 0 && acoesPorLinha.every((n) => n <= 2),
+    `ações por linha: ${[...new Set(acoesPorLinha)].join(', ')}`,
+  );
+  const filtroRaca = await pagina.$('select[aria-label="Filtrar por raça"]');
+  registrar('Pacientes: filtro por raça', !!filtroRaca);
   await capturar('03-pacientes');
 
   // ---- Prontuário (HU-011)
-  // Abre o paciente de demonstração, que possui avaliação e atendimentos: o
-  // gráfico de evolução só tem o que desenhar quando existem registros.
+  // Abre o paciente de demonstração, que possui avaliação, tratamento e evoluções: a linha
+  // do tempo e o tratamento só têm o que mostrar quando existem registros.
   const PACIENTE_COM_DADOS = process.env.PACIENTE_DEMO ?? 'Thor';
 
   const linkProntuario = await pagina
@@ -158,22 +172,65 @@ try {
     registrar('HU-011 abas do prontuário', abas.length >= 4, abas.join(' | '));
     await capturar('04-prontuario');
 
-    // Aba de evolução (HU-011, CA-3)
-    const indiceEvolucao = abas.findIndex((t) => t.startsWith('Evolução'));
-    if (indiceEvolucao >= 0) {
-      const botoes = await pagina.$$('[role="tab"]');
-      await botoes[indiceEvolucao].click();
-      await esperarTexto('Evolução de peso');
-      const temSvg = await pagina.$('svg[role="img"]');
-      registrar('HU-011 CA-3 gráfico de evolução de peso', !!temSvg);
-      await capturar('05-evolucao');
+    // Linha do tempo: selecionar um evento abre o registro completo.
+    const abriuRegistro = await pagina
+      .evaluate(() => {
+        const evento = document.querySelector('ol li button');
+        evento?.click();
+        return !!evento;
+      })
+      .catch(() => false);
+    const registroVisivel = abriuRegistro
+      ? await pagina.waitForSelector('[role="dialog"]', { timeout: 5000 }).then(() => true).catch(() => false)
+      : false;
+    registrar('Linha do tempo: o evento abre o registro completo', registroVisivel);
+    if (registroVisivel) {
+      await capturar('04a-registro-completo');
+      await pagina.keyboard.press('Escape');
     }
+
+    // A aba de gráficos saiu do prontuário, e a de receitas passou a se chamar Medicação.
+    registrar(
+      'Prontuário sem a aba de gráficos e com a aba Medicação',
+      !abas.some((t) => t.startsWith('Gráficos')) && abas.some((t) => t.startsWith('Medicação')),
+      abas.join(' | '),
+    );
+
+    // Linha do tempo: cada evento traz a data em que foi feito, e o período filtra a lista.
+    const datasDosEventos = await pagina.$$eval('ol li button', (bs) =>
+      bs.map((b) => b.querySelector('time')?.textContent?.trim() ?? ''),
+    );
+    registrar(
+      'Linha do tempo: cada evento mostra a data em que foi feito',
+      datasDosEventos.length > 0 && datasDosEventos.every((d) => /\d{2}\/\d{2}\/\d{4}/.test(d)),
+      `${datasDosEventos.length} eventos, o primeiro em ${datasDosEventos[0] ?? '—'}`,
+    );
+
+    // O campo de data é controlado pelo React: o valor entra pelo setter nativo mais um "input".
+    const filtrarDesde = (valor) =>
+      pagina.evaluate((dia) => {
+        const campo = document.querySelector('input[type="date"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(campo, dia);
+        campo.dispatchEvent(new Event('input', { bubbles: true }));
+      }, valor);
+
+    await filtrarDesde('2099-01-01');
+    const periodoVazio = await esperarTexto('Nenhum evento no período escolhido').then(() => true).catch(() => false);
+    await capturar('04b-linha-do-tempo-periodo');
+    await filtrarDesde('');
+    const listaDeVolta = await pagina
+      .waitForFunction((total) => document.querySelectorAll('ol li button').length === total, { timeout: 5000 }, datasDosEventos.length)
+      .then(() => true)
+      .catch(() => false);
+    registrar('Linha do tempo: filtro por período', periodoVazio && listaDeVolta);
 
     // As demais abas precisam abrir sem erro: cada uma tem um texto próprio de cabeçalho.
     const abasEsperadas = [
+      { prefixo: 'Avaliações', texto: 'Avaliação de', captura: '05c-avaliacoes' },
+      { prefixo: 'Tratamentos', texto: 'Evoluções deste tratamento', captura: '05d-tratamentos' },
       { prefixo: 'Vacinação', texto: 'Carteira de vacinação', captura: '05a-vacinacao' },
-      { prefixo: 'Receitas', texto: 'Receituário', captura: '05b-receitas' },
-      { prefixo: 'Tratamentos', texto: 'Tratamento', captura: null },
+      { prefixo: 'Medicação', texto: 'Receitas com os medicamentos prescritos', captura: '05b-medicacao' },
+      { prefixo: 'Exames', texto: 'Pedidos de exame', captura: '05e-exames' },
       { prefixo: 'Documentos', texto: 'Documento', captura: null },
     ];
 
@@ -190,6 +247,54 @@ try {
       if (abriu && esperada.captura) await capturar(esperada.captura);
     }
 
+    // O tratamento nasce de uma avaliação e mostra só as evoluções dele.
+    const indiceTratamentos = abas.findIndex((t) => t.startsWith('Tratamentos'));
+    if (indiceTratamentos >= 0) {
+      const botoes = await pagina.$$('[role="tab"]');
+      await botoes[indiceTratamentos].click();
+      await esperarTexto('Evoluções deste tratamento');
+      const doTratamento = await pagina.evaluate(() => ({
+        origem: document.body.innerText.includes('Avaliação de origem'),
+        expandiu: (() => {
+          const botao = [...document.querySelectorAll('button[aria-expanded]')].find((b) =>
+            b.innerText.includes('Evoluções deste tratamento'),
+          );
+          botao?.click();
+          return !!botao;
+        })(),
+      }));
+      await new Promise((r) => setTimeout(r, 400));
+      const evolucoesVisiveis = await pagina.evaluate(() => document.body.innerText.includes('Histórico completo do animal'));
+      registrar(
+        'Tratamento mostra a avaliação de origem e as próprias evoluções',
+        doTratamento.origem && doTratamento.expandiu && evolucoesVisiveis,
+      );
+      await capturar('05f-tratamento-evolucoes');
+
+      // A sessão de fisioterapia realizada é registrada no próprio tratamento e vira a
+      // evolução seguinte; a sessão sem agendamento é sempre uma das opções.
+      const abriuSessao = await pagina.evaluate(() => {
+        const botao = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Registrar sessão');
+        botao?.click();
+        return !!botao;
+      });
+      const formularioDaSessao = abriuSessao
+        ? await esperarTexto('Registrar sessão realizada').then(() => true).catch(() => false)
+        : false;
+      const opcoesDeSessao = formularioDaSessao
+        ? await pagina.$$eval('[role="dialog"] select option', (os) => os.map((o) => o.textContent.trim()))
+        : [];
+      registrar(
+        'Tratamento: Registrar sessão abre a evolução com a escolha da sessão',
+        opcoesDeSessao.some((o) => o.includes('sem agendamento')),
+        opcoesDeSessao.join(' | '),
+      );
+      if (formularioDaSessao) {
+        await capturar('05h-registrar-sessao');
+        await pagina.keyboard.press('Escape');
+      }
+    }
+
     // Carteira com filtro e paginação: a aba Vacinação tem busca e seletor de situação.
     const indiceVacinas = abas.findIndex((t) => t.startsWith('Vacinação'));
     if (indiceVacinas >= 0) {
@@ -201,6 +306,35 @@ try {
     }
   } else {
     registrar('HU-011 prontuário', false, 'nenhum paciente na tabela');
+  }
+
+  // ---- Evoluções: filtros por animal, tratamento, período, veterinário e sessão
+  await irPara(`/evolucoes`, 'networkidle2');
+  await esperarTexto('Evoluções');
+  const telaEvolucoes = await pagina.evaluate(() => ({
+    tabela: !!document.querySelector('table'),
+    filtros: document.querySelectorAll('select, input[type="date"], input[type="number"]').length,
+  }));
+  registrar(
+    'Tela de evoluções com filtros e lista',
+    telaEvolucoes.tabela && telaEvolucoes.filtros >= 5,
+    `${telaEvolucoes.filtros} filtros`,
+  );
+  await capturar('05g-evolucoes');
+
+  // O registro da sessão também começa por aqui: primeiro o animal e o tratamento.
+  const abriuEscolha = await pagina.evaluate(() => {
+    const botao = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Registrar sessão');
+    botao?.click();
+    return !!botao;
+  });
+  const escolhaDoTratamento = abriuEscolha
+    ? await esperarTexto('vira uma evolução numerada do tratamento').then(() => true).catch(() => false)
+    : false;
+  registrar('Evoluções: Registrar sessão escolhe o animal e o tratamento', escolhaDoTratamento);
+  if (escolhaDoTratamento) {
+    await capturar('05i-evolucoes-registrar-sessao');
+    await pagina.keyboard.press('Escape');
   }
 
   // ---- Agenda geral (HU-005)
@@ -220,21 +354,78 @@ try {
   await irPara(`/auditoria`, 'networkidle2');
   await esperarTexto('Auditoria');
   registrar('Trilha de auditoria acessível ao administrador', true);
+  const trilha = await pagina.evaluate(() => ({
+    acoes: [...document.querySelectorAll('#acao option')].map((o) => o.textContent.trim()),
+    texto: document.body.innerText,
+  }));
+  registrar(
+    'Auditoria mostra só criações, alterações, inativações e exclusões',
+    !trilha.acoes.some((a) => /login|consulta|download/i.test(a)) && !/\bLogin(Negado)?\b/.test(trilha.texto),
+    trilha.acoes.join(', '),
+  );
   await capturar('07b-auditoria');
 
+  // Os tutores aparecem como os pacientes: em tabela, com a paginação no rodapé.
   await irPara(`/tutores`, 'networkidle2');
   await esperarTexto('Tutores');
-  registrar('Tela de tutores renderiza', true);
+  await pagina.waitForSelector('table', { timeout: 8000 }).catch(() => null);
+  const listaDeTutores = await pagina.evaluate(() => ({
+    tabela: !!document.querySelector('table'),
+    paginacao: document.body.innerText.includes('Exibindo'),
+  }));
+  registrar('Tela de tutores lista em tabela com paginação', listaDeTutores.tabela && listaDeTutores.paginacao);
+  const animaisDosTutores = await pagina.$$eval('table a[href^="/prontuario/"]', (as) => as.length).catch(() => 0);
+  registrar('Tela de tutores mostra os animais vinculados', animaisDosTutores > 0, `${animaisDosTutores} animal(is)`);
+  await capturar('07c-tutores');
+
+  // Digitação contínua num formulário: o foco fica no campo a cada tecla, sem pular
+  // para o botão de fechar a janela.
+  await pagina.evaluate(() => {
+    [...document.querySelectorAll('button')].find((b) => b.innerText.includes('Novo tutor'))?.click();
+  });
+  await esperarTexto('O cadastro cria também o acesso do tutor');
+  await pagina.keyboard.type('Ana Beatriz', { delay: 40 });
+  const digitado = await pagina.evaluate(() => ({
+    elemento: document.activeElement?.tagName ?? '',
+    valor: document.activeElement?.value ?? '',
+  }));
+  registrar(
+    'Formulário mantém o foco no campo durante a digitação',
+    digitado.elemento === 'INPUT' && digitado.valor === 'Ana Beatriz',
+    `${digitado.elemento}: "${digitado.valor}"`,
+  );
+  await pagina.keyboard.press('Escape');
+
+  // Novo usuário: tutores têm tela própria, então o perfil Tutor não é oferecido.
+  await irPara(`/usuarios`, 'networkidle2');
+  await pagina.evaluate(() => {
+    [...document.querySelectorAll('button')].find((b) => b.innerText.includes('Novo usuário'))?.click();
+  });
+  await esperarTexto('Cadastro da equipe da clínica');
+  const perfisOferecidos = await pagina.$$eval('[role="dialog"] select option', (os) => os.map((o) => o.textContent.trim()));
+  registrar(
+    'Novo usuário não oferece o perfil Tutor',
+    perfisOferecidos.length >= 3 && !perfisOferecidos.some((p) => p.startsWith('Tutor')),
+    perfisOferecidos.join(', '),
+  );
+  await pagina.keyboard.press('Escape');
+
+  // Novo paciente: a clínica atende apenas cães, então não há escolha de espécie.
+  await irPara(`/pacientes`, 'networkidle2');
+  await pagina.evaluate(() => {
+    [...document.querySelectorAll('button')].find((b) => b.innerText.includes('Novo paciente'))?.click();
+  });
+  await pagina.waitForSelector('[role="dialog"]', { timeout: 8000 });
+  const temEspecie = await pagina.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"] label')].some((l) => l.innerText.trim().startsWith('Espécie')),
+  );
+  registrar('Cadastro de paciente sem escolha de espécie (só cães)', !temEspecie);
+  await capturar('07d-novo-paciente');
+  await pagina.keyboard.press('Escape');
 
   await irPara(`/configuracoes`, 'networkidle2');
   await esperarTexto('Configurações da clínica');
   registrar('Configurações da clínica renderizam', true);
-
-  // ---- Relatórios (HU-017)
-  await irPara(`/relatorios`, 'networkidle2');
-  await esperarTexto('Relatórios de produtividade');
-  registrar('HU-017 relatório de produtividade renderiza', true);
-  await capturar('08-relatorios');
 
   // ---- Notificações (HU-015)
   await irPara(`/notificacoes`, 'networkidle2');
@@ -245,6 +436,21 @@ try {
   await irPara(`/mensagens`, 'networkidle2');
   await esperarTexto('Mensagens');
   registrar('HU-014 tela de mensagens renderiza', true);
+
+  // A conversa rola por dentro: a página não cresce conforme chegam mensagens.
+  await pagina.evaluate(() => {
+    document.querySelector('ul li button')?.click();
+  });
+  await new Promise((r) => setTimeout(r, 1200));
+  const alturaDaPagina = await pagina.evaluate(() => ({
+    pagina: document.documentElement.scrollHeight,
+    janela: window.innerHeight,
+  }));
+  registrar(
+    'Mensagens: só a conversa rola, a página cabe na janela',
+    alturaDaPagina.pagina <= alturaDaPagina.janela + 80,
+    `${alturaDaPagina.pagina}px de página para ${alturaDaPagina.janela}px de janela`,
+  );
   await capturar('09-mensagens');
 
   // ---- Responsividade (RNF-006)
@@ -266,10 +472,10 @@ try {
 
   const menuTutor = await pagina.$$eval('aside nav a', (as) => as.map((a) => a.textContent.trim()));
   const tutorVeUsuarios = menuTutor.some((t) => t.includes('Usuários'));
-  const tutorVeRelatorios = menuTutor.some((t) => t.includes('Relatórios'));
+  const tutorVeAuditoria = menuTutor.some((t) => t.includes('Auditoria'));
   registrar(
-    'RN-005 tutor não vê Usuários nem Relatórios no menu',
-    !tutorVeUsuarios && !tutorVeRelatorios,
+    'RN-005 tutor não vê Usuários nem Auditoria no menu',
+    !tutorVeUsuarios && !tutorVeAuditoria,
     menuTutor.join(', '),
   );
 

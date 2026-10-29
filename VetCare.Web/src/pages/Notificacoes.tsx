@@ -136,18 +136,14 @@ export function Notificacoes() {
       />
 
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
       {aviso && (
-        <div className="mb-4">
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-            {aviso}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
       )}
 
       <Card className="mb-4 p-4">

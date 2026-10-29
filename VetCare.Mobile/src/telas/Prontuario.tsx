@@ -13,24 +13,39 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { RotasDaPilha } from '../navegacao/rotas';
 import { api, mensagemDeErro, urlDoArquivo } from '../services/api';
 import { useAtualizacao } from '../contextos/AtualizacoesContext';
-import type { ItemLinhaTempo, Prescricao, Prontuario as ProntuarioDTO, SituacaoDose, Vacina } from '../tipos';
+import type {
+  ItemLinhaTempo,
+  PedidoExame,
+  Prescricao,
+  Prontuario as ProntuarioDTO,
+  SituacaoDose,
+  Tratamento,
+  Vacina,
+} from '../tipos';
 import { Alerta, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
-import { GraficoBarras } from '../componentes/GraficoBarras';
 import { AlertasClinicos } from '../componentes/AlertasClinicos';
 import { cores, espacos, estiloEscalaDor, raios } from '../tema';
 import { formatarData, formatarDataHora, formatarDia, formatarPeso } from '../utils/formato';
 
-type Aba = 'historico' | 'evolucao' | 'vacinas' | 'receitas' | 'tratamentos' | 'documentos';
+type Aba = 'historico' | 'tratamentos' | 'vacinas' | 'medicacao' | 'exames' | 'documentos';
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: 'historico', rotulo: 'Histórico' },
-  { valor: 'evolucao', rotulo: 'Evolução' },
-  { valor: 'vacinas', rotulo: 'Vacinação' },
-  { valor: 'receitas', rotulo: 'Receitas' },
   { valor: 'tratamentos', rotulo: 'Tratamentos' },
+  { valor: 'vacinas', rotulo: 'Vacinação' },
+  { valor: 'medicacao', rotulo: 'Medicação' },
+  { valor: 'exames', rotulo: 'Exames' },
   { valor: 'documentos', rotulo: 'Documentos' },
 ];
+
+/** Cores da situação do tratamento, iguais às do portal web. */
+const PALETA_TRATAMENTO: Record<string, { fundo: string; texto: string }> = {
+  Planejado: { fundo: cores.alertaClaro, texto: '#92400e' },
+  'Em Andamento': { fundo: cores.marcaClara, texto: cores.marcaEscura },
+  Concluído: { fundo: cores.sucessoClaro, texto: '#065f46' },
+  Inativado: { fundo: cores.fundo, texto: cores.textoSecundario },
+};
 
 /** Cores da situação da dose, iguais às do portal web. */
 const PALETA_DOSE: Record<SituacaoDose, { fundo: string; texto: string }> = {
@@ -94,6 +109,7 @@ export function Prontuario() {
       'avaliacoes',
       'atendimentos',
       'prescricoes',
+      'pedidosexame',
       'vacinas',
       'alergias',
       'documentos',
@@ -207,58 +223,13 @@ export function Prontuario() {
 
           {aba === 'historico' && <Historico itens={prontuario.historico} />}
 
-          {aba === 'evolucao' && (
-            <>
-              <Cartao estilo={estilos.cartaoGrafico}>
-                <GraficoBarras titulo="Evolução de peso" pontos={prontuario.evolucaoPeso} unidade="kg" />
-              </Cartao>
-
-              <Cartao estilo={estilos.cartaoGrafico}>
-                <GraficoBarras
-                  titulo="Escala de dor"
-                  pontos={prontuario.evolucaoDor}
-                  cor={cores.perigo}
-                  minimoFixo={0}
-                  maximoFixo={10}
-                />
-              </Cartao>
-            </>
-          )}
-
           {aba === 'vacinas' && <Carteira vacinas={prontuario.vacinas} />}
 
-          {aba === 'receitas' && <Receitas prescricoes={prontuario.prescricoes} />}
+          {aba === 'medicacao' && <Medicacao prescricoes={prontuario.prescricoes} />}
 
-          {aba === 'tratamentos' &&
-            (prontuario.tratamentos.length === 0 ? (
-              <Cartao>
-                <SemDados icone="🩺" titulo="Nenhum tratamento registrado" />
-              </Cartao>
-            ) : (
-              prontuario.tratamentos.map((tratamento) => (
-                <Cartao key={tratamento.id} estilo={estilos.cartaoItem}>
-                  <Text style={estilos.objetivo}>{tratamento.objetivoTerapeutico}</Text>
-                  <Text style={estilos.detalheSuave}>
-                    {tratamento.nomeVeterinario} · {tratamento.status}
-                  </Text>
+          {aba === 'exames' && <PedidosExame pedidos={prontuario.pedidosExame} />}
 
-                  <Text style={estilos.detalheSuave}>
-                    {tratamento.sessoesConcluidas} de {tratamento.totalSessoes} sessões concluídas
-                  </Text>
-
-                  {tratamento.totalSessoes > 0 && (
-                    <View style={estilos.progressoTrilha}>
-                      <View
-                        style={[
-                          estilos.progressoBarra,
-                          { width: `${(tratamento.sessoesConcluidas / tratamento.totalSessoes) * 100}%` },
-                        ]}
-                      />
-                    </View>
-                  )}
-                </Cartao>
-              ))
-            ))}
+          {aba === 'tratamentos' && <Tratamentos tratamentos={prontuario.tratamentos} />}
 
           {aba === 'documentos' &&
             (prontuario.documentos.length === 0 ? (
@@ -298,7 +269,105 @@ export function Prontuario() {
   );
 }
 
-/** HU-011, CA-1: avaliações e atendimentos em ordem cronológica. */
+/**
+ * Tratamentos do pet, cada um encaminhado a partir de uma avaliação, com o progresso das
+ * evoluções registradas sobre as sessões previstas.
+ */
+function Tratamentos({ tratamentos }: { tratamentos: Tratamento[] }) {
+  if (tratamentos.length === 0) {
+    return (
+      <Cartao>
+        <SemDados icone="🩺" titulo="Nenhum tratamento registrado" />
+      </Cartao>
+    );
+  }
+
+  return (
+    <>
+      {tratamentos.map((tratamento) => {
+        const paleta = PALETA_TRATAMENTO[tratamento.status] ?? PALETA_TRATAMENTO.Inativado;
+        const progresso = Math.min(
+          100,
+          (tratamento.evolucoesRegistradas / Math.max(1, tratamento.sessoesPrevistas)) * 100,
+        );
+
+        return (
+          <Cartao key={tratamento.id} estilo={estilos.cartaoItem}>
+            <View style={estilos.itemTopo}>
+              <Text style={estilos.objetivo}>{tratamento.nome}</Text>
+              <Etiqueta texto={tratamento.status} fundo={paleta.fundo} cor={paleta.texto} />
+            </View>
+
+            <Text style={estilos.detalheSuave}>
+              {tratamento.tipo} · {tratamento.nomeVeterinario}
+            </Text>
+            <Text style={estilos.itemDescricao}>{tratamento.descricao}</Text>
+            <Text style={estilos.detalheSuave}>
+              Duração prevista: {tratamento.duracaoPrevista} · {tratamento.frequencia}
+            </Text>
+            {tratamento.dataAvaliacao ? (
+              <Text style={estilos.detalheSuave}>A partir da avaliação de {formatarData(tratamento.dataAvaliacao)}</Text>
+            ) : null}
+
+            <Text style={estilos.detalheSuave}>
+              {tratamento.evolucoesRegistradas} de {tratamento.sessoesPrevistas} sessões realizadas
+            </Text>
+            <View style={estilos.progressoTrilha}>
+              <View style={[estilos.progressoBarra, { width: `${progresso}%` }]} />
+            </View>
+          </Cartao>
+        );
+      })}
+    </>
+  );
+}
+
+/** Pedidos de exame emitidos pela clínica a partir das avaliações do pet. */
+function PedidosExame({ pedidos }: { pedidos: PedidoExame[] }) {
+  if (pedidos.length === 0) {
+    return (
+      <Cartao>
+        <SemDados icone="🧪" titulo="Nenhum pedido de exame" descricao="Os exames solicitados pela clínica aparecem aqui." />
+      </Cartao>
+    );
+  }
+
+  return (
+    <>
+      {pedidos.map((pedido) => (
+        <Cartao key={pedido.id} estilo={estilos.cartaoItem}>
+          <View style={estilos.itemTopo}>
+            <Text style={estilos.itemTipo}>Pedido de {formatarData(pedido.dataEmissao)}</Text>
+            <Etiqueta
+              texto={pedido.status}
+              fundo={pedido.status === 'Ativo' ? cores.sucessoClaro : cores.fundo}
+              cor={pedido.status === 'Ativo' ? '#065f46' : cores.textoSecundario}
+            />
+          </View>
+
+          <Text style={estilos.detalheSuave}>
+            {pedido.nomeVeterinario}
+            {pedido.crmv ? ` · ${pedido.crmv}` : ''}
+          </Text>
+
+          {pedido.exames
+            .split(/\r?\n/)
+            .map((exame) => exame.trim())
+            .filter(Boolean)
+            .map((exame, indice) => (
+              <View key={`${exame}-${indice}`} style={estilos.medicamento}>
+                <Text style={estilos.medicamentoNome}>{exame}</Text>
+              </View>
+            ))}
+
+          {pedido.justificativa ? <Text style={estilos.itemDetalhes}>{pedido.justificativa}</Text> : null}
+        </Cartao>
+      ))}
+    </>
+  );
+}
+
+/** HU-011, CA-1: principais eventos clínicos do pet, do mais recente ao mais antigo. */
 function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
   const [expandido, setExpandido] = useState<string | null>(null);
 
@@ -308,7 +377,7 @@ function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
         <SemDados
           icone="🩺"
           titulo="Prontuário ainda sem registros"
-          descricao="Assim que a primeira avaliação ou atendimento for registrado, o histórico aparece aqui."
+          descricao="Avaliações, tratamentos, evoluções, vacinas, receitas e exames aparecem aqui assim que forem registrados."
         />
       </Cartao>
     );
@@ -317,11 +386,11 @@ function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
   return (
     <>
       {itens.map((item) => {
-        const aberto = expandido === item.id;
+        const aberto = expandido === item.chave;
         const paletaDor = item.escalaDor != null ? estiloEscalaDor(item.escalaDor) : null;
 
         return (
-          <Cartao key={item.id} estilo={estilos.cartaoItem}>
+          <Cartao key={item.chave} estilo={estilos.cartaoItem}>
             <View style={estilos.itemTopo}>
               <Text style={estilos.itemTipo}>{item.tipo}</Text>
 
@@ -336,7 +405,10 @@ function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
             </View>
 
             <Text style={estilos.detalheSuave}>
-              {formatarDataHora(item.data)}
+              {item.categoria}
+              {' · '}
+              {/* A vacinação é um dia de calendário: sem hora e sem deslocamento de fuso. */}
+              {item.categoria === 'Vacinação' ? formatarDia(item.data) : formatarDataHora(item.data)}
               {item.autor ? ` · ${item.autor}` : ''}
             </Text>
 
@@ -378,7 +450,7 @@ function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
 
             {Object.keys(item.campos).length > 0 && (
               <TouchableOpacity
-                onPress={() => setExpandido(aberto ? null : item.id)}
+                onPress={() => setExpandido(aberto ? null : item.chave)}
                 accessibilityRole="button"
               >
                 <Text style={estilos.verMais}>{aberto ? 'Recolher' : 'Ver detalhes'}</Text>
@@ -447,8 +519,8 @@ function Carteira({ vacinas }: { vacinas: Vacina[] }) {
   );
 }
 
-/** Receitas emitidas pela clínica, disponíveis para consulta a qualquer momento. */
-function Receitas({ prescricoes }: { prescricoes: Prescricao[] }) {
+/** Medicação do pet: as receitas emitidas pela clínica, disponíveis para consulta a qualquer momento. */
+function Medicacao({ prescricoes }: { prescricoes: Prescricao[] }) {
   if (prescricoes.length === 0) {
     return (
       <Cartao>
@@ -479,6 +551,7 @@ function Receitas({ prescricoes }: { prescricoes: Prescricao[] }) {
             {prescricao.crmv ? ` · ${prescricao.crmv}` : ''}
             {prescricao.validaAte ? ` · válida até ${formatarDia(prescricao.validaAte)}` : ''}
           </Text>
+          {prescricao.origem ? <Text style={estilos.detalheSuave}>Origem: {prescricao.origem}</Text> : null}
 
           {prescricao.itens.map((item) => (
             <View key={item.id} style={estilos.medicamento}>
@@ -599,9 +672,6 @@ const estilos = StyleSheet.create({
   },
   abaTextoAtivo: {
     color: '#ffffff',
-  },
-  cartaoGrafico: {
-    marginBottom: espacos.md,
   },
   cartaoItem: {
     marginBottom: espacos.md,

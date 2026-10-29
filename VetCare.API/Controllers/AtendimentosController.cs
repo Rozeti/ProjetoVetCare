@@ -26,6 +26,24 @@ namespace VetCare.API.Controllers
             return this.ResponderCriado(await _useCase.Executar(dto));
         }
 
+        /// <summary>
+        /// Tela de evoluções: filtra por animal, tratamento, intervalo de datas, profissional e
+        /// número da sessão. Com um tratamento informado, só as evoluções dele, em ordem cronológica.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> Listar(
+            [FromQuery] Guid? pacienteId,
+            [FromQuery] Guid? tratamentoId,
+            [FromQuery] DateTime? inicio,
+            [FromQuery] DateTime? fim,
+            [FromQuery] Guid? veterinarioId,
+            [FromQuery] int? numeroSessao,
+            [FromQuery] ParametrosPagina paginacao)
+        {
+            return this.Responder(await _useCase.Listar(
+                pacienteId, tratamentoId, inicio, fim, veterinarioId, numeroSessao, paginacao));
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> ObterPorId(Guid id)
         {

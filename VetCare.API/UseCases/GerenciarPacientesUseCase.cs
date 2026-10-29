@@ -17,6 +17,7 @@ namespace VetCare.API.UseCases
         private readonly IVacinaRepository _vacinas;
         private readonly ITratamentoRepository _tratamentos;
         private readonly IVeterinarioRepository _veterinarios;
+        private readonly NotificacaoService _notificacoes;
         private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
 
@@ -28,6 +29,7 @@ namespace VetCare.API.UseCases
             IVacinaRepository vacinas,
             ITratamentoRepository tratamentos,
             IVeterinarioRepository veterinarios,
+            NotificacaoService notificacoes,
             AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
         {
@@ -38,14 +40,15 @@ namespace VetCare.API.UseCases
             _vacinas = vacinas;
             _tratamentos = tratamentos;
             _veterinarios = veterinarios;
+            _notificacoes = notificacoes;
             _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
         }
 
         /// <summary>
-        /// Cada perfil enxerga um recorte: o tutor os próprios pets (HU-013, CA-1), o
-        /// veterinário os pacientes sob sua responsabilidade, e administração e apoio a
-        /// clínica inteira, com os filtros por veterinário e "sem responsável" à disposição.
+        /// O tutor enxerga os próprios pets (HU-013, CA-1); a equipe clínica inteira, inclusive
+        /// todos os veterinários, enxerga a clínica toda, com os filtros por veterinário
+        /// responsável e "sem responsável" à disposição.
         /// </summary>
         public async Task<Resultado<PaginaDe<PetDTO>>> Listar(
             Guid? tutorId,
@@ -53,7 +56,8 @@ namespace VetCare.API.UseCases
             bool apenasSemResponsavel,
             string? busca,
             bool? ativo,
-            ParametrosPagina parametros)
+            ParametrosPagina parametros,
+            string? raca = null)
         {
             var filtro = new FiltroDePacientes
             {
@@ -61,7 +65,8 @@ namespace VetCare.API.UseCases
                 VeterinarioResponsavelId = veterinarioId,
                 ApenasSemResponsavel = apenasSemResponsavel,
                 Busca = busca,
-                Ativo = ativo
+                Ativo = ativo,
+                Raca = raca
             };
 
             if (_usuarioAtual.EhTutor)
@@ -72,24 +77,7 @@ namespace VetCare.API.UseCases
                         PaginaDe<PetDTO>.Criar(Array.Empty<PetDTO>(), 1, parametros.Tamanho, 0));
                 }
 
-                filtro = new FiltroDePacientes { TutorId = _usuarioAtual.TutorId, Busca = busca, Ativo = ativo };
-            }
-            else if (_usuarioAtual.EhVeterinario)
-            {
-                if (_usuarioAtual.VeterinarioId == null)
-                {
-                    return Resultado<PaginaDe<PetDTO>>.Ok(
-                        PaginaDe<PetDTO>.Criar(Array.Empty<PetDTO>(), 1, parametros.Tamanho, 0));
-                }
-
-                // O recorte do veterinário vem do token; o filtro da URL não o amplia.
-                filtro = new FiltroDePacientes
-                {
-                    TutorId = tutorId,
-                    VeterinarioResponsavelId = _usuarioAtual.VeterinarioId,
-                    Busca = busca,
-                    Ativo = ativo
-                };
+                filtro = new FiltroDePacientes { TutorId = _usuarioAtual.TutorId, Busca = busca, Ativo = ativo, Raca = raca };
             }
 
             var pagina = await _pets.Listar(_usuarioAtual.ClinicaId, filtro, parametros);
@@ -105,6 +93,19 @@ namespace VetCare.API.UseCases
             }));
         }
 
+        /// <summary>Raças dos pacientes que quem consulta enxerga, para o filtro da lista.</summary>
+        public async Task<Resultado<List<string>>> ListarRacas()
+        {
+            var filtro = new FiltroDePacientes();
+
+            if (_usuarioAtual.EhTutor)
+            {
+                filtro = new FiltroDePacientes { TutorId = _usuarioAtual.TutorId ?? Guid.Empty };
+            }
+
+            return Resultado<List<string>>.Ok(await _pets.ListarRacas(_usuarioAtual.ClinicaId, filtro));
+        }
+
         /// <summary>
         /// Lista enxuta para os seletores (agendamento, mensagens): todos os pacientes ativos
         /// que quem consulta enxerga, sem o teto de página da listagem.
@@ -116,10 +117,6 @@ namespace VetCare.API.UseCases
             if (_usuarioAtual.EhTutor)
             {
                 filtro = new FiltroDePacientes { TutorId = _usuarioAtual.TutorId ?? Guid.Empty };
-            }
-            else if (_usuarioAtual.EhVeterinario)
-            {
-                filtro = new FiltroDePacientes { VeterinarioResponsavelId = _usuarioAtual.VeterinarioId ?? Guid.Empty };
             }
 
             var pets = await _pets.ListarParaSelecao(_usuarioAtual.ClinicaId, filtro);
@@ -212,7 +209,6 @@ namespace VetCare.API.UseCases
                 return Resultado<PetDTO>.Invalido("O tutor informado não foi encontrado nesta clínica.");
             }
 
-            // O veterinário cadastra pacientes para os tutores que já enxerga (ou que ainda não têm pet).
             if (!AcessoAoTutor.Permitido(_usuarioAtual, tutor))
             {
                 return Resultado<PetDTO>.NaoAutorizado("Você não tem acesso ao tutor informado.");
@@ -221,6 +217,13 @@ namespace VetCare.API.UseCases
             if (dto.DataNascimento.Date > RelogioDaClinica.Padrao.Hoje)
             {
                 return Resultado<PetDTO>.Invalido("A data de nascimento não pode ser futura.");
+            }
+
+            var (especie, erroDeEspecie) = EspecieDoPaciente(dto.Especie, especieAtual: null);
+
+            if (erroDeEspecie != null)
+            {
+                return Resultado<PetDTO>.Invalido(erroDeEspecie);
             }
 
             var microchip = dto.Microchip.Trim();
@@ -243,7 +246,7 @@ namespace VetCare.API.UseCases
                 TutorId = dto.TutorId,
                 VeterinarioResponsavelId = responsavel?.Id,
                 Nome = dto.Nome.Trim(),
-                Especie = dto.Especie.Trim(),
+                Especie = especie!,
                 Raca = dto.Raca.Trim(),
                 Sexo = dto.Sexo.Trim(),
                 Pelagem = dto.Pelagem.Trim(),
@@ -300,10 +303,33 @@ namespace VetCare.API.UseCases
                 return Resultado<PetDTO>.Invalido("O tutor informado não foi encontrado nesta clínica.");
             }
 
-            // Trocar o tutor só para alguém que quem edita já enxerga: o recorte dos tutores não se amplia por aqui.
             if (pet.TutorId != dto.TutorId && !AcessoAoTutor.Permitido(_usuarioAtual, tutor))
             {
                 return Resultado<PetDTO>.NaoAutorizado("Você não tem acesso ao tutor informado.");
+            }
+
+            // O veterinário responsável muda pela edição do cadastro; sem valor, fica o atual.
+            // Todo paciente precisa terminar a edição com um responsável.
+            Veterinario? novoResponsavel = null;
+
+            if (dto.VeterinarioResponsavelId.HasValue && dto.VeterinarioResponsavelId.Value != Guid.Empty
+                && dto.VeterinarioResponsavelId != pet.VeterinarioResponsavelId)
+            {
+                novoResponsavel = await _veterinarios.ObterPorId(dto.VeterinarioResponsavelId.Value);
+
+                if (novoResponsavel == null || novoResponsavel.Usuario?.ClinicaId != _usuarioAtual.ClinicaId)
+                {
+                    return Resultado<PetDTO>.Invalido("O veterinário responsável informado não foi encontrado nesta clínica.");
+                }
+
+                if (novoResponsavel.Usuario?.Ativo == false)
+                {
+                    return Resultado<PetDTO>.Invalido("O veterinário escolhido está com o acesso desativado.");
+                }
+            }
+            else if (!pet.VeterinarioResponsavelId.HasValue)
+            {
+                return Resultado<PetDTO>.Invalido("Selecione o veterinário responsável pelo paciente.");
             }
 
             if (dto.DataNascimento == default)
@@ -327,6 +353,13 @@ namespace VetCare.API.UseCases
                 return Resultado<PetDTO>.Invalido("A data de óbito não pode ser futura.");
             }
 
+            var (especie, erroDeEspecie) = EspecieDoPaciente(dto.Especie, pet.Especie);
+
+            if (erroDeEspecie != null)
+            {
+                return Resultado<PetDTO>.Invalido(erroDeEspecie);
+            }
+
             var microchip = dto.Microchip.Trim();
 
             if (microchip.Length > 0 && await _pets.MicrochipEmUso(_usuarioAtual.ClinicaId, microchip, id))
@@ -337,7 +370,7 @@ namespace VetCare.API.UseCases
             // HU-003, CA-3 e RN-001: alterar o cadastro (inclusive o tutor) preserva o histórico clínico,
             // pois avaliações e atendimentos permanecem ligados ao mesmo prontuário do paciente.
             pet.Nome = dto.Nome.Trim();
-            pet.Especie = dto.Especie.Trim();
+            pet.Especie = especie!;
             pet.Raca = dto.Raca.Trim();
             pet.Sexo = dto.Sexo.Trim();
             pet.Pelagem = dto.Pelagem.Trim();
@@ -347,6 +380,14 @@ namespace VetCare.API.UseCases
             pet.DataNascimento = DateTime.SpecifyKind(dto.DataNascimento.Date, DateTimeKind.Utc);
             pet.TutorId = dto.TutorId;
             pet.Tutor = tutor;
+
+            var responsavelAnterior = pet.VeterinarioResponsavel?.Usuario?.Nome;
+
+            if (novoResponsavel != null)
+            {
+                pet.VeterinarioResponsavelId = novoResponsavel.Id;
+                pet.VeterinarioResponsavel = novoResponsavel;
+            }
 
             var registrouObito = dto.DataObito.HasValue && pet.DataObito?.Date != dto.DataObito.Value.Date;
             var desfezObito = !dto.DataObito.HasValue && pet.DataObito.HasValue;
@@ -373,9 +414,29 @@ namespace VetCare.API.UseCases
             _pets.Atualizar(pet);
             await _pets.SalvarAlteracoes();
 
-            await _auditoria.RegistrarDoUsuarioAtual(
-                AuditoriaService.Acoes.Alteracao, "Paciente", pet.Id,
-                registrouObito ? $"Edição de {pet.Nome} com registro de óbito" : $"Edição de {pet.Nome}");
+            var detalhe = registrouObito ? $"Edição de {pet.Nome} com registro de óbito" : $"Edição de {pet.Nome}";
+
+            if (novoResponsavel != null)
+            {
+                detalhe += $"; veterinário responsável: {responsavelAnterior ?? "nenhum"} → {novoResponsavel.Usuario?.Nome}";
+            }
+
+            await _auditoria.RegistrarDoUsuarioAtual(AuditoriaService.Acoes.Alteracao, "Paciente", pet.Id, detalhe);
+
+            // O novo responsável e o tutor ficam sabendo de quem passa a acompanhar o animal.
+            if (novoResponsavel != null)
+            {
+                if (novoResponsavel.UsuarioId != _usuarioAtual.Id)
+                {
+                    await _notificacoes.NotificarPacienteRecebido(novoResponsavel.UsuarioId, pet.Nome, pet.Id);
+                }
+
+                if (tutor.UsuarioId != Guid.Empty)
+                {
+                    await _notificacoes.NotificarNovoVeterinarioResponsavel(
+                        tutor.UsuarioId, pet.Nome, novoResponsavel.Usuario?.Nome ?? "Um novo veterinário", pet.Id);
+                }
+            }
 
             return Resultado<PetDTO>.Ok(MapearParaDTO(pet), "Paciente atualizado com sucesso.");
         }
@@ -407,43 +468,10 @@ namespace VetCare.API.UseCases
         }
 
         /// <summary>
-        /// HU-003, CA-4: a exclusão é bloqueada quando existe histórico clínico; nesse caso o
-        /// sistema oferece apenas a inativação, preservando a integridade do prontuário (RN-004).
-        /// Sem histórico, o cadastro é removido de fato.
-        /// </summary>
-        public async Task<Resultado> Excluir(Guid id)
-        {
-            var pet = await _pets.ObterPorId(id);
-
-            if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado.NaoEncontrado("Paciente não encontrado.");
-            }
-
-            if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
-            {
-                return Resultado.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
-            }
-
-            if (await _pets.PossuiRegistrosClinicos(id))
-            {
-                return Resultado.Conflito(
-                    "Este paciente possui prontuário com registros e não pode ser excluído. Utilize a inativação.");
-            }
-
-            await _pets.Remover(pet);
-            await _pets.SalvarAlteracoes();
-
-            await _auditoria.RegistrarDoUsuarioAtual(
-                AuditoriaService.Acoes.Exclusao, "Paciente", pet.Id, $"Exclusão de {pet.Nome} (sem histórico clínico)");
-
-            return Resultado.Ok("Paciente excluído com sucesso.");
-        }
-
-        /// <summary>
-        /// Quem cadastra sendo veterinário assume o paciente; administração e apoio escolhem
-        /// o profissional (ou deixam para depois). O cadastro feito pelo tutor nasce sem
-        /// responsável: a clínica designa alguém quando o animal chega para o primeiro atendimento.
+        /// Todo paciente cadastrado pela equipe nasce com um veterinário responsável: o informado
+        /// no cadastro ou, sem ele, o veterinário que está cadastrando. O cadastro feito pelo
+        /// tutor no aplicativo nasce sem responsável; a clínica o define na edição do cadastro ou
+        /// na primeira avaliação.
         /// </summary>
         private async Task<(Veterinario? Responsavel, string? Erro)> ResolverResponsavel(
             Guid? veterinarioInformado,
@@ -454,16 +482,13 @@ namespace VetCare.API.UseCases
                 return (null, null);
             }
 
-            var veterinarioId = _usuarioAtual.EhVeterinario ? _usuarioAtual.VeterinarioId : veterinarioInformado;
-
-            if (_usuarioAtual.EhVeterinario && veterinarioId == null)
-            {
-                return (null, "Cadastro de veterinário não encontrado para este usuário.");
-            }
+            var veterinarioId = veterinarioInformado.HasValue && veterinarioInformado.Value != Guid.Empty
+                ? veterinarioInformado
+                : _usuarioAtual.VeterinarioId;
 
             if (veterinarioId == null || veterinarioId == Guid.Empty)
             {
-                return (null, null);
+                return (null, "Selecione o veterinário responsável pelo paciente.");
             }
 
             var veterinario = await _veterinarios.ObterPorId(veterinarioId.Value);
@@ -473,13 +498,46 @@ namespace VetCare.API.UseCases
                 return (null, "O veterinário responsável informado não foi encontrado nesta clínica.");
             }
 
+            if (veterinario.Usuario?.Ativo == false)
+            {
+                return (null, "O veterinário escolhido está com o acesso desativado.");
+            }
+
             return (veterinario, null);
         }
 
+        /// <summary>Única espécie atendida pela clínica.</summary>
+        public const string EspecieAtendida = "Cachorro";
+
+        private static readonly HashSet<string> NomesDeCao = new() { "cachorro", "cachorra", "cao", "cadela", "canino", "canina" };
+
+        /// <summary>
+        /// A clínica atende apenas cães: em branco ou escrito de outro jeito ("Cão", "cadela"), o
+        /// paciente fica como Cachorro; outra espécie é recusada. Um paciente antigo de outra
+        /// espécie continua editável, desde que a espécie dele não seja trocada por outra.
+        /// </summary>
+        private static (string? Especie, string? Erro) EspecieDoPaciente(string? informada, string? especieAtual)
+        {
+            var texto = (informada ?? string.Empty).Trim();
+
+            if (texto.Length == 0 || NomesDeCao.Contains(ValidacaoDeCadastro.SemAcento(texto)))
+            {
+                return (EspecieAtendida, null);
+            }
+
+            if (especieAtual != null && string.Equals(texto, especieAtual, StringComparison.OrdinalIgnoreCase))
+            {
+                return (especieAtual, null);
+            }
+
+            return (null, "A clínica atende apenas cães: cadastre somente pacientes da espécie Cachorro.");
+        }
+
+        /// <summary>O óbito inativa os tratamentos ainda ativos; o histórico deles permanece.</summary>
         private async Task EncerrarTratamentosEmAberto(Guid pacienteId)
         {
             var emAberto = (await _tratamentos.ObterPorPaciente(pacienteId))
-                .Where(t => t.Status == StatusTratamento.EmAndamento)
+                .Where(t => StatusTratamento.Ativo(t.Status))
                 .ToList();
 
             foreach (var tratamento in emAberto)
@@ -491,7 +549,7 @@ namespace VetCare.API.UseCases
                     continue;
                 }
 
-                atual.Status = StatusTratamento.Interrompido;
+                atual.Status = StatusTratamento.Inativado;
                 atual.DataFim ??= DateTime.UtcNow;
 
                 _tratamentos.Atualizar(atual);

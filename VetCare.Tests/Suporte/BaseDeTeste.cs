@@ -23,6 +23,10 @@ namespace VetCare.Tests.Suporte
         protected Tutor Tutor { get; }
         protected Pet Paciente { get; }
         protected Prontuario Prontuario { get; }
+
+        /// <summary>Avaliação de origem do tratamento do cenário.</summary>
+        protected AvaliacaoClinica Avaliacao { get; }
+
         protected Tratamento Tratamento { get; }
 
         protected BaseDeTeste()
@@ -62,13 +66,31 @@ namespace VetCare.Tests.Suporte
 
             Prontuario = new Prontuario { PacienteId = Paciente.Id };
 
+            // Todo tratamento nasce de uma avaliação: o cenário traz as duas.
+            Avaliacao = new AvaliacaoClinica
+            {
+                PacienteId = Paciente.Id,
+                ProntuarioId = Prontuario.Id,
+                VeterinarioId = Veterinario.Id,
+                MotivoConsulta = "Claudicação do membro posterior",
+                Observacoes = "Dor à palpação do joelho direito.",
+                DiagnosticoPossivel = "Ruptura parcial do ligamento cruzado",
+                DataRegistro = DateTime.UtcNow.AddDays(-11)
+            };
+
             Tratamento = new Tratamento
             {
                 PacienteId = Paciente.Id,
+                AvaliacaoId = Avaliacao.Id,
                 VeterinarioId = Veterinario.Id,
                 DataInicio = DateTime.UtcNow.AddDays(-10),
-                ObjetivoTerapeutico = "Reabilitação de teste",
-                Status = "Em Andamento"
+                Nome = "Reabilitação de teste",
+                Tipo = "Fisioterapia",
+                Descricao = "Reabilitação de teste",
+                DuracaoPrevista = "2 meses",
+                Frequencia = "2 sessões por semana",
+                SessoesPrevistas = 16,
+                Status = StatusTratamento.EmAndamento
             };
 
             Contexto.Clinicas.Add(Clinica);
@@ -77,6 +99,7 @@ namespace VetCare.Tests.Suporte
             Contexto.Tutores.Add(Tutor);
             Contexto.Pets.Add(Paciente);
             Contexto.Prontuarios.Add(Prontuario);
+            Contexto.AvaliacoesClinicas.Add(Avaliacao);
             Contexto.Tratamentos.Add(Tratamento);
             Contexto.SaveChanges();
         }

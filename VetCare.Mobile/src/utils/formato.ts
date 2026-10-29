@@ -121,3 +121,66 @@ export function iniciais(nome: string): string {
 
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
 }
+
+
+// ---------------------------------------------------------------------------------------
+// As mesmas regras de ValidacaoDeCadastro e PasswordHasher, na API, e do portal web.
+// ---------------------------------------------------------------------------------------
+
+export const DICA_SENHA = 'Mínimo de 8 caracteres, com letras e números.';
+
+/** Mínimo de 8 caracteres, com letras e números, e no máximo 64. */
+export function validarSenha(senha: string): string | null {
+  if (senha.trim().length < 8) return 'A senha deve ter no mínimo 8 caracteres, com letras e números.';
+  if (senha.length > 64) return 'A senha deve ter no máximo 64 caracteres.';
+  if (!/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(senha) || !/\d/.test(senha)) return 'A senha precisa ter letras e números.';
+  return null;
+}
+
+/** Telefone com DDD: fixo (10 dígitos) ou celular (11, começando por 9). Devolve "(61) 99999-0000". */
+export function normalizarTelefone(telefone: string): { valor?: string; erro?: string } {
+  let digitos = telefone.replace(/\D/g, '');
+
+  if (!digitos) return { erro: 'Informe o seu telefone com DDD.' };
+  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith('55')) digitos = digitos.slice(2);
+
+  const exemplo = 'Informe um telefone válido com DDD, como (61) 99999-0000 ou (61) 3333-4444.';
+
+  if ((digitos.length !== 10 && digitos.length !== 11) || digitos[0] === '0' || digitos[1] === '0') return { erro: exemplo };
+  if (digitos.length === 11 && digitos[2] !== '9') {
+    return { erro: 'Celular com 11 dígitos começa com 9 depois do DDD, como (61) 99999-0000.' };
+  }
+  if (digitos.length === 10 && (digitos[2] === '0' || digitos[2] === '1')) return { erro: exemplo };
+
+  const numero = digitos.slice(2);
+  const corte = numero.length - 4;
+
+  return { valor: `(${digitos.slice(0, 2)}) ${numero.slice(0, corte)}-${numero.slice(corte)}` };
+}
+
+/** Máscara do telefone enquanto o tutor digita: "(61) 99999-0000". */
+export function mascararTelefone(texto: string): string {
+  const digitos = texto.replace(/\D/g, '').slice(0, 11);
+
+  if (digitos.length <= 2) return digitos.length ? `(${digitos}` : '';
+
+  const ddd = digitos.slice(0, 2);
+  const numero = digitos.slice(2);
+
+  if (numero.length <= 4) return `(${ddd}) ${numero}`;
+
+  const corte = numero.length === 9 ? 5 : 4;
+  return `(${ddd}) ${numero.slice(0, corte)}-${numero.slice(corte)}`;
+}
+
+/** Endereço opcional; quando informado, com letras e entre 5 e 250 caracteres. */
+export function validarEndereco(endereco: string): string | null {
+  const texto = endereco.trim();
+
+  if (!texto) return null;
+  if (texto.length < 5 || texto.length > 250 || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(texto)) {
+    return 'Informe o endereço completo (rua, número e bairro), com até 250 caracteres.';
+  }
+
+  return null;
+}

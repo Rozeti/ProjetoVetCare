@@ -120,8 +120,8 @@ interface Props {
 export function CarteiraVacinacao({ pacienteId, vacinas, somenteLeitura = false, aoAtualizar }: Props) {
   const { temPerfil } = useAuth();
   const { confirmarEdicao, perguntar } = useConfirmacao();
-  // O veterinário responsável registra, corrige e apaga as aplicações dos seus pacientes; a
-  // administração, as de todos. A API confere o vínculo com o paciente.
+  // Administração e qualquer veterinário registram, corrigem e apagam as aplicações de
+  // qualquer paciente da clínica; a API confere a clínica e o perfil.
   const podeEditar = temPerfil('Administrador', 'Veterinario') && !somenteLeitura;
 
   const [busca, setBusca] = useState('');
@@ -396,17 +396,16 @@ export function CarteiraVacinacao({ pacienteId, vacinas, somenteLeitura = false,
         </div>
 
         {(erro || erroLista) && (
-          <div className="px-5 pt-4">
-            <Alerta
-              tipo="erro"
-              aoFechar={() => {
-                setErro('');
-                setErroLista('');
-              }}
-            >
-              {erro || erroLista}
-            </Alerta>
-          </div>
+          <Alerta
+            flutuante
+            tipo="erro"
+            aoFechar={() => {
+              setErro('');
+              setErroLista('');
+            }}
+          >
+            {erro || erroLista}
+          </Alerta>
         )}
 
         {carregando && !dados ? (

@@ -150,7 +150,7 @@ export function Agenda() {
     <>
       <CabecalhoPagina
         titulo="Agenda"
-        descricao="Organize as sessões de fisioterapia dos seus pacientes."
+        descricao="Organize as suas sessões de fisioterapia, inclusive as de pacientes de colegas que você atende."
         acoes={
           <>
             <button type="button" className="vc-botao-secundario" onClick={() => setModalBloqueios(true)}>
@@ -174,18 +174,14 @@ export function Agenda() {
         </div>
       )}
       {erro && (
-        <div className="mb-4">
-          <Alerta tipo="erro" aoFechar={() => setErro('')}>
-            {erro}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="erro" aoFechar={() => setErro('')}>
+          {erro}
+        </Alerta>
       )}
       {aviso && (
-        <div className="mb-4">
-          <Alerta tipo="sucesso" aoFechar={() => setAviso('')}>
-            {aviso}
-          </Alerta>
-        </div>
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
       )}
 
       <Card className="mb-6 p-4">
@@ -253,7 +249,7 @@ export function Agenda() {
           <SemDados
             icone={<CalendarDays size={40} />}
             titulo="Nenhuma sessão neste período"
-            descricao="Não há atendimentos agendados para a data selecionada."
+            descricao="Não há sessões agendadas para a data selecionada."
             acao={
               <button type="button" className="vc-botao-sutil" onClick={() => setModalAgendar(true)}>
                 <Plus size={16} />
@@ -317,15 +313,16 @@ export function Agenda() {
 
                       {sessao.status !== 'Cancelada' && sessao.status !== 'Concluída' && (
                         <>
-                          {/* HU-008: o atendimento é registrado a partir da sessão. */}
+                          {/* HU-008: a evolução é registrada a partir da sessão realizada. */}
                           <button
                             type="button"
                             onClick={() => setSessaoParaAtender(sessao)}
-                            className="rounded-lg p-2 text-brand hover:bg-brand-100"
-                            title="Registrar atendimento"
-                            aria-label={`Registrar o atendimento de ${sessao.nomePaciente}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg p-2 text-sm font-medium text-brand hover:bg-brand-100"
+                            title="Registrar evolução"
+                            aria-label={`Registrar a evolução da sessão de ${sessao.nomePaciente}`}
                           >
                             <ClipboardPlus size={16} />
+                            <span className="hidden sm:inline">Registrar evolução</span>
                           </button>
 
                           <button
@@ -341,10 +338,17 @@ export function Agenda() {
                         </>
                       )}
 
+                      {/* Sessão com evolução: o ícone reabre o registro, as fotos e a correção. */}
                       {sessao.possuiAtendimento && (
-                        <span className="ml-1 flex items-center gap-1 text-xs text-sucesso" title="Atendimento registrado">
-                          <Stethoscope size={14} />
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSessaoParaAtender(sessao)}
+                          className="ml-1 rounded-lg p-2 text-sucesso hover:bg-sucesso-claro"
+                          title="Evolução registrada — abrir"
+                          aria-label={`Abrir a evolução da sessão de ${sessao.nomePaciente}`}
+                        >
+                          <Stethoscope size={16} />
+                        </button>
                       )}
                     </div>
                   </li>
@@ -378,7 +382,7 @@ export function Agenda() {
         aoFechar={() => setSessaoParaAtender(null)}
         aoSalvar={() => {
           setSessaoParaAtender(null);
-          setAviso('Atendimento registrado com sucesso.');
+          setAviso('Evolução salva com sucesso.');
           recarregar();
         }}
       />

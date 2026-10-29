@@ -90,7 +90,7 @@ export function Mensagens() {
     carregarConversas();
   }, [selecionado, recarregarConversa, carregarConversas]);
 
-  // Transferir um paciente muda os contatos do tutor; isso é publicado em "pets".
+  // Trocar o veterinário responsável de um pet é publicado em "pets"; a lista acompanha.
   useAtualizacao(['mensagens', 'pets'], aoChegarMensagem);
 
   /** HU-014, CA-3: abrir a conversa marca as mensagens recebidas como lidas. */

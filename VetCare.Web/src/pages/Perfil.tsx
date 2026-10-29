@@ -5,7 +5,15 @@ import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useAuth } from '../contexts/auth';
 import type { Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Campo, Card } from '../components/ui';
-import { formatarData, formatarDataHora, validarSenha } from '../utils/formato';
+import {
+  DICA_SENHA,
+  formatarData,
+  formatarDataHora,
+  mascararTelefone,
+  normalizarTelefone,
+  validarEndereco,
+  validarSenha,
+} from '../utils/formato';
 import { useAtualizacao } from '../contexts/atualizacoes';
 
 /** Dados da conta do usuário autenticado, preferências de notificação e troca da própria senha. */
@@ -31,7 +39,7 @@ export function Perfil() {
   const [erroPreferencias, setErroPreferencias] = useState('');
   const [avisoPreferencias, setAvisoPreferencias] = useState('');
 
-  const [telefone, setTelefone] = useState(usuario?.telefone ?? '');
+  const [telefone, setTelefone] = useState(mascararTelefone(usuario?.telefone ?? ''));
   const [endereco, setEndereco] = useState(usuario?.endereco ?? '');
   const [erroContato, setErroContato] = useState('');
   const [avisoContato, setAvisoContato] = useState('');
@@ -127,14 +135,18 @@ export function Perfil() {
     setErroContato('');
     setAvisoContato('');
 
-    // Mesmos limites de AtualizarTutorDTO.
-    if (telefone.trim().length > 30) {
-      setErroContato('O telefone deve ter até 30 caracteres.');
+    // As mesmas regras da API (ValidacaoDeCadastro): telefone com DDD, endereço completo.
+    const telefoneNormalizado = normalizarTelefone(telefone, true, 'o seu telefone');
+
+    if (telefoneNormalizado.erro) {
+      setErroContato(telefoneNormalizado.erro);
       return;
     }
 
-    if (endereco.trim().length > 250) {
-      setErroContato('O endereço deve ter até 250 caracteres.');
+    const erroDeEndereco = validarEndereco(endereco);
+
+    if (erroDeEndereco) {
+      setErroContato(erroDeEndereco);
       return;
     }
 
@@ -145,7 +157,7 @@ export function Perfil() {
     setSalvandoContato(true);
 
     try {
-      await api.put(`/api/tutores/${usuario.tutorId}`, { telefone, endereco });
+      await api.put(`/api/tutores/${usuario.tutorId}`, { telefone: telefoneNormalizado.valor, endereco: endereco.trim() });
 
       const { data } = await api.get<Usuario>('/api/usuarios/me');
       atualizarUsuario(data);
@@ -247,11 +259,9 @@ export function Perfil() {
             </div>
           )}
           {avisoPreferencias && !erroPreferencias && (
-            <div className="mt-4">
-              <Alerta tipo="sucesso" aoFechar={() => setAvisoPreferencias('')}>
-                {avisoPreferencias}
-              </Alerta>
-            </div>
+            <Alerta flutuante tipo="sucesso" aoFechar={() => setAvisoPreferencias('')}>
+              {avisoPreferencias}
+            </Alerta>
           )}
         </Card>
 
@@ -270,7 +280,8 @@ export function Perfil() {
                 <input
                   className="vc-campo"
                   value={telefone}
-                  onChange={(e) => setTelefone(e.target.value)}
+                  onChange={(e) => setTelefone(mascararTelefone(e.target.value))}
+                  inputMode="tel"
                   placeholder="(61) 99999-0000"
                   autoComplete="tel"
                   maxLength={30}
@@ -288,7 +299,11 @@ export function Perfil() {
               </Campo>
 
               {erroContato && <Alerta tipo="erro">{erroContato}</Alerta>}
-              {avisoContato && <Alerta tipo="sucesso">{avisoContato}</Alerta>}
+              {avisoContato && (
+                <Alerta flutuante tipo="sucesso" aoFechar={() => setAvisoContato('')}>
+                  {avisoContato}
+                </Alerta>
+              )}
 
               <button type="submit" className="vc-botao-primario w-full" disabled={salvandoContato}>
                 {salvandoContato && <Loader2 className="animate-spin" size={16} />}
@@ -318,7 +333,7 @@ export function Perfil() {
               />
             </Campo>
 
-            <Campo rotulo="Nova senha" obrigatorio dica="Mínimo de 6 caracteres.">
+            <Campo rotulo="Nova senha" obrigatorio dica={DICA_SENHA}>
               <input
                 type="password"
                 className="vc-campo"
@@ -339,7 +354,11 @@ export function Perfil() {
             </Campo>
 
             {erroSenha && <Alerta tipo="erro">{erroSenha}</Alerta>}
-            {avisoSenha && <Alerta tipo="sucesso">{avisoSenha}</Alerta>}
+            {avisoSenha && (
+              <Alerta flutuante tipo="sucesso" aoFechar={() => setAvisoSenha('')}>
+                {avisoSenha}
+              </Alerta>
+            )}
 
             <button type="submit" className="vc-botao-primario w-full" disabled={salvandoSenha}>
               {salvandoSenha && <Loader2 className="animate-spin" size={16} />}

@@ -142,7 +142,7 @@ namespace VetCare.Tests
             {
                 Email = UsuarioTutor.Email,
                 Codigo = $"{codigo[..3]} {codigo[3..]}",
-                NovaSenha = "SenhaComEspaco"
+                NovaSenha = "SenhaComEspaco1"
             });
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);

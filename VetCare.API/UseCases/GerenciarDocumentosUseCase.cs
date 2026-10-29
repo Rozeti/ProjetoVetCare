@@ -122,7 +122,7 @@ namespace VetCare.API.UseCases
                 return Resultado<List<DocumentoDTO>>.NaoEncontrado("Paciente não encontrado.");
             }
 
-            // HU-013: o tutor acessa apenas os documentos dos próprios pets; o veterinário, os dos seus pacientes.
+            // HU-013: o tutor acessa apenas os documentos dos próprios pets; a equipe clínica, os de todos.
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
             {
                 return Resultado<List<DocumentoDTO>>.NaoAutorizado("Você não tem acesso a este prontuário.");

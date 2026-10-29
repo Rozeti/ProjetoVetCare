@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import type { PetSelecao, Tratamento, Veterinario } from '../../types';
 import { Alerta, Campo, Modal } from '../../components/ui';
-import { paraIsoLocal, paraValorInputData } from '../../utils/formato';
+import { paraIsoLocal, paraValorInputData, tratamentoAtivo } from '../../utils/formato';
 
 interface Props {
   aberto: boolean;
@@ -46,8 +46,8 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
   const [vetSelecionado, setVetSelecionado] = useState(veterinarioId ?? '');
   const [buscaPaciente, setBuscaPaciente] = useState('');
 
-  // A sessão entra na agenda de quem acompanha o paciente: escolhido o pet, o
-  // veterinário responsável vem junto e a lista fica travada nele.
+  // Qualquer veterinário da clínica atende qualquer paciente. Escolhido o pet, o responsável
+  // vem sugerido, mas a sessão pode ir para a agenda de um colega (por exemplo, numa ausência).
   const responsavelDoPet = pets.find((p) => p.id === petSelecionado)?.veterinarioResponsavelId ?? '';
   const [data, setData] = useState(paraValorInputData(new Date()));
   const [hora, setHora] = useState('09:00');
@@ -101,7 +101,8 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
 
       try {
         const { data: lista } = await api.get<Tratamento[]>(`/api/tratamentos/paciente/${paciente}`);
-        const ativos = lista.filter((t) => t.status === 'Em Andamento');
+        // Planejados também recebem sessões: a primeira evolução os põe em andamento.
+        const ativos = lista.filter((t) => tratamentoAtivo(t.status));
 
         if (!ativo) return;
 
@@ -144,7 +145,8 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
       return;
     }
 
-    const veterinarioDaSessao = responsavelDoPet || vetSelecionado;
+    // Na agenda do próprio veterinário a sessão é sempre dele; na agenda geral, o escolhido.
+    const veterinarioDaSessao = veterinarioId ?? (vetSelecionado || responsavelDoPet);
 
     if (!veterinarioId && !veterinarioDaSessao) {
       setErro('Selecione o veterinário responsável pela sessão.');
@@ -235,7 +237,7 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
           obrigatorio
           dica={
             petSelecionado && tratamentos.length === 0
-              ? 'Este paciente não possui tratamento em andamento. Abra um tratamento no prontuário antes de agendar.'
+              ? 'Este paciente não possui tratamento planejado ou em andamento. Registre uma avaliação no prontuário e encaminhe o tratamento a partir dela antes de agendar.'
               : undefined
           }
         >
@@ -248,7 +250,7 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
             <option value="">Selecione o tratamento</option>
             {tratamentos.map((tratamento) => (
               <option key={tratamento.id} value={tratamento.id}>
-                {tratamento.objetivoTerapeutico.slice(0, 60)}
+                {tratamento.nome} · {tratamento.tipo}{tratamento.status === 'Planejado' ? ' (planejado)' : ''}
               </option>
             ))}
           </select>
@@ -258,13 +260,16 @@ function Formulario({ veterinarioId, pacienteId, aoFechar, aoSalvar }: Omit<Prop
           <Campo
             rotulo="Veterinário"
             obrigatorio
-            dica={responsavelDoPet ? 'Veterinário responsável pelo paciente. Para trocar, transfira o paciente.' : undefined}
+            dica={
+              responsavelDoPet
+                ? 'Sugerido: o veterinário responsável pelo paciente. Qualquer veterinário da clínica pode atender.'
+                : undefined
+            }
           >
             <select
               className="vc-campo"
-              value={responsavelDoPet || vetSelecionado}
+              value={vetSelecionado || responsavelDoPet}
               onChange={(e) => setVetSelecionado(e.target.value)}
-              disabled={!!responsavelDoPet}
             >
               <option value="">Selecione o profissional</option>
               {veterinarios.map((vet) => (

@@ -8,8 +8,9 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// Receituário do paciente. Assim como os demais registros clínicos, uma receita
-    /// não é excluída: ela é cancelada, preservando o histórico (RN-004). Emissão e
+    /// Receituário do paciente. Toda receita nasce de uma avaliação ou de uma evolução, o que
+    /// mantém o histórico clínico rastreável. Assim como os demais registros clínicos, uma
+    /// receita não é excluída: ela é cancelada, preservando o histórico (RN-004). Emissão e
     /// cancelamento ficam na auditoria: é o documento assinado com CRMV que sai da clínica.
     /// </summary>
     public class GerenciarPrescricoesUseCase
@@ -24,6 +25,8 @@ namespace VetCare.API.UseCases
         private const int TamanhoDasOrientacoes = 2000;
 
         private readonly IPrescricaoRepository _prescricoes;
+        private readonly IAvaliacaoRepository _avaliacoes;
+        private readonly IAtendimentoRepository _atendimentos;
         private readonly IPetRepository _pets;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IVeterinarioRepository _veterinarios;
@@ -33,6 +36,8 @@ namespace VetCare.API.UseCases
 
         public GerenciarPrescricoesUseCase(
             IPrescricaoRepository prescricoes,
+            IAvaliacaoRepository avaliacoes,
+            IAtendimentoRepository atendimentos,
             IPetRepository pets,
             IProntuarioRepository prontuarios,
             IVeterinarioRepository veterinarios,
@@ -41,6 +46,8 @@ namespace VetCare.API.UseCases
             UsuarioAtual usuarioAtual)
         {
             _prescricoes = prescricoes;
+            _avaliacoes = avaliacoes;
+            _atendimentos = atendimentos;
             _pets = pets;
             _prontuarios = prontuarios;
             _veterinarios = veterinarios;
@@ -98,6 +105,12 @@ namespace VetCare.API.UseCases
                 return Resultado<PrescricaoDTO>.Invalido("Todo item da receita precisa do nome do medicamento.");
             }
 
+            if (dto.AvaliacaoId.HasValue == dto.AtendimentoId.HasValue)
+            {
+                return Resultado<PrescricaoDTO>.Invalido(
+                    "Informe a origem da receita: a avaliação ou a evolução em que ela foi prescrita.");
+            }
+
             var pet = await _pets.ObterPorIdComTutor(dto.PacienteId);
 
             if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
@@ -153,6 +166,29 @@ namespace VetCare.API.UseCases
                     $"A validade da receita não pode passar de {ValidadeMaximaEmDias} dias.");
             }
 
+            // A origem precisa ser do mesmo paciente: uma receita não salta de um prontuário a outro.
+            AvaliacaoClinica? avaliacao = null;
+            AtendimentoFisioterapeutico? atendimento = null;
+
+            if (dto.AvaliacaoId.HasValue)
+            {
+                avaliacao = await _avaliacoes.ObterPorId(dto.AvaliacaoId.Value);
+
+                if (avaliacao == null || avaliacao.PacienteId != pet.Id)
+                {
+                    return Resultado<PrescricaoDTO>.Invalido("A avaliação de origem não pertence a este paciente.");
+                }
+            }
+            else
+            {
+                atendimento = await _atendimentos.ObterPorId(dto.AtendimentoId!.Value);
+
+                if (atendimento == null || atendimento.Tratamento?.PacienteId != pet.Id)
+                {
+                    return Resultado<PrescricaoDTO>.Invalido("A evolução de origem não pertence a este paciente.");
+                }
+            }
+
             var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(dto.PacienteId);
 
             var prescricao = new Prescricao
@@ -160,7 +196,8 @@ namespace VetCare.API.UseCases
                 ProntuarioId = prontuario.Id,
                 PacienteId = dto.PacienteId,
                 VeterinarioId = veterinarioId,
-                AtendimentoId = dto.AtendimentoId,
+                AvaliacaoId = avaliacao?.Id,
+                AtendimentoId = atendimento?.Id,
                 ValidaAte = validaAte,
                 Orientacoes = dto.Orientacoes.Trim()
             };
@@ -184,10 +221,13 @@ namespace VetCare.API.UseCases
 
             prescricao.Paciente = pet;
             prescricao.Veterinario = veterinario;
+            prescricao.Avaliacao = avaliacao;
+            prescricao.Atendimento = atendimento;
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Criacao, "Prescricao", prescricao.Id,
-                $"Receita de {pet.Nome} com {prescricao.Itens.Count} item(ns), assinada por {veterinario.Usuario?.Nome}");
+                $"Receita de {pet.Nome} com {prescricao.Itens.Count} item(ns), assinada por {veterinario.Usuario?.Nome} " +
+                $"({DescreverOrigem(prescricao).ToLowerInvariant()})");
 
             var usuarioTutor = pet.Tutor?.UsuarioId;
 
@@ -254,6 +294,25 @@ namespace VetCare.API.UseCases
         private static string Limitar(string valor, int tamanho) =>
             valor.Length <= tamanho ? valor : valor[..tamanho];
 
+        /// <summary>"Avaliação de 12/04/2026" ou "Evolução nº 3 — RPG"; vazio nas receitas antigas sem origem.</summary>
+        public static string DescreverOrigem(Prescricao prescricao)
+        {
+            if (prescricao.Avaliacao != null)
+            {
+                return $"Avaliação de {RelogioDaClinica.Padrao.Formatar(prescricao.Avaliacao.DataRegistro, "dd/MM/yyyy")}";
+            }
+
+            if (prescricao.Atendimento != null)
+            {
+                var tratamento = prescricao.Atendimento.Tratamento?.Nome;
+                return string.IsNullOrWhiteSpace(tratamento)
+                    ? $"Evolução nº {prescricao.Atendimento.NumeroSessao}"
+                    : $"Evolução nº {prescricao.Atendimento.NumeroSessao} — {tratamento}";
+            }
+
+            return string.Empty;
+        }
+
         public static PrescricaoDTO MapearParaDTO(Prescricao prescricao, Pet? pet)
         {
             return new PrescricaoDTO
@@ -270,6 +329,9 @@ namespace VetCare.API.UseCases
                 ValidaAte = prescricao.ValidaAte,
                 Orientacoes = prescricao.Orientacoes,
                 Status = prescricao.Status,
+                AvaliacaoId = prescricao.AvaliacaoId,
+                AtendimentoId = prescricao.AtendimentoId,
+                Origem = DescreverOrigem(prescricao),
                 Itens = prescricao.Itens.Select(i => new ItemPrescricaoDTO
                 {
                     Id = i.Id,

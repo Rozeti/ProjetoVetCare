@@ -8,7 +8,7 @@ namespace VetCare.API.DTOs
         [StringLength(80, MinimumLength = 1, ErrorMessage = "O nome deve ter até 80 caracteres.")]
         public string Nome { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "A espécie é obrigatória.")]
+        /// <summary>A clínica atende apenas cães: em branco, o paciente é cadastrado como Cachorro.</summary>
         [StringLength(40, ErrorMessage = "A espécie deve ter até 40 caracteres.")]
         public string Especie { get; set; } = string.Empty;
 

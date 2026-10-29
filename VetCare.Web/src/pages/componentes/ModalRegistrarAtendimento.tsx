@@ -1,19 +1,36 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Loader2, Lock, Paperclip, Pencil, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FileText, Loader2, Lock, Paperclip, Pencil, Pill, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro, urlDoArquivo } from '../../services/api';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import { useAuth } from '../../contexts/auth';
-import type { Atendimento, ItemAgenda, Midia } from '../../types';
+import type { Atendimento, ItemAgenda, Midia, Sessao, Tratamento } from '../../types';
 import { Alerta, Campo, Etiqueta, Modal } from '../../components/ui';
-import { estiloEscalaDor } from '../../utils/formato';
+import { estiloEscalaDor, formatarDataHora, paraValorInputData } from '../../utils/formato';
 
 interface Props {
-  /** Sessão da agenda: registra um atendimento novo (ou abre o existente para anexos). */
+  /** Sessão da agenda: registra uma evolução nova (ou abre a existente para anexos). */
   sessao?: ItemAgenda | null;
-  /** Atendimento já registrado, aberto a partir do prontuário para correção (RN-004). */
+  /** Evolução já registrada, aberta a partir do prontuário ou da tela de evoluções. */
   atendimento?: Atendimento | null;
+  /**
+   * Tratamento: registra a sessão realizada sem passar pela agenda. Quem registra escolhe uma
+   * sessão agendada ainda sem evolução ou registra a sessão de agora, sem agendamento.
+   */
+  tratamento?: Tratamento | null;
+  /** Abre a evolução direto no formulário de correção (RN-004), em vez do resumo. */
+  corrigir?: boolean;
   /** Descrição exibida no cabeçalho quando não há sessão da agenda em mãos. */
   descricao?: string;
+  /**
+   * Emissão de receita a partir desta evolução. Sem o callback, o botão leva ao receituário
+   * do prontuário do animal com a evolução já escolhida como origem.
+   */
+  aoEmitirReceita?: (atendimento: Atendimento) => void;
+  /** Falso quando o prontuário está encerrado (óbito) e não aceita receitas novas. */
+  permiteReceita?: boolean;
+  /** Atalho para o prontuário do animal, útil fora dele (tela de evoluções). */
+  exibirLinkDoProntuario?: boolean;
   aoFechar: () => void;
   aoSalvar: () => void;
 }
@@ -22,6 +39,9 @@ const ESTADO_INICIAL = {
   tecnicasAplicadas: '',
   escalaDor: 0,
   evolucaoClinica: '',
+  reacaoAnimal: '',
+  observacoes: '',
+  relatorio: '',
   proximosPassos: '',
   pesoKg: '',
   temperaturaCelsius: '',
@@ -31,6 +51,17 @@ const ESTADO_INICIAL = {
 };
 
 type Estado = typeof ESTADO_INICIAL;
+
+/** Mesmos limites de CriarAtendimentoDTO. */
+const LIMITES = {
+  tecnicasAplicadas: 1000,
+  evolucaoClinica: 4000,
+  reacaoAnimal: 2000,
+  observacoes: 4000,
+  relatorio: 4000,
+  proximosPassos: 2000,
+  observacaoInterna: 2000,
+} as const;
 
 /** Faixas clínicas aceitas pela API (CriarAtendimentoDTO), usadas nos campos e na validação. */
 const FAIXAS_DE_SINAIS = {
@@ -59,19 +90,42 @@ function validarSinaisVitais(form: Pick<Estado, keyof typeof FAIXAS_DE_SINAIS>):
 }
 
 /**
- * HU-008: formulário rápido de registro do atendimento fisioterapêutico, com correção
- * posterior preservando a versão anterior (RN-004).
+ * HU-008: a evolução registra uma sessão realizada dentro de um tratamento — data, número da
+ * sessão, o que foi feito, a reação do animal, observações, relatório, procedimentos e
+ * fotografias. A correção posterior preserva a versão anterior (RN-004).
  * HU-009: permite anexar uma observação interna, restrita à equipe clínica.
  * HU-010: anexa fotos e vídeos à sessão.
  */
-export function ModalRegistrarAtendimento({ sessao, atendimento, ...props }: Props) {
+export function ModalRegistrarAtendimento({ sessao, atendimento, tratamento, ...props }: Props) {
   // O modal só existe quando há algo a mostrar: cada abertura monta um formulário
   // novo, o que dispensa um efeito para limpá-lo.
-  if (!sessao && !atendimento) {
+  if (!sessao && !atendimento && !tratamento) {
     return null;
   }
 
-  return <Formulario sessao={sessao ?? null} atendimento={atendimento ?? null} {...props} />;
+  return (
+    <Formulario
+      sessao={sessao ?? null}
+      atendimento={atendimento ?? null}
+      tratamentoDoProntuario={tratamento ?? null}
+      {...props}
+    />
+  );
+}
+
+/** Sessões agendadas até hoje, ainda sem evolução: as que podem ter sido realizadas. */
+function sessoesARegistrar(sessoes: Sessao[]): Sessao[] {
+  const hoje = paraValorInputData(new Date());
+
+  return sessoes
+    .filter(
+      (s) =>
+        s.status !== 'Cancelada' &&
+        s.status !== 'Concluída' &&
+        !s.possuiAtendimento &&
+        paraValorInputData(s.dataHora) <= hoje,
+    )
+    .sort((a, b) => b.dataHora.localeCompare(a.dataHora));
 }
 
 function estadoAPartirDe(atendimento: Atendimento): Estado {
@@ -79,6 +133,9 @@ function estadoAPartirDe(atendimento: Atendimento): Estado {
     tecnicasAplicadas: atendimento.tecnicasAplicadas,
     escalaDor: atendimento.escalaDor,
     evolucaoClinica: atendimento.evolucaoClinica,
+    reacaoAnimal: atendimento.reacaoAnimal,
+    observacoes: atendimento.observacoes,
+    relatorio: atendimento.relatorio,
     proximosPassos: atendimento.proximosPassos,
     pesoKg: atendimento.pesoKg?.toString() ?? '',
     temperaturaCelsius: atendimento.temperaturaCelsius?.toString() ?? '',
@@ -91,18 +148,34 @@ function estadoAPartirDe(atendimento: Atendimento): Estado {
 function Formulario({
   sessao,
   atendimento,
+  tratamentoDoProntuario,
+  corrigir = false,
   descricao,
+  aoEmitirReceita,
+  permiteReceita = true,
+  exibirLinkDoProntuario = false,
   aoFechar,
   aoSalvar,
-}: Omit<Props, 'sessao' | 'atendimento'> & { sessao: ItemAgenda | null; atendimento: Atendimento | null }) {
-  const { podeVerObservacoesInternas } = useAuth();
-
-  const sessaoId = sessao?.sessaoId ?? atendimento?.sessaoId ?? '';
+}: Omit<Props, 'sessao' | 'atendimento' | 'tratamento'> & {
+  sessao: ItemAgenda | null;
+  atendimento: Atendimento | null;
+  tratamentoDoProntuario: Tratamento | null;
+}) {
+  const { podeVerObservacoesInternas, temPerfil } = useAuth();
+  const podeEmitirReceita = permiteReceita && temPerfil('Administrador', 'Veterinario');
 
   const [form, setForm] = useState<Estado>(atendimento ? estadoAPartirDe(atendimento) : ESTADO_INICIAL);
   const [atendimentoSalvo, setAtendimentoSalvo] = useState<Atendimento | null>(atendimento);
-  const [editando, setEditando] = useState(!!atendimento);
+
+  // Registrada a partir do tratamento, a sessão só existe depois de salva a evolução.
+  const sessaoId = atendimentoSalvo?.sessaoId ?? sessao?.sessaoId ?? atendimento?.sessaoId ?? '';
+  const [sessoesPendentes, setSessoesPendentes] = useState<Sessao[] | null>(null);
+  // Vazio: sessão de agora, sem agendamento.
+  const [sessaoEscolhida, setSessaoEscolhida] = useState('');
+  const [editando, setEditando] = useState(!!atendimento && corrigir);
   const [midias, setMidias] = useState<Midia[]>(atendimento?.midias ?? []);
+  // Tratamento da sessão: dá o nome e o número que a nova evolução vai receber.
+  const [tratamento, setTratamento] = useState<Tratamento | null>(tratamentoDoProntuario);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -111,7 +184,7 @@ function Formulario({
 
   const campoArquivo = useRef<HTMLInputElement>(null);
 
-  // Aberto pela agenda, a sessão pode já ter atendimento: nesse caso o modal abre em modo resumo.
+  // Aberto pela agenda, a sessão pode já ter evolução: nesse caso o modal abre em modo resumo.
   useEffect(() => {
     if (!sessao) {
       return;
@@ -119,17 +192,22 @@ function Formulario({
 
     let ativo = true;
 
-    async function carregarExistente(id: string) {
+    async function carregarExistente(item: ItemAgenda) {
       try {
-        const { data } = await api.get<Atendimento | null>(`/api/atendimentos/sessao/${id}`);
+        const [{ data }, { data: doTratamento }] = await Promise.all([
+          api.get<Atendimento | null>(`/api/atendimentos/sessao/${item.sessaoId}`),
+          api.get<Tratamento>(`/api/tratamentos/${item.tratamentoId}`),
+        ]);
 
         if (!ativo) return;
+
+        setTratamento(doTratamento);
 
         if (data) {
           setAtendimentoSalvo(data);
           setMidias(data.midias);
         } else {
-          const { data: lista } = await api.get<Midia[]>(`/api/midias/sessao/${id}`);
+          const { data: lista } = await api.get<Midia[]>(`/api/midias/sessao/${item.sessaoId}`);
           if (ativo) setMidias(lista);
         }
       } catch (falha) {
@@ -137,12 +215,39 @@ function Formulario({
       }
     }
 
-    carregarExistente(sessao.sessaoId);
+    carregarExistente(sessao);
 
     return () => {
       ativo = false;
     };
   }, [sessao]);
+
+  // Aberto pelo tratamento: as sessões agendadas e ainda sem evolução podem ser escolhidas.
+  useEffect(() => {
+    if (!tratamentoDoProntuario) {
+      return;
+    }
+
+    let ativo = true;
+
+    api
+      .get<Sessao[]>(`/api/sessoes/tratamento/${tratamentoDoProntuario.id}`)
+      .then(({ data }) => {
+        if (!ativo) return;
+
+        const pendentes = sessoesARegistrar(data);
+        setSessoesPendentes(pendentes);
+        setSessaoEscolhida(pendentes[0]?.id ?? '');
+      })
+      .catch(() => {
+        // Sem a lista, ainda dá para registrar a sessão de agora.
+        if (ativo) setSessoesPendentes([]);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [tratamentoDoProntuario]);
 
   function atualizar<T extends keyof Estado>(campo: T, valor: Estado[T]) {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -150,22 +255,37 @@ function Formulario({
 
   const { confirmarEdicao, confirmarExclusao } = useConfirmacao();
 
+  function validar(): string | null {
+    const pendentes = [
+      !form.tecnicasAplicadas.trim() && 'os procedimentos realizados',
+      !form.evolucaoClinica.trim() && 'o que foi realizado',
+      !form.reacaoAnimal.trim() && 'a reação do animal',
+    ].filter(Boolean);
+
+    if (pendentes.length > 0) {
+      return `Campos obrigatórios pendentes: ${pendentes.join(', ')}.`;
+    }
+
+    for (const campo of Object.keys(LIMITES) as (keyof typeof LIMITES)[]) {
+      if (form[campo].length > LIMITES[campo]) {
+        return `Um dos campos passou do limite de ${LIMITES[campo]} caracteres. Resuma o texto antes de salvar.`;
+      }
+    }
+
+    // Os sinais vitais entram no prontuário: um valor fora da faixa clínica é recusado
+    // aqui, com a mesma faixa que a API aplica (CriarAtendimentoDTO).
+    return validarSinaisVitais(form);
+  }
+
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
 
     setErro('');
 
-    if (!form.tecnicasAplicadas.trim() || !form.evolucaoClinica.trim()) {
-      setErro('Informe as técnicas aplicadas e a evolução clínica.');
-      return;
-    }
+    const problema = validar();
 
-    // Os sinais vitais alimentam o gráfico de evolução: um valor fora da faixa clínica
-    // é recusado aqui, com a mesma faixa que a API aplica (CriarAtendimentoDTO).
-    const sinalForaDaFaixa = validarSinaisVitais(form);
-
-    if (sinalForaDaFaixa) {
-      setErro(sinalForaDaFaixa);
+    if (problema) {
+      setErro(problema);
       return;
     }
 
@@ -173,7 +293,7 @@ function Formulario({
       atendimentoSalvo &&
       editando &&
       !(await confirmarEdicao(
-        'Salvar a correção deste atendimento? A versão anterior fica preservada no histórico do prontuário.',
+        'Salvar a correção desta evolução? A versão anterior fica preservada no histórico do prontuário.',
         'Salvar correção',
       ))
     ) {
@@ -183,10 +303,13 @@ function Formulario({
     setSalvando(true);
 
     const campos = {
-      tecnicasAplicadas: form.tecnicasAplicadas,
+      tecnicasAplicadas: form.tecnicasAplicadas.trim(),
       escalaDor: form.escalaDor,
-      evolucaoClinica: form.evolucaoClinica,
-      proximosPassos: form.proximosPassos,
+      evolucaoClinica: form.evolucaoClinica.trim(),
+      reacaoAnimal: form.reacaoAnimal.trim(),
+      observacoes: form.observacoes.trim(),
+      relatorio: form.relatorio.trim(),
+      proximosPassos: form.proximosPassos.trim(),
       // Os sinais vitais estruturados também viram um resumo em texto para a linha do tempo.
       sinaisVitais: montarResumoSinaisVitais(form),
       pesoKg: form.pesoKg ? Number(form.pesoKg) : null,
@@ -203,21 +326,31 @@ function Formulario({
         setAtendimentoSalvo({ ...data, midias });
         setEditando(false);
         setHouveAlteracao(true);
-        setAviso('Atendimento corrigido. A versão anterior foi preservada no histórico.');
+        setAviso('Evolução corrigida. A versão anterior foi preservada no histórico.');
       } else {
+        // Pela agenda, a sessão já vem escolhida; pelo tratamento, é a sessão agendada
+        // escolhida ou, sem ela, a sessão de agora, que a API cria já concluída.
+        const origem = sessaoId
+          ? { sessaoId }
+          : sessaoEscolhida
+            ? { sessaoId: sessaoEscolhida }
+            : { tratamentoId: tratamentoDoProntuario?.id };
+
         const { data } = await api.post<Atendimento>('/api/atendimentos', {
-          sessaoId,
+          ...origem,
           ...campos,
-          observacaoInterna: form.observacaoInterna || null,
+          observacaoInterna: form.observacaoInterna.trim() || null,
           concluirSessao: true,
         });
 
         setAtendimentoSalvo(data);
         setHouveAlteracao(true);
-        setAviso('Atendimento registrado e sessão concluída. Você ainda pode anexar fotos e vídeos desta sessão.');
+        setAviso(
+          `Evolução nº ${data.numeroSessao} registrada e sessão concluída. Você ainda pode anexar fotos e vídeos desta sessão.`,
+        );
       }
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível salvar o atendimento.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível salvar a evolução.'));
     } finally {
       setSalvando(false);
     }
@@ -262,13 +395,28 @@ function Formulario({
     }
   }
 
-  const cabecalho = sessao ? `${sessao.nomePaciente} · ${sessao.nomeTutor}` : descricao ?? '';
+  const cabecalho = sessao
+    ? `${sessao.nomePaciente} · ${sessao.nomeTutor}`
+    : descricao ?? (atendimentoSalvo ? atendimentoSalvo.nomePaciente : '');
   const mostrarFormulario = !atendimentoSalvo || editando;
+
+  // Número e tratamento da evolução: o registrado, ou o que a próxima vai receber.
+  const nomeTratamento = atendimentoSalvo?.nomeTratamento || tratamento?.nome || '';
+  const numeroSessao = atendimentoSalvo?.numeroSessao ?? (tratamento ? tratamento.evolucoesRegistradas + 1 : null);
+
+  const titulo =
+    editando && atendimentoSalvo
+      ? 'Corrigir evolução'
+      : atendimentoSalvo
+        ? `Evolução — sessão nº ${atendimentoSalvo.numeroSessao}`
+        : tratamentoDoProntuario
+          ? 'Registrar sessão realizada'
+          : 'Registrar evolução';
 
   return (
     <Modal
       aberto
-      titulo={editando && atendimentoSalvo ? 'Corrigir atendimento' : atendimentoSalvo ? 'Atendimento da sessão' : 'Registrar atendimento'}
+      titulo={titulo}
       descricao={cabecalho}
       aoFechar={() => {
         // Se algo foi registrado ou alterado, a tela de origem precisa se atualizar ao fechar.
@@ -277,28 +425,79 @@ function Formulario({
       }}
       largura="max-w-3xl"
     >
-      {aviso && (
-        <div className="mb-4">
-          <Alerta tipo="sucesso">{aviso}</Alerta>
+      {(nomeTratamento || numeroSessao) && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          {nomeTratamento && (
+            <span>
+              Tratamento: <strong className="text-slate-800">{nomeTratamento}</strong>
+            </span>
+          )}
+          {numeroSessao && (
+            <span>
+              Sessão nº <strong className="text-slate-800">{numeroSessao}</strong>
+              {tratamento && ` de ${tratamento.sessoesPrevistas} previstas`}
+            </span>
+          )}
+          {atendimentoSalvo && (
+            <span>
+              {formatarDataHora(atendimentoSalvo.dataRegistro)}
+              {atendimentoSalvo.nomeVeterinario && ` · ${atendimentoSalvo.nomeVeterinario}`}
+            </span>
+          )}
         </div>
+      )}
+
+      {aviso && (
+        <Alerta flutuante tipo="sucesso" aoFechar={() => setAviso('')}>
+          {aviso}
+        </Alerta>
       )}
 
       {!mostrarFormulario && atendimentoSalvo ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ResumoCampo rotulo="Técnicas aplicadas" valor={atendimentoSalvo.tecnicasAplicadas} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ResumoCampo rotulo="Procedimentos realizados" valor={atendimentoSalvo.tecnicasAplicadas} />
             <div>
               <p className="vc-rotulo">Escala de dor</p>
               <Etiqueta className={estiloEscalaDor(atendimentoSalvo.escalaDor)}>
                 {atendimentoSalvo.escalaDor}/10
               </Etiqueta>
             </div>
-            <ResumoCampo rotulo="Evolução clínica" valor={atendimentoSalvo.evolucaoClinica} />
+            <ResumoCampo rotulo="O que foi realizado" valor={atendimentoSalvo.evolucaoClinica} />
+            <ResumoCampo rotulo="Reação do animal" valor={atendimentoSalvo.reacaoAnimal} />
+            <ResumoCampo rotulo="Observações" valor={atendimentoSalvo.observacoes} />
+            <ResumoCampo rotulo="Relatório" valor={atendimentoSalvo.relatorio} />
             <ResumoCampo rotulo="Próximos passos" valor={atendimentoSalvo.proximosPassos} />
-            <ResumoCampo rotulo="Sinais vitais" valor={atendimentoSalvo.sinaisVitais} />
+            <ResumoCampo
+              rotulo="Sinais vitais"
+              valor={atendimentoSalvo.sinaisVitais || resumoDosSinaisRegistrados(atendimentoSalvo)}
+            />
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            {podeEmitirReceita &&
+              (aoEmitirReceita ? (
+                <button type="button" className="vc-botao-secundario" onClick={() => aoEmitirReceita(atendimentoSalvo)}>
+                  <Pill size={15} />
+                  Emitir receita desta evolução
+                </button>
+              ) : (
+                <Link
+                  to={`/prontuario/${atendimentoSalvo.pacienteId}?aba=medicacao&evolucao=${atendimentoSalvo.id}`}
+                  className="vc-botao-secundario"
+                >
+                  <Pill size={15} />
+                  Emitir receita desta evolução
+                </Link>
+              ))}
+
+            {exibirLinkDoProntuario && (
+              <Link to={`/prontuario/${atendimentoSalvo.pacienteId}`} className="vc-botao-secundario">
+                <FileText size={15} />
+                Abrir prontuário
+              </Link>
+            )}
+
             <button
               type="button"
               className="vc-botao-secundario"
@@ -314,13 +513,64 @@ function Formulario({
           </div>
         </div>
       ) : (
-        <form onSubmit={aoEnviar} className="space-y-4">
-          <Campo rotulo="Técnicas aplicadas" obrigatorio dica="Separe por vírgula — o relatório usa esta lista no ranking de técnicas.">
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          {tratamentoDoProntuario && !atendimentoSalvo && (
+            <Campo
+              rotulo="Sessão"
+              obrigatorio
+              dica={
+                sessoesPendentes === null
+                  ? 'Buscando as sessões agendadas deste tratamento...'
+                  : sessoesPendentes.length > 0
+                    ? 'Sessões agendadas até hoje e ainda sem evolução. Se a sessão não estava agendada, escolha a de agora.'
+                    : 'Nenhuma sessão agendada pendente: a sessão de agora entra na agenda já concluída.'
+              }
+            >
+              <select
+                className="vc-campo"
+                value={sessaoEscolhida}
+                onChange={(e) => setSessaoEscolhida(e.target.value)}
+                disabled={sessoesPendentes === null}
+              >
+                {sessoesPendentes?.map((pendente) => (
+                  <option key={pendente.id} value={pendente.id}>
+                    Agendada para {formatarDataHora(pendente.dataHora)} · {pendente.nomeVeterinario}
+                  </option>
+                ))}
+                <option value="">Sessão de agora, sem agendamento</option>
+              </select>
+            </Campo>
+          )}
+
+          <Campo rotulo="Procedimentos realizados" obrigatorio dica="Separe os procedimentos por vírgula.">
             <input
               className="vc-campo"
               value={form.tecnicasAplicadas}
               onChange={(e) => atualizar('tecnicasAplicadas', e.target.value)}
               placeholder="Hidroterapia, Laserterapia, Cinesioterapia"
+              maxLength={LIMITES.tecnicasAplicadas}
+            />
+          </Campo>
+
+          <Campo rotulo="O que foi realizado" obrigatorio dica={`${form.evolucaoClinica.length}/${LIMITES.evolucaoClinica}`}>
+            <textarea
+              className="vc-campo"
+              rows={3}
+              value={form.evolucaoClinica}
+              onChange={(e) => atualizar('evolucaoClinica', e.target.value)}
+              placeholder="Descreva a sessão: exercícios, tempo de cada técnica, intensidade."
+              maxLength={LIMITES.evolucaoClinica}
+            />
+          </Campo>
+
+          <Campo rotulo="Reação do animal" obrigatorio dica={`${form.reacaoAnimal.length}/${LIMITES.reacaoAnimal}`}>
+            <textarea
+              className="vc-campo"
+              rows={2}
+              value={form.reacaoAnimal}
+              onChange={(e) => atualizar('reacaoAnimal', e.target.value)}
+              placeholder="Como o animal respondeu: tolerância, dor, cansaço, comportamento."
+              maxLength={LIMITES.reacaoAnimal}
             />
           </Campo>
 
@@ -335,20 +585,34 @@ function Formulario({
                 className="flex-1 accent-brand"
                 value={form.escalaDor}
                 onChange={(e) => atualizar('escalaDor', Number(e.target.value))}
+                aria-label="Escala de dor"
               />
               <Etiqueta className={estiloEscalaDor(form.escalaDor)}>{form.escalaDor}/10</Etiqueta>
             </div>
           </Campo>
 
-          <Campo rotulo="Evolução clínica" obrigatorio>
-            <textarea
-              className="vc-campo"
-              rows={3}
-              value={form.evolucaoClinica}
-              onChange={(e) => atualizar('evolucaoClinica', e.target.value)}
-              placeholder="Descreva a resposta do paciente à sessão."
-            />
-          </Campo>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Campo rotulo="Observações">
+              <textarea
+                className="vc-campo"
+                rows={3}
+                value={form.observacoes}
+                onChange={(e) => atualizar('observacoes', e.target.value)}
+                maxLength={LIMITES.observacoes}
+              />
+            </Campo>
+
+            <Campo rotulo="Relatório">
+              <textarea
+                className="vc-campo"
+                rows={3}
+                value={form.relatorio}
+                onChange={(e) => atualizar('relatorio', e.target.value)}
+                placeholder="Síntese da sessão para o prontuário e para o tutor."
+                maxLength={LIMITES.relatorio}
+              />
+            </Campo>
+          </div>
 
           <Campo rotulo="Próximos passos">
             <textarea
@@ -356,10 +620,11 @@ function Formulario({
               rows={2}
               value={form.proximosPassos}
               onChange={(e) => atualizar('proximosPassos', e.target.value)}
+              maxLength={LIMITES.proximosPassos}
             />
           </Campo>
 
-          {/* HU-011, CA-3: o peso registrado aqui alimenta o gráfico de evolução. */}
+          {/* O peso registrado aqui passa a ser o peso atual do paciente. */}
           <fieldset className="rounded-xl border border-slate-200 p-4">
             <legend className="px-2 text-sm font-semibold text-slate-700">Sinais vitais</legend>
 
@@ -426,16 +691,21 @@ function Formulario({
           {/* HU-009 / RN-003: observação restrita, nunca visível ao tutor; só no registro inicial. */}
           {!editando && podeVerObservacoesInternas && (
             <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
+              <label
+                className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800"
+                htmlFor="evolucao-observacao-interna"
+              >
                 <Lock size={15} />
                 Observação interna
-              </div>
+              </label>
               <textarea
+                id="evolucao-observacao-interna"
                 className="vc-campo"
                 rows={2}
                 value={form.observacaoInterna}
                 onChange={(e) => atualizar('observacaoInterna', e.target.value)}
                 placeholder="Anotação restrita à equipe clínica."
+                maxLength={LIMITES.observacaoInterna}
               />
               <p className="mt-1.5 text-xs text-amber-700">
                 Visível apenas para Administrador e Veterinário. O tutor nunca terá acesso a este conteúdo.
@@ -450,7 +720,7 @@ function Formulario({
               type="button"
               className="vc-botao-secundario"
               onClick={() => {
-                if (editando && atendimentoSalvo) setEditando(false);
+                if (editando && atendimentoSalvo && !corrigir) setEditando(false);
                 else if (houveAlteracao) aoSalvar();
                 else aoFechar();
               }}
@@ -460,29 +730,31 @@ function Formulario({
             </button>
             <button type="submit" className="vc-botao-primario" disabled={salvando}>
               {salvando && <Loader2 className="animate-spin" size={16} />}
-              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar atendimento'}
+              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar evolução'}
             </button>
           </div>
         </form>
       )}
 
-      {/* HU-010: anexos da sessão. */}
+      {/* HU-010: fotografias e vídeos da sessão. */}
       <div className="mt-6 border-t border-slate-200 pt-5">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-slate-700">Fotos e vídeos da sessão</h3>
+          <h3 className="text-sm font-semibold text-slate-700">Fotografias e vídeos da sessão</h3>
 
-          <label className="vc-botao-secundario cursor-pointer">
-            {enviandoMidia ? <Loader2 className="animate-spin" size={16} /> : <Paperclip size={16} />}
-            Anexar
-            <input
-              ref={campoArquivo}
-              type="file"
-              className="sr-only"
-              accept=".jpg,.jpeg,.png,.webp,.mp4,.mov"
-              disabled={enviandoMidia}
-              onChange={(e) => e.target.files?.[0] && enviarMidia(e.target.files[0])}
-            />
-          </label>
+          {sessaoId && (
+            <label className="vc-botao-secundario cursor-pointer">
+              {enviandoMidia ? <Loader2 className="animate-spin" size={16} /> : <Paperclip size={16} />}
+              Anexar
+              <input
+                ref={campoArquivo}
+                type="file"
+                className="sr-only"
+                accept=".jpg,.jpeg,.png,.webp,.mp4,.mov"
+                disabled={enviandoMidia}
+                onChange={(e) => e.target.files?.[0] && enviarMidia(e.target.files[0])}
+              />
+            </label>
+          )}
         </div>
 
         {erro && !mostrarFormulario && (
@@ -493,7 +765,11 @@ function Formulario({
           </div>
         )}
 
-        {midias.length === 0 ? (
+        {!sessaoId ? (
+          <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+            Salve a evolução para anexar fotos e vídeos desta sessão.
+          </p>
+        ) : midias.length === 0 ? (
           <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
             Nenhum arquivo anexado a esta sessão. Formatos aceitos: JPG, PNG, WEBP, MP4 e MOV (até 25 MB).
           </p>
@@ -540,9 +816,22 @@ function ResumoCampo({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <div>
       <p className="vc-rotulo">{rotulo}</p>
-      <p className="text-sm text-slate-700">{valor}</p>
+      <p className="whitespace-pre-line text-sm text-slate-700">{valor}</p>
     </div>
   );
+}
+
+/** Sinais vitais estruturados de uma evolução gravada sem o resumo em texto. */
+function resumoDosSinaisRegistrados(atendimento: Atendimento): string {
+  const numero = (valor: number) => valor.toString().replace('.', ',');
+  const partes: string[] = [];
+
+  if (atendimento.frequenciaCardiaca != null) partes.push(`FC ${atendimento.frequenciaCardiaca} bpm`);
+  if (atendimento.frequenciaRespiratoria != null) partes.push(`FR ${atendimento.frequenciaRespiratoria} mpm`);
+  if (atendimento.temperaturaCelsius != null) partes.push(`Temp. ${numero(atendimento.temperaturaCelsius)} °C`);
+  if (atendimento.pesoKg != null) partes.push(`Peso ${numero(atendimento.pesoKg)} kg`);
+
+  return partes.join(', ');
 }
 
 function montarResumoSinaisVitais(form: Estado): string {

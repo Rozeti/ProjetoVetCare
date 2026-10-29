@@ -64,6 +64,7 @@ namespace VetCare.API.Data
                 .Include(a => a.Veterinario)
                     .ThenInclude(v => v!.Usuario)
                 .Include(a => a.Sessao)
+                .Include(a => a.Tratamento)
                 .Where(a => a.ProntuarioId == prontuarioId)
                 .OrderByDescending(a => a.DataRegistro)
                 .ToListAsync();

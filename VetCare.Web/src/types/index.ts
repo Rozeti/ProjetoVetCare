@@ -62,6 +62,15 @@ export interface Tutor {
   cpf: string;
   ativo: boolean;
   quantidadePets: number;
+  /** Animais vinculados ao tutor, no mesmo recorte de quem consulta (RN-008). */
+  pets: PetDoTutor[];
+}
+
+export interface PetDoTutor {
+  id: string;
+  nome: string;
+  especie: string;
+  ativo: boolean;
 }
 
 export interface Veterinario {
@@ -99,15 +108,6 @@ export interface Pet {
   dataObito?: string | null;
   alertasClinicos: AlergiaCondicao[];
   vacinasVencidas: number;
-}
-
-/** Resposta da transferência de um paciente para outro veterinário. */
-export interface ResultadoTransferencia {
-  paciente: Pet;
-  nomeVeterinarioAnterior: string;
-  nomeNovoVeterinario: string;
-  tratamentosTransferidos: number;
-  sessoesTransferidas: number;
 }
 
 /** Paciente ativo na lista de seleção dos formulários (agendamento, mensagens), sem paginação. */
@@ -190,7 +190,33 @@ export interface Prescricao {
   validaAte?: string | null;
   orientacoes: string;
   status: 'Ativa' | 'Cancelada';
+  /** Origem da receita: a avaliação ou a evolução em que foi prescrita. */
+  avaliacaoId?: string | null;
+  atendimentoId?: string | null;
+  /** "Avaliação de 12/04/2026" ou "Evolução nº 3 — RPG"; vazio nas receitas antigas sem origem. */
+  origem: string;
   itens: ItemPrescricao[];
+}
+
+/** Pedido de exames gerado a partir de uma avaliação. */
+export interface PedidoExame {
+  id: string;
+  pacienteId: string;
+  nomePaciente: string;
+  especie: string;
+  raca: string;
+  nomeTutor: string;
+  avaliacaoId: string;
+  dataAvaliacao?: string | null;
+  motivoAvaliacao: string;
+  nomeVeterinario: string;
+  crmv: string;
+  dataEmissao: string;
+  /** Exames solicitados, um por linha. */
+  exames: string;
+  justificativa: string;
+  status: 'Ativo' | 'Cancelado';
+  motivoCancelamento: string;
 }
 
 export interface BloqueioAgenda {
@@ -216,19 +242,40 @@ export interface RegistroAuditoria {
   dataHora: string;
 }
 
+export type StatusTratamento = 'Planejado' | 'Em Andamento' | 'Concluído' | 'Inativado';
+
+/** Tratamento: plano terapêutico encaminhado a partir de uma avaliação. */
 export interface Tratamento {
   id: string;
   pacienteId: string;
   nomePaciente: string;
+  /** Avaliação de origem. */
+  avaliacaoId: string;
+  dataAvaliacao?: string | null;
+  motivoAvaliacao: string;
   veterinarioId: string;
   nomeVeterinario: string;
+  nome: string;
+  tipo: string;
+  descricao: string;
+  duracaoPrevista: string;
+  frequencia: string;
+  sessoesPrevistas: number;
   dataInicio: string;
   dataFim?: string | null;
-  objetivoTerapeutico: string;
-  status: string;
+  status: StatusTratamento;
   observacoesGerais: string;
+  /** Sessões agendadas para o tratamento. */
   totalSessoes: number;
   sessoesConcluidas: number;
+  /** Evoluções (sessões realizadas) registradas. */
+  evolucoesRegistradas: number;
+}
+
+export interface TratamentoResumo {
+  id: string;
+  nome: string;
+  status: StatusTratamento;
 }
 
 export interface ItemAgenda {
@@ -290,16 +337,33 @@ export interface ObservacaoInterna {
   dataRegistro: string;
 }
 
-export type TipoItemLinhaTempo = 'Avaliação Clínica' | 'Atendimento' | 'Observação Interna';
+export type CategoriaLinhaTempo =
+  | 'Avaliação'
+  | 'Tratamento'
+  | 'Evolução'
+  | 'Cirurgia'
+  | 'Vacinação'
+  | 'Receita'
+  | 'Exame'
+  | 'Observação';
 
+/** Evento da linha do tempo clínica do animal. */
 export interface ItemLinhaTempo {
+  /** Identificador do registro de origem (avaliação, tratamento, evolução...). */
   id: string;
+  /** Única por evento: um tratamento gera o evento de início e o de encerramento. */
+  chave: string;
   data: string;
-  tipo: TipoItemLinhaTempo;
+  categoria: CategoriaLinhaTempo;
+  /** Título do evento, por exemplo "Avaliação clínica" ou "Tratamento concluído". */
+  tipo: string;
+  /** Responsável pelo registro. */
   autor: string;
   descricao: string;
   detalhes: string;
   editado: boolean;
+  tratamentoId?: string | null;
+  numeroSessao?: number | null;
   escalaDor?: number | null;
   pesoKg?: number | null;
   campos: Record<string, string>;
@@ -347,40 +411,57 @@ export interface Prontuario {
   dataObito?: string | null;
   exibeObservacoesInternas: boolean;
   alertasClinicos: AlergiaCondicao[];
+  /** Avaliações do animal, cada uma com os tratamentos que originou. */
+  avaliacoes: Avaliacao[];
   historico: ItemLinhaTempo[];
   evolucaoPeso: PontoEvolucao[];
   evolucaoDor: PontoEvolucao[];
   vacinas: Vacina[];
   prescricoes: Prescricao[];
+  pedidosExame: PedidoExame[];
   documentos: Documento[];
   tratamentos: Tratamento[];
 }
 
+/** Primeiro contato clínico de uma consulta; pode originar tratamentos, receitas e pedidos de exame. */
 export interface Avaliacao {
   id: string;
-  tratamentoId: string;
+  pacienteId: string;
   prontuarioId: string;
   dataRegistro: string;
   dataUltimaEdicao?: string | null;
+  veterinarioId: string;
   nomeVeterinario: string;
-  queixaPrincipal: string;
-  anamnese: string;
-  exameFisico: string;
-  hipoteseDiagnostica: string;
-  planoTerapeutico: string;
+  motivoConsulta: string;
+  observacoes: string;
+  diagnosticoPossivel: string;
+  tratamentos: TratamentoResumo[];
+  quantidadeReceitas: number;
+  quantidadePedidosExame: number;
 }
 
+/** Evolução: o registro de uma sessão realizada dentro de um tratamento. */
 export interface Atendimento {
   id: string;
   sessaoId: string;
   tratamentoId: string;
+  nomeTratamento: string;
+  pacienteId: string;
+  nomePaciente: string;
   prontuarioId: string;
+  numeroSessao: number;
   dataRegistro: string;
   dataUltimaEdicao?: string | null;
+  veterinarioId: string;
   nomeVeterinario: string;
+  /** Procedimentos realizados. */
   tecnicasAplicadas: string;
   escalaDor: number;
+  /** Descrição do que foi realizado. */
   evolucaoClinica: string;
+  reacaoAnimal: string;
+  observacoes: string;
+  relatorio: string;
   sinaisVitais: string;
   proximosPassos: string;
   pesoKg?: number | null;
@@ -388,6 +469,25 @@ export interface Atendimento {
   frequenciaCardiaca?: number | null;
   frequenciaRespiratoria?: number | null;
   midias: Midia[];
+}
+
+/** Linha da tela de evoluções. */
+export interface EvolucaoResumo {
+  id: string;
+  sessaoId: string;
+  tratamentoId: string;
+  nomeTratamento: string;
+  pacienteId: string;
+  nomePaciente: string;
+  numeroSessao: number;
+  dataRegistro: string;
+  veterinarioId: string;
+  nomeVeterinario: string;
+  tecnicasAplicadas: string;
+  evolucaoClinica: string;
+  reacaoAnimal: string;
+  escalaDor: number;
+  editado: boolean;
 }
 
 export interface Mensagem {
@@ -444,22 +544,6 @@ export interface Indicadores {
   mensagensNaoLidas: number;
   notificacoesNaoVisualizadas: number;
   proximasSessoes: ItemAgenda[];
-}
-
-export interface RelatorioProdutividade {
-  inicio: string;
-  fim: string;
-  totalAtendimentos: number;
-  totalAvaliacoes: number;
-  mediaEscalaDor: number;
-  semRegistros: boolean;
-  porVeterinario: {
-    veterinarioId: string;
-    nome: string;
-    totalAtendimentos: number;
-    mediaEscalaDor: number;
-  }[];
-  tecnicasMaisAplicadas: { tecnica: string; ocorrencias: number }[];
 }
 
 export interface Clinica {
@@ -529,5 +613,32 @@ export interface HistoricoVersao {
   dataAlteracao: string;
 }
 
-/** Espécies oferecidas nos formulários; a API aceita qualquer texto. */
-export const ESPECIES = ['Cachorro', 'Gato', 'Ave', 'Roedor', 'Outro'] as const;
+/** A clínica atende apenas cães: é a espécie de todo paciente novo. */
+export const ESPECIE_ATENDIDA = 'Cachorro';
+
+/** Sugestões do campo de raça; a API aceita qualquer texto. */
+export const RACAS_DE_CAES = [
+  'SRD (sem raça definida)',
+  'Beagle',
+  'Border Collie',
+  'Buldogue Francês',
+  'Buldogue Inglês',
+  'Chihuahua',
+  'Cocker Spaniel',
+  'Dachshund',
+  'Golden Retriever',
+  'Husky Siberiano',
+  'Labrador Retriever',
+  'Lhasa Apso',
+  'Maltês',
+  'Pastor Alemão',
+  'Pinscher',
+  'Pit Bull',
+  'Poodle',
+  'Pug',
+  'Rottweiler',
+  'Schnauzer',
+  'Shih Tzu',
+  'Spitz Alemão',
+  'Yorkshire Terrier',
+] as const;

@@ -3,10 +3,9 @@ using VetCare.API.Models;
 namespace VetCare.API.Security
 {
     /// <summary>
-    /// Quem pode ver um tutor. O tutor acompanha os pacientes: o veterinário enxerga os
-    /// tutores dos pacientes sob sua responsabilidade e, para conseguir cadastrar um
-    /// paciente novo, também os tutores que ainda não têm nenhum pet. Quando um paciente
-    /// é transferido, o tutor vai junto, sem precisar de nenhum vínculo a mais.
+    /// Quem pode ver um tutor. O tutor acompanha os pacientes: como toda a equipe clínica
+    /// alcança qualquer paciente da clínica, alcança também qualquer tutor. O Tutor enxerga
+    /// apenas o próprio cadastro.
     /// </summary>
     public static class AcessoAoTutor
     {
@@ -22,30 +21,10 @@ namespace VetCare.API.Security
                 return usuario.TutorId.HasValue && usuario.TutorId.Value == tutor.Id;
             }
 
-            if (usuario.EhVeterinario)
-            {
-                return usuario.VeterinarioId.HasValue && Vinculado(tutor, usuario.VeterinarioId.Value);
-            }
-
-            return true;
+            return usuario.EhAdministrador || usuario.EhApoio || usuario.EhVeterinario;
         }
 
-        /// <summary>Tutor de algum paciente do veterinário, ou tutor que ainda não tem paciente nenhum.</summary>
-        public static bool Vinculado(Tutor tutor, Guid veterinarioId)
-        {
-            var pets = tutor.Pets ?? new List<Pet>();
-
-            return pets.Count == 0 || pets.Any(p => p.VeterinarioResponsavelId == veterinarioId);
-        }
-
-        /// <summary>Quantos pacientes do tutor quem consulta pode ver.</summary>
-        public static int ContarPacientesVisiveis(UsuarioAtual usuario, Tutor tutor)
-        {
-            var pets = tutor.Pets ?? new List<Pet>();
-
-            return usuario.EhVeterinario
-                ? pets.Count(p => p.VeterinarioResponsavelId == usuario.VeterinarioId)
-                : pets.Count;
-        }
+        /// <summary>Os pacientes do tutor que aparecem na tela de tutores: todos os dele.</summary>
+        public static List<Pet> PacientesVisiveis(Tutor tutor) => (tutor.Pets ?? new List<Pet>()).ToList();
     }
 }

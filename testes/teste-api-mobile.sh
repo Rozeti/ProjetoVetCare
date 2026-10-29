@@ -39,10 +39,17 @@ SESSAO=$(val "$(grep -o '{[^{}]*}' <<<"$r" | grep '"status":"Aguardando' | head 
 
 r=$(get "/api/prontuarios/paciente/$PET" "$TK")
 checa "GET /api/prontuarios/paciente (tela Prontuário)" "historico" "$r"
-checa "prontuário traz evolucaoPeso para o gráfico" "evolucaoPeso" "$r"
-checa "prontuário traz evolucaoDor para o gráfico" "evolucaoDor" "$r"
+checa "prontuário traz a série de peso (peso atual do pet)" "evolucaoPeso" "$r"
+checa "prontuário traz a série da escala de dor" "evolucaoDor" "$r"
 checa "prontuário traz documentos" "documentos" "$r"
 checa "prontuário traz tratamentos" "tratamentos" "$r"
+checa "prontuário traz pedidos de exame" "pedidosExame" "$r"
+
+# O primeiro pet da lista pode ter acabado de ser cadastrado e ainda não ter histórico; o
+# Thor dos dados de demonstração tem avaliação, tratamento e evoluções.
+THOR=$(val "$(grep -o '"id":"[^"]*","nome":"Thor"' <<<"$(get /api/pets/meus "$TK")")" id)
+r2=$(get "/api/prontuarios/paciente/${THOR:-$PET}" "$TK")
+checa "linha do tempo traz a categoria de cada evento" '"categoria":"Evolução"' "$r2"
 checa "RN-003 tutor não recebe observações internas" '"exibeObservacoesInternas":false' "$r"
 
 if grep -q "intervenção cirúrgica" <<<"$r" || grep -q "reage ao manuseio" <<<"$r"; then

@@ -23,13 +23,14 @@ namespace VetCare.Tests
             new VacinaRepository(Contexto),
             new TratamentoRepository(Contexto),
             new VeterinarioRepository(Contexto),
+            Dependencias.Notificacoes(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
         private static CriarPetDoTutorDTO PetNovo() => new()
         {
             Nome = "Nina",
-            Especie = "Gato",
+            Especie = "Cachorro",
             Raca = "SRD",
             Sexo = "Fêmea",
             DataNascimento = new DateTime(2024, 3, 12),

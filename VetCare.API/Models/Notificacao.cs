@@ -43,6 +43,7 @@ namespace VetCare.API.Models
         public const string NovoRegistroProntuario = "NovoRegistroProntuario";
         public const string NovaMensagem = "NovaMensagem";
         public const string DoseDeVacina = "DoseDeVacina";
+        /// <summary>Troca do veterinário responsável (o nome vem da antiga transferência de paciente).</summary>
         public const string PacienteTransferido = "PacienteTransferido";
     }
 

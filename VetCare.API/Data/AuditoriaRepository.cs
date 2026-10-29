@@ -19,7 +19,7 @@ namespace VetCare.API.Data
         public async Task<PaginaDe<RegistroAuditoria>> Listar(
             Guid clinicaId,
             Guid? usuarioId,
-            string? acao,
+            IReadOnlyCollection<string>? acoes,
             string? entidade,
             DateTime? inicio,
             DateTime? fim,
@@ -34,9 +34,10 @@ namespace VetCare.API.Data
                 consulta = consulta.Where(r => r.UsuarioId == usuarioId.Value);
             }
 
-            if (!string.IsNullOrWhiteSpace(acao))
+            if (acoes != null)
             {
-                consulta = consulta.Where(r => r.Acao == acao);
+                var lista = acoes.ToList();
+                consulta = consulta.Where(r => lista.Contains(r.Acao));
             }
 
             if (!string.IsNullOrWhiteSpace(entidade))

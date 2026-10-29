@@ -7,10 +7,11 @@ namespace VetCare.API.Data
     {
         Task Registrar(RegistroAuditoria registro);
 
+        /// <param name="acoes">Ações aceitas; nulo não filtra por ação.</param>
         Task<PaginaDe<RegistroAuditoria>> Listar(
             Guid clinicaId,
             Guid? usuarioId,
-            string? acao,
+            IReadOnlyCollection<string>? acoes,
             string? entidade,
             DateTime? inicio,
             DateTime? fim,
