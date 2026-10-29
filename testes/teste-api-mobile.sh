@@ -49,7 +49,7 @@ checa "prontuário traz pedidos de exame" "pedidosExame" "$r"
 # Thor dos dados de demonstração tem avaliação, tratamento e evoluções.
 THOR=$(val "$(grep -o '"id":"[^"]*","nome":"Thor"' <<<"$(get /api/pets/meus "$TK")")" id)
 r2=$(get "/api/prontuarios/paciente/${THOR:-$PET}" "$TK")
-checa "linha do tempo traz a categoria de cada evento" '"categoria":"Evolução"' "$r2"
+checa "linha do tempo traz a categoria de cada evento" '"categoria":"Sessão"' "$r2"
 checa "RN-003 tutor não recebe observações internas" '"exibeObservacoesInternas":false' "$r"
 
 if grep -q "intervenção cirúrgica" <<<"$r" || grep -q "reage ao manuseio" <<<"$r"; then

@@ -42,7 +42,7 @@ const MENU: ItemMenu[] = [
   { rotulo: 'Agenda geral', caminho: '/agenda-geral', icone: CalendarRange, perfis: ['Administrador', 'Apoio'] },
   { rotulo: 'Pacientes', caminho: '/pacientes', icone: PawPrint, perfis: ['Administrador', 'Veterinario', 'Apoio'] },
   { rotulo: 'Tutores', caminho: '/tutores', icone: UserSquare2, perfis: ['Administrador', 'Veterinario', 'Apoio'] },
-  { rotulo: 'Evoluções', caminho: '/evolucoes', icone: Activity, perfis: ['Administrador', 'Veterinario'] },
+  { rotulo: 'Sessões', caminho: '/sessoes', icone: Activity, perfis: ['Administrador', 'Veterinario'] },
   { rotulo: 'Mensagens', caminho: '/mensagens', icone: MessageSquare, perfis: ['Administrador', 'Veterinario', 'Tutor', 'Apoio'] },
   { rotulo: 'Notificações', caminho: '/notificacoes', icone: Bell, perfis: ['Administrador', 'Veterinario', 'Tutor', 'Apoio'] },
   // O apoio consulta a equipe (a API abre a listagem a ele); só a administração edita.

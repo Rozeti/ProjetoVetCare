@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { AtualizacoesProvider } from './contexts/AtualizacoesContext';
@@ -62,6 +62,13 @@ function PaginaInicial() {
   }
 
   return <Dashboard />;
+}
+
+/** Endereço antigo da tela de sessões (de quando se chamavam evoluções), com os filtros da URL. */
+function RedirecionarParaSessoes() {
+  const { search } = useLocation();
+
+  return <Navigate to={`/sessoes${search}`} replace />;
 }
 
 const EQUIPE: Perfil[] = ['Administrador', 'Veterinario', 'Apoio'];
@@ -128,15 +135,16 @@ export default function App() {
               }
             />
 
-            {/* Evoluções das sessões, com filtros; registro clínico restrito à equipe clínica */}
+            {/* Sessões registradas nos tratamentos, com filtros; registro clínico restrito à equipe clínica */}
             <Route
-              path="/evolucoes"
+              path="/sessoes"
               element={
                 <Protegida perfis={['Administrador', 'Veterinario']}>
                   <Evolucoes />
                 </Protegida>
               }
             />
+            <Route path="/evolucoes" element={<RedirecionarParaSessoes />} />
 
             {/* HU-011 — prontuário; o tutor recebe a visão filtrada (RN-003) */}
             <Route

@@ -209,7 +209,9 @@ Authorization: Bearer {{token}}
 { "ativo": true }
 
 ###############################################################################
-# Fluxo clínico: animal → avaliações → tratamentos → evoluções (HU-007 / HU-008)
+# Fluxo clínico: animal → avaliações → tratamentos → sessões registradas (HU-007 / HU-008)
+# Na interface, o registro de cada sessão realizada se chama "sessão"; na API ele continua
+# sendo o atendimento (/api/atendimentos), a evolução do requisito HU-008.
 ###############################################################################
 
 ### RN-010 — Avaliação com campo obrigatório vazio é recusada (400)
@@ -360,7 +362,7 @@ Authorization: Bearer {{token}}
   "reacaoAnimal": "Teste"
 }
 
-### HU-008, CA-1 — Evolução da sessão (o número da sessão é atribuído pela API; a primeira põe o tratamento em andamento)
+### HU-008, CA-1 — Registro da sessão realizada (o número é atribuído pela API; a primeira põe o tratamento em andamento)
 # @name novaEvolucao
 POST {{host}}/api/atendimentos
 Content-Type: application/json
@@ -385,11 +387,11 @@ Authorization: Bearer {{token}}
 
 @evolucaoId = {{novaEvolucao.response.body.id}}
 
-### Evoluções com filtros (pacienteId, tratamentoId, inicio, fim, veterinarioId, numeroSessao); por tratamento saem em ordem cronológica
+### Sessões registradas, com filtros (pacienteId, tratamentoId, inicio, fim, veterinarioId, numeroSessao); por tratamento saem em ordem cronológica
 GET {{host}}/api/atendimentos?pacienteId={{pacienteId}}&tratamentoId={{tratamentoId}}&pagina=1&tamanho=20
 Authorization: Bearer {{token}}
 
-### Sessão realizada sem agendamento: a evolução nasce do tratamento, e a API cria a sessão já concluída
+### Sessão realizada sem agendamento: o registro nasce do tratamento, e a API cria a sessão já concluída
 POST {{host}}/api/atendimentos
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -403,7 +405,7 @@ Authorization: Bearer {{token}}
   "reacaoAnimal": "Colaborativo durante toda a sessão."
 }
 
-### Receita emitida a partir da evolução (a origem é obrigatória: avaliacaoId ou atendimentoId)
+### Receita emitida a partir da sessão registrada (a origem é obrigatória: avaliacaoId ou atendimentoId)
 POST {{host}}/api/prescricoes
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -435,14 +437,20 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/pedidos-exame/paciente/{{pacienteId}}
 Authorization: Bearer {{token}}
 
-### RN-004 — O pedido de exame é cancelado, nunca apagado
-PATCH {{host}}/api/pedidos-exame/{{pedidoExameId}}/cancelar
+### Editar o pedido de exame (a versão anterior fica guardada; a avaliação de origem pode mudar, desde que do mesmo animal)
+PUT {{host}}/api/pedidos-exame/{{pedidoExameId}}
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "motivo": "Exame já realizado em outro laboratório."
+  "avaliacaoId": "{{avaliacaoId}}",
+  "exames": "Raio-X do quadril em duas incidências\nHemograma completo\nPerfil bioquímico",
+  "justificativa": "Confirmar a displasia antes de ampliar o protocolo."
 }
+
+### Excluir o pedido de exame: ele sai do prontuário, e a auditoria registra a exclusão
+DELETE {{host}}/api/pedidos-exame/{{pedidoExameId}}
+Authorization: Bearer {{token}}
 
 ### Atualizar o tratamento (campos omitidos mantêm o valor atual)
 PUT {{host}}/api/tratamentos/{{tratamentoId}}
@@ -454,7 +462,7 @@ Authorization: Bearer {{token}}
   "sessoesPrevistas": 30
 }
 
-### Inativar o tratamento: as sessões e evoluções continuam no histórico, e ele pode ser reativado
+### Inativar o tratamento: as sessões registradas continuam no histórico, e ele pode ser reativado
 PUT {{host}}/api/tratamentos/{{tratamentoId}}
 Content-Type: application/json
 Authorization: Bearer {{token}}

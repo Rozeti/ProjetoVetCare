@@ -145,7 +145,7 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }:
         <SemDados
           icone={<Pill size={40} />}
           titulo="Nenhuma receita emitida"
-          descricao="As receitas são emitidas a partir de uma avaliação ou de uma evolução e ficam aqui para consulta e impressão."
+          descricao="As receitas são emitidas a partir de uma avaliação ou de uma sessão e ficam aqui para consulta e impressão."
         />
       ) : (
         <ul className="divide-y divide-slate-100">
@@ -279,7 +279,7 @@ function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemIn
     setErro('');
 
     if (!origem) {
-      setErro('Informe a origem da receita: a avaliação ou a evolução em que ela foi prescrita.');
+      setErro('Informe a origem da receita: a avaliação ou a sessão em que ela foi prescrita.');
       return;
     }
 
@@ -374,18 +374,18 @@ function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemIn
     <Modal
       aberto
       titulo="Nova receita"
-      descricao="A receita fica registrada no prontuário, ligada à avaliação ou à evolução de origem, e pode ser impressa para o tutor."
+      descricao="A receita fica registrada no prontuário, ligada à avaliação ou à sessão de origem, e pode ser impressa para o tutor."
       aoFechar={aoFechar}
       largura="max-w-3xl"
     >
       {semOrigens ? (
         <Alerta tipo="aviso">
-          A receita é emitida a partir de uma avaliação ou de uma evolução. Registre a avaliação do animal antes de
+          A receita é emitida a partir de uma avaliação ou de uma sessão. Registre a avaliação do animal antes de
           prescrever.
         </Alerta>
       ) : (
         <form onSubmit={aoEnviar} className="space-y-4" noValidate>
-          <Campo rotulo="Origem da receita" obrigatorio dica="A avaliação ou a evolução em que o medicamento foi prescrito.">
+          <Campo rotulo="Origem da receita" obrigatorio dica="A avaliação ou a sessão em que o medicamento foi prescrito.">
             <select
               className="vc-campo"
               value={origem}
@@ -403,10 +403,10 @@ function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemIn
                 </optgroup>
               )}
               {evolucoes.length > 0 && (
-                <optgroup label="Evoluções">
+                <optgroup label="Sessões">
                   {evolucoes.map((evolucao) => (
                     <option key={evolucao.id} value={`evolucao:${evolucao.id}`}>
-                      Evolução nº {evolucao.numeroSessao} — {evolucao.nomeTratamento} ({formatarData(evolucao.data)})
+                      Sessão nº {evolucao.numeroSessao} — {evolucao.nomeTratamento} ({formatarData(evolucao.data)})
                     </option>
                   ))}
                 </optgroup>

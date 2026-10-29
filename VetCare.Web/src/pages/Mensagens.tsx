@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { MessageSquare, PawPrint, Plus, Send, X } from 'lucide-react';
+import { MessageSquare, Plus, Send, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { useAuth } from '../contexts/auth';
-import type { Conversa, Mensagem, Pet, PetSelecao, Usuario } from '../types';
+import type { Conversa, Mensagem, Usuario } from '../types';
 import { Alerta, Avatar, CabecalhoPagina, Card, Carregando, Modal, SemDados } from '../components/ui';
 import { formatarHora, tempoRelativo } from '../utils/formato';
 
@@ -19,11 +19,7 @@ export function Mensagens() {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [texto, setTexto] = useState('');
-
-  // Uma mensagem pode ser sobre um pet específico; a lista muda conforme a conversa aberta.
-  const [petsDaConversa, setPetsDaConversa] = useState<{ id: string; nome: string }[]>([]);
   const [carregandoContatos, setCarregandoContatos] = useState(false);
-  const [pacienteId, setPacienteId] = useState('');
 
   const [carregandoLista, setCarregandoLista] = useState(true);
   const [carregandoConversa, setCarregandoConversa] = useState(false);
@@ -33,6 +29,8 @@ export function Mensagens() {
 
   // Área rolável das mensagens: só ela cresce por dentro, a página fica do mesmo tamanho.
   const areaDasMensagens = useRef<HTMLDivElement>(null);
+  // O campo da mensagem continua com o foco depois do envio, para a próxima ser digitada direto.
+  const campoMensagem = useRef<HTMLTextAreaElement>(null);
 
   // Toda ação que muda a lista de conversas incrementa esta versão, que é o que
   // dispara uma nova leitura.
@@ -113,47 +111,10 @@ export function Mensagens() {
   const conversaAtual = conversas.find((c) => c.usuarioId === selecionado);
   const contatoAtual = contatos.find((c) => c.id === selecionado);
   const nomeContato = conversaAtual?.nome ?? contatoAtual?.nome ?? '';
-  const perfilContato = conversaAtual?.perfil ?? contatoAtual?.perfil;
 
-  // Trocar de conversa zera o pet escolhido e a lista de pets, que pertencem ao contato anterior.
   function selecionar(usuarioId: string | null) {
     setSelecionado(usuarioId);
-    setPacienteId('');
-    setPetsDaConversa([]);
   }
-
-  // Os pets a que a mensagem pode se referir: os do próprio tutor, ou os do tutor com quem a equipe fala.
-  useEffect(() => {
-    if (!selecionado) return;
-
-    let ativo = true;
-
-    async function carregarPets() {
-      try {
-        if (ehTutor) {
-          const { data } = await api.get<Pet[]>('/api/pets/meus');
-          if (ativo) setPetsDaConversa(data.map((pet) => ({ id: pet.id, nome: pet.nome })));
-        } else if (perfilContato === 'Tutor' && selecionado) {
-          // Os pets do tutor da conversa, ligados pelo id do usuário dele: dois tutores com o
-          // mesmo nome não se confundem.
-          const { data } = await api.get<PetSelecao[]>('/api/pets/selecao');
-          if (ativo) {
-            setPetsDaConversa(
-              data.filter((pet) => pet.tutorUsuarioId === selecionado).map((pet) => ({ id: pet.id, nome: pet.nome })),
-            );
-          }
-        }
-      } catch {
-        // O seletor de pet é um complemento: sem ele a conversa segue normalmente.
-      }
-    }
-
-    carregarPets();
-
-    return () => {
-      ativo = false;
-    };
-  }, [selecionado, ehTutor, perfilContato, nomeContato]);
 
   // A conversa abre e acompanha a última mensagem rolando só a própria área, sem mexer na
   // rolagem da página (scrollIntoView rolaria a página inteira junto).
@@ -195,7 +156,6 @@ export function Mensagens() {
     try {
       const { data } = await api.post<Mensagem>('/api/mensagens', {
         destinatarioId: selecionado,
-        pacienteId: pacienteId || null,
         conteudo: texto.trim(),
       });
 
@@ -206,6 +166,7 @@ export function Mensagens() {
       setErro(mensagemDeErro(falha, 'Não foi possível enviar a mensagem.'));
     } finally {
       setEnviando(false);
+      campoMensagem.current?.focus();
     }
   }
 
@@ -360,28 +321,9 @@ export function Mensagens() {
               </div>
 
               <form onSubmit={enviar} className="shrink-0 border-t border-slate-200 p-4">
-                {petsDaConversa.length > 0 && (
-                  <label className="mb-2 flex items-center gap-2 text-xs text-slate-500">
-                    <PawPrint size={14} className="shrink-0 text-brand" />
-                    <span className="shrink-0">Sobre:</span>
-                    <select
-                      className="vc-campo w-auto py-1 text-xs"
-                      value={pacienteId}
-                      onChange={(e) => setPacienteId(e.target.value)}
-                      aria-label="Pet a que a mensagem se refere"
-                    >
-                      <option value="">Nenhum pet em específico</option>
-                      {petsDaConversa.map((pet) => (
-                        <option key={pet.id} value={pet.id}>
-                          {pet.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-
                 <div className="flex items-end gap-2">
                   <textarea
+                    ref={campoMensagem}
                     className="vc-campo resize-none"
                     rows={2}
                     placeholder="Escreva sua mensagem..."
@@ -395,7 +337,9 @@ export function Mensagens() {
                         enviar(e as unknown as FormEvent);
                       }
                     }}
-                    disabled={enviando}
+                    // Desabilitar o campo durante o envio tiraria o foco dele; o envio duplicado
+                    // já é barrado em enviar().
+                    aria-busy={enviando}
                     aria-label="Mensagem"
                   />
 

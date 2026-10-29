@@ -240,7 +240,7 @@ export function Pacientes() {
             descricao={
               filtrosAtivos
                 ? 'Tente outro termo de busca ou limpe os filtros.'
-                : 'Cadastre o primeiro paciente para começar a registrar a evolução clínica.'
+                : 'Cadastre o primeiro paciente para começar a registrar o histórico clínico.'
             }
             acao={
               podeCadastrar && !filtrosAtivos ? (

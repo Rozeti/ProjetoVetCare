@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cria um cenário de demonstração coerente com a documentação do VetCare:
 # equipe completa, pacientes, o fluxo clínico completo (avaliação, tratamento
-# originado dela e evoluções das sessões), carteira de vacinação, receitas,
+# originado dela e as sessões registradas), carteira de vacinação, receitas,
 # pedidos de exame e alertas clínicos.
 #
 # Use apenas em ambiente de avaliação: as contas criadas têm senha conhecida.
@@ -74,7 +74,7 @@ envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$
 envia POST /api/vacinas "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"tipo\":\"Antipulgas\",\"nome\":\"Antipulgas mensal\",\"recorrencia\":\"Mensal\",\"dataAplicacao\":\"$(dias -10)\"}" > /dev/null
 echo "  6 registros: V10 em três doses (reforço anual a vencer), antirrábica vencida, vermífugo em dia, antipulgas a vencer"
 
-echo "== Fluxo clínico: avaliação, tratamento e evoluções =="
+echo "== Fluxo clínico: avaliação, tratamento e sessões =="
 
 # A avaliação é o ponto de partida: é dela que nascem o tratamento, a receita e o pedido de exame.
 r=$(envia POST /api/avaliacoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"motivoConsulta\":\"Claudicação do membro posterior direito há três semanas.\",\"observacoes\":\"Pós-operatório de ruptura de ligamento cruzado cranial, cirurgia há 45 dias. Atrofia muscular em quadríceps direito e amplitude de movimento reduzida em 30%.\",\"diagnosticoPossivel\":\"Atrofia muscular e rigidez articular pós-cirúrgica.\",\"observacaoInterna\":\"Avaliar nova intervenção cirúrgica caso não haja ganho funcional em 60 dias. Não comunicar ao tutor antes da reavaliação.\"}")
@@ -99,7 +99,7 @@ for i in 0 1 2; do
     EVOL=$(val "$r" id)
   fi
 done
-echo "  3 sessões concluídas, cada uma com a sua evolução (peso e dor nos gráficos)"
+echo "  3 sessões concluídas e registradas (procedimentos, reação, peso e dor)"
 
 for d in 7 14; do
   envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"dataHora\":\"$(quando "$d" 13:00)\",\"observacoes\":\"Trazer o pet em jejum de duas horas.\"}" > /dev/null
@@ -107,13 +107,13 @@ done
 echo "  2 sessões futuras aguardando confirmação do tutor"
 
 echo "== Receituário e pedidos de exame =="
-# Toda receita tem origem: a avaliação ou a evolução em que foi prescrita.
+# Toda receita tem origem: a avaliação ou a sessão em que foi prescrita.
 envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"avaliacaoId\":\"$AVAL\",\"orientacoes\":\"Suspender exercícios de impacto até a próxima reavaliação. Retornar imediatamente em caso de aumento da claudicação.\",\"itens\":[{\"medicamento\":\"Condroitina + Glucosamina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 60 dias\",\"via\":\"Oral\",\"observacao\":\"Administrar junto com alimento.\"},{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 5 dias\",\"via\":\"Oral\",\"observacao\":\"Não associar a outros anti-inflamatórios.\"}]}" > /dev/null
 echo "  receita com 2 medicamentos emitida a partir da avaliação"
 
 if [ -n "${EVOL:-}" ]; then
   envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"atendimentoId\":\"$EVOL\",\"orientacoes\":\"Usar apenas nos dias de sessão, se houver desconforto após os exercícios.\",\"itens\":[{\"medicamento\":\"Gabapentina 100mg\",\"dosagem\":\"1 cápsula\",\"frequencia\":\"a cada 12 horas\",\"duracao\":\"por 7 dias\",\"via\":\"Oral\"}]}" > /dev/null
-  echo "  receita emitida a partir da última evolução"
+  echo "  receita emitida a partir da última sessão registrada"
 fi
 
 envia POST /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVAL\",\"exames\":\"Raio-X do joelho direito em duas incidências\nHemograma completo\",\"justificativa\":\"Controle radiográfico da reconstrução do ligamento e acompanhamento do uso de anti-inflamatório.\"}" > /dev/null

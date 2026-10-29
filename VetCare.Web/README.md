@@ -39,10 +39,11 @@ src/
 ├── hooks/          useCarregamento (estado de carga e erro) e useConfirmacao
 ├── pages/          uma tela por História de Usuário
 │   └── componentes/ abas do prontuário (linha do tempo com data e filtro por
-│                   período, avaliações, tratamentos com as evoluções, medicação,
-│                   pedidos de exame, carteira de vacinação) e os modais de cadastro
-│                   do paciente, avaliação, tratamento, sessão e evolução, receita,
-│                   pedido de exame, alerta clínico, agendamento e bloqueios
+│                   período, avaliações, tratamentos, sessões, medicação, pedidos
+│                   de exame editáveis, carteira de vacinação) e os modais de cadastro
+│                   do paciente, avaliação, tratamento, registro da sessão (com fotos
+│                   escolhidas antes de salvar), receita, pedido de exame, alerta
+│                   clínico, agendamento e bloqueios
 ├── services/       cliente HTTP e tratamento de erros da API
 ├── types/          contratos compartilhados com a API
 └── utils/          formatação, validações compartilhadas, paginação e impressão
@@ -56,8 +57,8 @@ em vez de ver uma tela de erro.
 
 | Perfil | Páginas |
 |---|---|
-| Administrador | Painel, Agenda geral, Pacientes, Tutores, Evoluções, Mensagens, Notificações, Auditoria, Usuários, Configurações, Perfil |
-| Veterinário | Painel, Agenda (com bloqueios), Pacientes, Tutores, Evoluções, Mensagens, Notificações, Perfil |
+| Administrador | Painel, Agenda geral, Pacientes, Tutores, Sessões, Mensagens, Notificações, Auditoria, Usuários, Configurações, Perfil |
+| Veterinário | Painel, Agenda (com bloqueios), Pacientes, Tutores, Sessões, Mensagens, Notificações, Perfil |
 | Apoio | Painel, Agenda geral, Pacientes, Tutores, Mensagens, Notificações, Usuários (somente consulta), Perfil |
 | Tutor | Meus pets, Minha agenda, Mensagens, Notificações, Perfil |
 

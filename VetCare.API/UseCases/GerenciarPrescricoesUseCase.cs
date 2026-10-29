@@ -108,7 +108,7 @@ namespace VetCare.API.UseCases
             if (dto.AvaliacaoId.HasValue == dto.AtendimentoId.HasValue)
             {
                 return Resultado<PrescricaoDTO>.Invalido(
-                    "Informe a origem da receita: a avaliação ou a evolução em que ela foi prescrita.");
+                    "Informe a origem da receita: a avaliação ou a sessão em que ela foi prescrita.");
             }
 
             var pet = await _pets.ObterPorIdComTutor(dto.PacienteId);
@@ -185,7 +185,7 @@ namespace VetCare.API.UseCases
 
                 if (atendimento == null || atendimento.Tratamento?.PacienteId != pet.Id)
                 {
-                    return Resultado<PrescricaoDTO>.Invalido("A evolução de origem não pertence a este paciente.");
+                    return Resultado<PrescricaoDTO>.Invalido("A sessão de origem não pertence a este paciente.");
                 }
             }
 
@@ -306,8 +306,8 @@ namespace VetCare.API.UseCases
             {
                 var tratamento = prescricao.Atendimento.Tratamento?.Nome;
                 return string.IsNullOrWhiteSpace(tratamento)
-                    ? $"Evolução nº {prescricao.Atendimento.NumeroSessao}"
-                    : $"Evolução nº {prescricao.Atendimento.NumeroSessao} — {tratamento}";
+                    ? $"Sessão nº {prescricao.Atendimento.NumeroSessao}"
+                    : $"Sessão nº {prescricao.Atendimento.NumeroSessao} — {tratamento}";
             }
 
             return string.Empty;

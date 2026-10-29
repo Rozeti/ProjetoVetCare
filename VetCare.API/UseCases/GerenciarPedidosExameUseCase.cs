@@ -8,19 +8,20 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// Pedidos de exame gerados a partir de uma avaliação, com ou sem tratamento. Como a receita,
-    /// o pedido é um documento assinado por quem solicita: é cancelado, nunca apagado (RN-004),
-    /// e emissão e cancelamento ficam na auditoria.
+    /// Pedidos de exame gerados a partir de uma avaliação, com ou sem tratamento. O pedido é um
+    /// documento assinado por quem solicita, que pode corrigi-lo (a versão anterior fica guardada,
+    /// RN-004) ou excluí-lo. Emissão, correção e exclusão ficam na auditoria.
     /// </summary>
     public class GerenciarPedidosExameUseCase
     {
-        private const int TamanhoDoMotivo = 300;
+        public const string TipoRegistro = "PedidoExame";
 
         private readonly IPedidoExameRepository _pedidos;
         private readonly IAvaliacaoRepository _avaliacoes;
         private readonly IPetRepository _pets;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IVeterinarioRepository _veterinarios;
+        private readonly IVersaoRegistroRepository _versoes;
         private readonly NotificacaoService _notificacoes;
         private readonly AuditoriaService _auditoria;
         private readonly UsuarioAtual _usuarioAtual;
@@ -31,6 +32,7 @@ namespace VetCare.API.UseCases
             IPetRepository pets,
             IProntuarioRepository prontuarios,
             IVeterinarioRepository veterinarios,
+            IVersaoRegistroRepository versoes,
             NotificacaoService notificacoes,
             AuditoriaService auditoria,
             UsuarioAtual usuarioAtual)
@@ -40,6 +42,7 @@ namespace VetCare.API.UseCases
             _pets = pets;
             _prontuarios = prontuarios;
             _veterinarios = veterinarios;
+            _versoes = versoes;
             _notificacoes = notificacoes;
             _auditoria = auditoria;
             _usuarioAtual = usuarioAtual;
@@ -112,7 +115,7 @@ namespace VetCare.API.UseCases
             pedido.Avaliacao = avaliacao;
 
             await _auditoria.RegistrarDoUsuarioAtual(
-                AuditoriaService.Acoes.Criacao, "PedidoExame", pedido.Id,
+                AuditoriaService.Acoes.Criacao, TipoRegistro, pedido.Id,
                 $"Pedido de exame de {pet.Nome}, assinado por {veterinario.Usuario?.Nome}, a partir da avaliação de " +
                 RelogioDaClinica.Padrao.Formatar(avaliacao.DataRegistro, "dd/MM/yyyy"));
 
@@ -164,46 +167,131 @@ namespace VetCare.API.UseCases
             return Resultado<PedidoExameDTO>.Ok(MapearParaDTO(pedido, pedido.Paciente));
         }
 
-        public async Task<Resultado> Cancelar(Guid id, string? motivo)
+        /// <summary>
+        /// Correção do pedido: exames, justificativa e, se preciso, a avaliação de origem (do
+        /// mesmo animal). A versão anterior fica guardada (RN-004) e a correção vai para a auditoria.
+        /// </summary>
+        public async Task<Resultado<PedidoExameDTO>> Atualizar(Guid id, AtualizarPedidoExameDTO dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Exames) || dto.Exames.Trim().Length < 2)
+            {
+                return Resultado<PedidoExameDTO>.Invalido("Informe os exames solicitados.");
+            }
+
+            var (pedido, falha, mensagem) = await ObterParaAlterar(id, "editar");
+
+            if (pedido == null)
+            {
+                return Resultado<PedidoExameDTO>.Erro(falha, mensagem);
+            }
+
+            if (pedido.Status == StatusPedidoExame.Cancelado)
+            {
+                return Resultado<PedidoExameDTO>.Conflito(
+                    "Este pedido foi cancelado e não pode ser editado. Se ele não serve mais, exclua-o.");
+            }
+
+            Guid? novaOrigem = null;
+
+            // A origem pode passar a ser outra avaliação, desde que do mesmo animal.
+            if (dto.AvaliacaoId.HasValue && dto.AvaliacaoId.Value != pedido.AvaliacaoId)
+            {
+                var avaliacao = await _avaliacoes.ObterPorId(dto.AvaliacaoId.Value);
+
+                if (avaliacao == null || avaliacao.PacienteId != pedido.PacienteId)
+                {
+                    return Resultado<PedidoExameDTO>.Invalido("A avaliação de origem precisa ser do mesmo animal.");
+                }
+
+                novaOrigem = avaliacao.Id;
+            }
+
+            await _versoes.Arquivar(TipoRegistro, pedido.Id, new
+            {
+                pedido.AvaliacaoId,
+                pedido.Exames,
+                pedido.Justificativa,
+                pedido.DataEmissao
+            }, _usuarioAtual.Id);
+
+            pedido.Exames = dto.Exames.Trim();
+            pedido.Justificativa = (dto.Justificativa ?? string.Empty).Trim();
+
+            if (novaOrigem.HasValue)
+            {
+                pedido.AvaliacaoId = novaOrigem.Value;
+            }
+
+            // O pedido veio rastreado de ObterPorId: basta gravar.
+            await _pedidos.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(
+                AuditoriaService.Acoes.Alteracao, TipoRegistro, pedido.Id,
+                $"Correção do pedido de exame de {pedido.Paciente?.Nome} emitido em " +
+                RelogioDaClinica.Padrao.Formatar(pedido.DataEmissao, "dd/MM/yyyy"));
+
+            // Relido para trazer a avaliação de origem atual.
+            var atualizado = await _pedidos.ObterPorId(pedido.Id);
+
+            return Resultado<PedidoExameDTO>.Ok(
+                MapearParaDTO(atualizado ?? pedido, (atualizado ?? pedido).Paciente),
+                "Pedido de exame atualizado.");
+        }
+
+        /// <summary>
+        /// Exclui o pedido: ele sai do prontuário e da linha do tempo. A auditoria guarda quem
+        /// excluiu, quando e o que estava pedido.
+        /// </summary>
+        public async Task<Resultado> Excluir(Guid id)
+        {
+            var (pedido, falha, mensagem) = await ObterParaAlterar(id, "excluir");
+
+            if (pedido == null)
+            {
+                return Resultado.Erro(falha, mensagem);
+            }
+
+            var exames = string.Join(", ", pedido.Exames
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+            var detalhe =
+                $"Exclusão do pedido de exame de {pedido.Paciente?.Nome} emitido em " +
+                RelogioDaClinica.Padrao.Formatar(pedido.DataEmissao, "dd/MM/yyyy") +
+                $": {(exames.Length > 250 ? exames[..250] + "..." : exames)}";
+
+            _pedidos.Remover(pedido);
+            await _pedidos.SalvarAlteracoes();
+
+            await _auditoria.RegistrarDoUsuarioAtual(AuditoriaService.Acoes.Exclusao, TipoRegistro, id, detalhe);
+
+            return Resultado.Ok("Pedido de exame excluído.");
+        }
+
+        /// <summary>
+        /// O pedido que quem pede pode alterar: da clínica, de um paciente que ele acessa e, para
+        /// o veterinário, assinado por ele mesmo.
+        /// </summary>
+        private async Task<(PedidoExame? Pedido, TipoFalha Falha, string Mensagem)> ObterParaAlterar(Guid id, string acao)
         {
             var pedido = await _pedidos.ObterPorId(id);
 
             if (pedido == null || pedido.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
             {
-                return Resultado.NaoEncontrado("Pedido de exame não encontrado.");
+                return (null, TipoFalha.NaoEncontrado, "Pedido de exame não encontrado.");
             }
 
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, pedido.Paciente))
             {
-                return Resultado.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
+                return (null, TipoFalha.NaoAutorizado, AcessoAoPaciente.MensagemNegada);
             }
 
-            // O veterinário só cancela o que ele próprio assinou.
+            // O veterinário só altera o que ele próprio assinou.
             if (_usuarioAtual.EhVeterinario && pedido.VeterinarioId != _usuarioAtual.VeterinarioId)
             {
-                return Resultado.NaoAutorizado("Você só pode cancelar pedidos de exame emitidos por você.");
+                return (null, TipoFalha.NaoAutorizado, $"Você só pode {acao} pedidos de exame emitidos por você.");
             }
 
-            if (pedido.Status == StatusPedidoExame.Cancelado)
-            {
-                return Resultado.Conflito("Este pedido de exame já está cancelado.");
-            }
-
-            var motivoLimpo = (motivo ?? string.Empty).Trim();
-
-            pedido.Status = StatusPedidoExame.Cancelado;
-            pedido.MotivoCancelamento = motivoLimpo.Length <= TamanhoDoMotivo ? motivoLimpo : motivoLimpo[..TamanhoDoMotivo];
-
-            _pedidos.Atualizar(pedido);
-            await _pedidos.SalvarAlteracoes();
-
-            await _auditoria.RegistrarDoUsuarioAtual(
-                AuditoriaService.Acoes.Inativacao, "PedidoExame", pedido.Id,
-                $"Cancelamento do pedido de exame de {pedido.Paciente?.Nome} emitido em " +
-                RelogioDaClinica.Padrao.Formatar(pedido.DataEmissao, "dd/MM/yyyy") +
-                (motivoLimpo.Length > 0 ? $". Motivo: {pedido.MotivoCancelamento}" : string.Empty));
-
-            return Resultado.Ok("Pedido de exame cancelado. O registro permanece no histórico do paciente.");
+            return (pedido, TipoFalha.Nenhuma, string.Empty);
         }
 
         public static PedidoExameDTO MapearParaDTO(PedidoExame pedido, Pet? pet)
@@ -219,6 +307,7 @@ namespace VetCare.API.UseCases
                 AvaliacaoId = pedido.AvaliacaoId,
                 DataAvaliacao = pedido.Avaliacao?.DataRegistro,
                 MotivoAvaliacao = pedido.Avaliacao?.MotivoConsulta ?? string.Empty,
+                VeterinarioId = pedido.VeterinarioId,
                 NomeVeterinario = pedido.Veterinario?.Usuario?.Nome ?? string.Empty,
                 Crmv = pedido.Veterinario?.Crmv ?? string.Empty,
                 DataEmissao = pedido.DataEmissao,

@@ -28,7 +28,7 @@ const ENTIDADES: { valor: string; rotulo: string }[] = [
   { valor: 'Veterinario', rotulo: 'Veterinário' },
   { valor: 'AvaliacaoClinica', rotulo: 'Avaliação' },
   { valor: 'Tratamento', rotulo: 'Tratamento' },
-  { valor: 'AtendimentoFisioterapeutico', rotulo: 'Evolução' },
+  { valor: 'AtendimentoFisioterapeutico', rotulo: 'Sessão' },
   { valor: 'Sessao', rotulo: 'Sessão' },
   { valor: 'Vacina', rotulo: 'Vacina' },
   { valor: 'Prescricao', rotulo: 'Receita' },

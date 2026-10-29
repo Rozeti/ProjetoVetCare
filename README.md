@@ -207,7 +207,7 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - **Qualquer veterinário atende qualquer paciente**: toda a equipe clínica, inclusive todos os
   veterinários, vê e acessa todos os pacientes da clínica, com prontuário, tutores, vacinas e
   registros. Se a veterinária que acompanha a Pipoca faltar, um colega abre o prontuário,
-  agenda a sessão na própria agenda e registra a evolução em nome próprio, sem transferência.
+  agenda a sessão na própria agenda e registra a sessão em nome próprio, sem transferência.
   O responsável organiza a clínica (painel do veterinário e filtro "Meus pacientes"), mas não
   restringe o acesso. A antiga transferência de paciente deixou de existir.
 - Os pacientes cadastrados pelo tutor no aplicativo chegam sem responsável. O prontuário avisa,
@@ -219,10 +219,12 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
   motivo quando a ação exige um, como o cancelamento de receita.
 - **Avisos de retorno no canto inferior direito**: "salvo", "removido" e as falhas de uma ação
   aparecem sobre a página, no canto inferior direito; os de sucesso somem sozinhos.
+- Tudo o que é clicável (botões, abas, links, seletores) mostra a mão ao passar o mouse.
 
 ### Prontuário e fluxo clínico
-O fluxo segue **animal → avaliações → tratamentos originados das avaliações → evoluções
-registradas em cada sessão do tratamento**.
+O fluxo segue **animal → avaliações → tratamentos originados das avaliações → sessões
+registradas em cada tratamento**. No requisito HU-008 o registro de uma sessão se chama
+evolução; na interface tudo se chama sessão, para não haver dois nomes para a mesma coisa.
 
 - **Avaliação**: motivo da consulta, observações, possível diagnóstico e veterinário
   responsável (RN-010). Pertence ao animal e pode originar nenhum, um ou vários tratamentos,
@@ -230,24 +232,30 @@ registradas em cada sessão do tratamento**.
 - **Tratamento**: só existe a partir de uma avaliação. Tem nome, tipo, descrição, duração
   prevista, frequência, sessões previstas e veterinário, com a situação **Planejado**, **Em
   andamento**, **Concluído** ou **Inativado**. Pode ser editado; inativar não apaga as sessões
-  nem as evoluções e permite reativar; concluído é definitivo. A primeira evolução registrada
-  põe um tratamento planejado em andamento.
-- **Evolução**: uma por sessão realizada, ligada ao tratamento, com data, número da sessão
+  registradas e permite reativar; concluído é definitivo. A primeira sessão registrada põe um
+  tratamento planejado em andamento.
+- **Sessão**: o registro de cada sessão realizada, ligado ao tratamento, com data, número
   (atribuído pelo sistema), procedimentos realizados, o que foi feito, reação do animal,
-  observações, relatório, sinais vitais, escala de dor e fotografias. Pode originar uma
-  receita. É registrada no botão **Registrar sessão** do tratamento (ou do menu Evoluções),
-  escolhendo uma sessão agendada ainda sem evolução ou a sessão de agora, sem agendamento,
-  que entra na agenda já concluída; na agenda, cada sessão também tem **Registrar evolução**.
-- **Tela de evoluções** (Administrador e Veterinário): filtros por animal, tratamento,
-  período, veterinário e número da sessão. Dentro de um tratamento aparecem só as evoluções
-  dele, em ordem cronológica e com filtro, e o histórico completo do animal fica a um clique.
+  observações, relatório, sinais vitais, escala de dor e fotos e vídeos, que podem ser
+  escolhidos no próprio formulário, antes de salvar. Pode originar uma receita. É registrada
+  no botão **Registrar sessão** do tratamento, da aba Sessões do prontuário ou do menu
+  Sessões, escolhendo uma sessão agendada ainda não registrada ou a sessão de agora, sem
+  agendamento, que entra na agenda já concluída; na agenda, cada sessão também tem
+  **Registrar sessão**.
+- **Sessões**, no menu (Administrador e Veterinário) e como aba do prontuário: filtros por
+  animal, tratamento, período, veterinário e número da sessão. Dentro de um tratamento
+  aparecem só as sessões dele, em ordem cronológica e com filtro, e o histórico completo do
+  animal fica a um clique.
 - **Linha do tempo**: avaliações, início e encerramento (conclusão ou inativação) dos
-  tratamentos, evoluções, cirurgias e procedimentos, vacinações, receitas, pedidos de exame e
+  tratamentos, sessões, cirurgias e procedimentos, vacinações, receitas, pedidos de exame e
   observações internas. Cada evento mostra em destaque a data em que foi feito, com
   categoria, descrição resumida e responsável; o período (de/até) e as categorias filtram a
   lista, e selecionar um evento abre o registro completo.
-- **Medicação**: as receitas vêm de uma avaliação ou de uma evolução (a origem é
-  obrigatória); **pedidos de exame** vêm de uma avaliação. Ambos podem ser impressos e são cancelados, nunca apagados.
+- **Medicação**: as receitas vêm de uma avaliação ou de uma sessão (a origem é
+  obrigatória), podem ser impressas e são canceladas com motivo, nunca apagadas.
+- **Pedidos de exame** vêm de uma avaliação e podem ser impressos. Quem assinou (e a
+  administração) edita o pedido, com a versão anterior guardada, ou o exclui: depois da
+  confirmação, a exclusão tira o pedido do prontuário e fica registrada na auditoria.
 - **Alertas clínicos** no topo do prontuário, sem título nem moldura: cada um é só o nome e a
   descrição, na cor da gravidade.
 - Mídias, documentos e observações internas restritas à equipe clínica.
@@ -255,7 +263,8 @@ registradas em cada sessão do tratamento**.
   auditoria em CSV.
 
 ### Comunicação
-- Mensagens entre tutor e clínica, com histórico e contagem de não lidas.
+- Mensagens entre tutor e clínica, com histórico e contagem de não lidas. Enter envia, e o
+  campo continua pronto para a próxima mensagem.
   A conversa rola dentro do próprio quadro: a página não cresce conforme chegam mensagens.
 - Notificações no portal e no aplicativo, **entregues também por e-mail e por push no celular
   do tutor**. A entrega sai de uma fila no banco com novas tentativas em caso de falha, e cada
@@ -316,7 +325,7 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 | RN-005 Controle de acesso por perfil | `[Authorize(Roles = ...)]` nos controllers e verificação nos casos de uso |
 | RN-006 Bloqueio por tentativas | `AutenticarUsuarioUseCase`: 5 tentativas, bloqueio de 15 minutos |
 | RN-007 Unicidade de credenciais | Índice único em `Usuarios.Email` e verificação no cadastro |
-| RN-008 Visibilidade por perfil | O tutor vê só os próprios pets; a equipe clínica, inclusive qualquer veterinário, vê todos os pacientes e tutores da clínica (`AcessoAoPaciente`, `AcessoAoTutor`). Cada paciente tem um **veterinário responsável** (`Pets.VeterinarioResponsavelId`), trocado em `PUT /api/pets/{id}`: ele define o recorte do painel do veterinário (indicadores e prevenção), não o acesso. Agenda e assinatura continuam pessoais: o veterinário agenda na própria agenda e registra avaliações, evoluções e receitas em nome próprio |
+| RN-008 Visibilidade por perfil | O tutor vê só os próprios pets; a equipe clínica, inclusive qualquer veterinário, vê todos os pacientes e tutores da clínica (`AcessoAoPaciente`, `AcessoAoTutor`). Cada paciente tem um **veterinário responsável** (`Pets.VeterinarioResponsavelId`), trocado em `PUT /api/pets/{id}`: ele define o recorte do painel do veterinário (indicadores e prevenção), não o acesso. Agenda e assinatura continuam pessoais: o veterinário agenda na própria agenda e registra avaliações, sessões e receitas em nome próprio |
 | RN-009 Antecedência de cancelamento | `AtualizarStatusSessaoUseCase`, usando o prazo configurado na clínica |
 | RN-010 Campos obrigatórios da avaliação | `RegistrarAvaliacaoUseCase` aponta exatamente quais campos faltam entre motivo da consulta, observações e possível diagnóstico |
 | RN-011 Restrição de mídias e documentos | Formato e tamanho validados antes do armazenamento |
@@ -445,7 +454,7 @@ clínica (`Aplicacao:FusoHorario`, padrão `America/Sao_Paulo`), e não o do ser
 ## Testes
 
 ```bash
-dotnet test VetCare.Tests/VetCare.Tests.csproj   # 260 testes unitários; o critério é "Falhou: 0"
+dotnet test VetCare.Tests/VetCare.Tests.csproj   # 264 testes unitários; o critério é "Falhou: 0"
 ```
 
 Os roteiros ponta a ponta ficam em [`testes/`](testes/README.md) e exercitam as regras de

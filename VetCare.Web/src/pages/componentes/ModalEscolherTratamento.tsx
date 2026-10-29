@@ -87,7 +87,7 @@ function Formulario({ pacientes, pacienteInicial = '', tratamentoInicial = '', a
     <Modal
       aberto
       titulo="Registrar sessão"
-      descricao="Cada sessão de fisioterapia realizada vira uma evolução numerada do tratamento."
+      descricao="Escolha o animal e o tratamento; em seguida, anote o que foi feito na sessão."
       aoFechar={aoFechar}
     >
       <form onSubmit={continuar} className="space-y-4" noValidate>

@@ -363,7 +363,7 @@ namespace VetCare.API.UseCases
             var mensagem = novoStatus switch
             {
                 StatusTratamento.Inativado when anterior.Status != StatusTratamento.Inativado =>
-                    "Tratamento inativado. As sessões e evoluções continuam no histórico.",
+                    "Tratamento inativado. As sessões registradas continuam no histórico.",
                 StatusTratamento.Concluido when anterior.Status != StatusTratamento.Concluido =>
                     "Tratamento concluído.",
                 _ when novoStatus != null && StatusTratamento.Ativo(novoStatus) && !StatusTratamento.Ativo(anterior.Status) =>

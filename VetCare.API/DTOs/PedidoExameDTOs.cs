@@ -18,11 +18,18 @@ namespace VetCare.API.DTOs
         public string Justificativa { get; set; } = string.Empty;
     }
 
-    /// <summary>RN-004: o pedido é cancelado, nunca apagado; o motivo fica no histórico.</summary>
-    public class CancelarPedidoExameDTO
+    /// <summary>Correção do pedido: os exames, a justificativa e, se preciso, a avaliação de origem.</summary>
+    public class AtualizarPedidoExameDTO
     {
-        [StringLength(300, ErrorMessage = "O motivo deve ter no máximo 300 caracteres.")]
-        public string? Motivo { get; set; }
+        /// <summary>Opcional: outra avaliação do mesmo animal passa a ser a origem do pedido.</summary>
+        public Guid? AvaliacaoId { get; set; }
+
+        [Required(ErrorMessage = "Informe os exames solicitados.")]
+        [StringLength(2000, MinimumLength = 2, ErrorMessage = "Os exames solicitados devem ter entre 2 e 2000 caracteres.")]
+        public string Exames { get; set; } = string.Empty;
+
+        [StringLength(2000, ErrorMessage = "A justificativa deve ter no máximo 2000 caracteres.")]
+        public string Justificativa { get; set; } = string.Empty;
     }
 
     public class PedidoExameDTO
@@ -36,6 +43,9 @@ namespace VetCare.API.DTOs
         public Guid AvaliacaoId { get; set; }
         public DateTime? DataAvaliacao { get; set; }
         public string MotivoAvaliacao { get; set; } = string.Empty;
+
+        /// <summary>Quem assinou: o veterinário só edita e exclui os próprios pedidos.</summary>
+        public Guid VeterinarioId { get; set; }
         public string NomeVeterinario { get; set; } = string.Empty;
         public string Crmv { get; set; } = string.Empty;
         public DateTime DataEmissao { get; set; }

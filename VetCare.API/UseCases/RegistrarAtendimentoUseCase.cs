@@ -112,7 +112,7 @@ namespace VetCare.API.UseCases
             if (sessao?.Status == StatusSessao.Cancelada)
             {
                 return Resultado<AtendimentoDTO>.Invalido(
-                    "Não é possível registrar evolução em uma sessão cancelada.");
+                    "Não é possível registrar uma sessão cancelada.");
             }
 
             // Concluído e inativado não recebem novas evoluções; o histórico fica como está.
@@ -120,13 +120,13 @@ namespace VetCare.API.UseCases
             {
                 return Resultado<AtendimentoDTO>.Conflito(
                     $"O tratamento \"{tratamento.Nome}\" está {tratamento.Status.ToLowerInvariant()}. " +
-                    "Reative-o para registrar novas evoluções.");
+                    "Reative-o para registrar novas sessões.");
             }
 
             // Uma sessão gera no máximo um atendimento (cardinalidade 1..0..1 do diagrama de classes).
             if (sessao != null && await _atendimentos.ObterPorSessao(sessao.Id) != null)
             {
-                return Resultado<AtendimentoDTO>.Conflito("Esta sessão já possui uma evolução registrada.");
+                return Resultado<AtendimentoDTO>.Conflito("Esta sessão já foi registrada.");
             }
 
             // Sem sessão agendada, quem registra é quem atendeu; a administração registra em
@@ -135,7 +135,7 @@ namespace VetCare.API.UseCases
 
             if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)
             {
-                return Resultado<AtendimentoDTO>.NaoAutorizado("A evolução deve ser registrada em seu próprio nome.");
+                return Resultado<AtendimentoDTO>.NaoAutorizado("A sessão deve ser registrada em seu próprio nome.");
             }
 
             var sessaoCriadaAgora = false;
@@ -243,7 +243,7 @@ namespace VetCare.API.UseCases
             // Quem escreveu o registro clínico fica na trilha, não só quem o consultou.
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Criacao, TipoRegistro, atendimento.Id,
-                $"Evolução nº {atendimento.NumeroSessao} do tratamento \"{tratamento.Nome}\" de {tratamento.Paciente?.Nome} (dor {atendimento.EscalaDor}/10)");
+                $"Sessão nº {atendimento.NumeroSessao} do tratamento \"{tratamento.Nome}\" de {tratamento.Paciente?.Nome} (dor {atendimento.EscalaDor}/10)");
 
             // HU-015, CA-3: um único aviso cobre o registro e, quando for o caso, a conclusão da sessão.
             var usuarioTutor = tratamento.Paciente?.Tutor?.UsuarioId;
@@ -253,9 +253,7 @@ namespace VetCare.API.UseCases
                 await _notificacoes.NotificarNovoRegistroProntuario(
                     usuarioTutor.Value,
                     tratamento.Paciente?.Nome ?? "seu pet",
-                    sessaoConcluidaAgora
-                        ? $"Nova evolução: sessão {atendimento.NumeroSessao} concluída"
-                        : $"Nova evolução: sessão {atendimento.NumeroSessao}",
+                    $"Atendimento da sessão nº {atendimento.NumeroSessao}",
                     pacienteId);
             }
 
@@ -263,7 +261,9 @@ namespace VetCare.API.UseCases
 
             return Resultado<AtendimentoDTO>.Ok(
                 await MapearParaDTO(atendimento),
-                "Evolução registrada com sucesso.");
+                sessaoConcluidaAgora
+                    ? $"Sessão nº {atendimento.NumeroSessao} registrada e concluída."
+                    : $"Sessão nº {atendimento.NumeroSessao} registrada.");
         }
 
         /// <summary>RN-004: a edição arquiva a versão anterior antes de aplicar as mudanças.</summary>
@@ -285,13 +285,13 @@ namespace VetCare.API.UseCases
 
             if (atendimento == null)
             {
-                return Resultado<AtendimentoDTO>.NaoEncontrado("Evolução não encontrada.");
+                return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
             }
 
             if (_usuarioAtual.EhVeterinario && atendimento.VeterinarioId != _usuarioAtual.VeterinarioId)
             {
                 return Resultado<AtendimentoDTO>.NaoAutorizado(
-                    "Você só pode corrigir evoluções registradas por você.");
+                    "Você só pode corrigir sessões registradas por você.");
             }
 
             await _versoes.Arquivar(TipoRegistro, atendimento.Id, new
@@ -334,11 +334,11 @@ namespace VetCare.API.UseCases
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Alteracao, TipoRegistro, atendimento.Id,
-                $"Correção da evolução nº {atendimento.NumeroSessao} de {atendimento.Sessao?.Tratamento?.Paciente?.Nome}");
+                $"Correção da sessão nº {atendimento.NumeroSessao} de {atendimento.Sessao?.Tratamento?.Paciente?.Nome}");
 
             return Resultado<AtendimentoDTO>.Ok(
                 await MapearParaDTO(atendimento),
-                "Evolução atualizada. A versão anterior foi preservada no histórico.");
+                "Sessão corrigida. A versão anterior foi preservada no histórico.");
         }
 
         public async Task<Resultado<AtendimentoDTO>> ObterPorId(Guid id)
@@ -346,7 +346,7 @@ namespace VetCare.API.UseCases
             var atendimento = await ObterDaClinica(id);
 
             return atendimento == null
-                ? Resultado<AtendimentoDTO>.NaoEncontrado("Evolução não encontrada.")
+                ? Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.")
                 : Resultado<AtendimentoDTO>.Ok(await MapearParaDTO(atendimento));
         }
 
@@ -470,7 +470,7 @@ namespace VetCare.API.UseCases
         {
             if (await ObterDaClinica(id) == null)
             {
-                return Resultado<List<HistoricoVersaoDTO>>.NaoEncontrado("Evolução não encontrada.");
+                return Resultado<List<HistoricoVersaoDTO>>.NaoEncontrado("Sessão não encontrada.");
             }
 
             var versoes = await _versoes.ObterHistorico(TipoRegistro, id);

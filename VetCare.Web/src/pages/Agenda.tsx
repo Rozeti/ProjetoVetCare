@@ -318,11 +318,11 @@ export function Agenda() {
                             type="button"
                             onClick={() => setSessaoParaAtender(sessao)}
                             className="inline-flex items-center gap-1.5 rounded-lg p-2 text-sm font-medium text-brand hover:bg-brand-100"
-                            title="Registrar evolução"
-                            aria-label={`Registrar a evolução da sessão de ${sessao.nomePaciente}`}
+                            title="Registrar sessão"
+                            aria-label={`Registrar a sessão de ${sessao.nomePaciente}`}
                           >
                             <ClipboardPlus size={16} />
-                            <span className="hidden sm:inline">Registrar evolução</span>
+                            <span className="hidden sm:inline">Registrar sessão</span>
                           </button>
 
                           <button
@@ -344,8 +344,8 @@ export function Agenda() {
                           type="button"
                           onClick={() => setSessaoParaAtender(sessao)}
                           className="ml-1 rounded-lg p-2 text-sucesso hover:bg-sucesso-claro"
-                          title="Evolução registrada — abrir"
-                          aria-label={`Abrir a evolução da sessão de ${sessao.nomePaciente}`}
+                          title="Sessão registrada — abrir"
+                          aria-label={`Abrir o registro da sessão de ${sessao.nomePaciente}`}
                         >
                           <Stethoscope size={16} />
                         </button>
@@ -382,7 +382,7 @@ export function Agenda() {
         aoFechar={() => setSessaoParaAtender(null)}
         aoSalvar={() => {
           setSessaoParaAtender(null);
-          setAviso('Evolução salva com sucesso.');
+          setAviso('Sessão registrada com sucesso.');
           recarregar();
         }}
       />

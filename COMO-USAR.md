@@ -115,7 +115,7 @@ O banco se chama `vetcare_db` e tem **26 tabelas**. As principais:
 | `Usuarios` | Todas as contas de acesso, com a senha criptografada |
 | `Veterinarios`, `Tutores`, `ApoiosAdministrativos` | Os dados específicos de cada perfil |
 | `Pets` | Os pacientes |
-| `AvaliacoesClinicas`, `Tratamentos`, `Sessoes`, `Atendimentos` (as evoluções), `PedidosExame` | O fluxo clínico: avaliação → tratamento → evoluções das sessões |
+| `AvaliacoesClinicas`, `Tratamentos`, `Sessoes`, `Atendimentos` (o registro de cada sessão), `PedidosExame` | O fluxo clínico: avaliação → tratamento → sessões registradas |
 | `Prontuarios`, `ObservacoesInternas`, `VersoesRegistrosClinicos` | O histórico e as versões antigas |
 | `Vacinas`, `Prescricoes`, `ItensPrescricao`, `AlergiasCondicoes` | Carteira, receitas e alertas |
 | `Mensagens`, `Notificacoes`, `DispositivosDoUsuario` | A comunicação e os aparelhos que recebem push |
@@ -617,16 +617,17 @@ Faça nesta ordem, porque cada passo depende do anterior:
    inativar não apaga nada e pode ser desfeito; concluir é definitivo.*
 6. **Prontuário → Tratamentos → Registrar sessão** (no cartão do tratamento). É assim que a
    sessão de fisioterapia realizada é registrada: preencha procedimentos, o que foi feito,
-   reação do animal, observações, relatório e sinais vitais, salve e anexe as fotos.
-   *Cada sessão registrada vira uma evolução: o sistema numera a sessão sozinho (1, 2, 3...),
-   a barra do tratamento avança e a primeira evolução põe um tratamento planejado em andamento.
-   No campo "Sessão" aparecem as sessões agendadas até hoje e ainda sem evolução; se a sessão
-   não estava agendada, escolha "Sessão de agora, sem agendamento", que entra na agenda já
-   concluída. O mesmo botão **Registrar sessão** existe no menu **Evoluções**, onde você
-   escolhe o animal e o tratamento.*
+   reação do animal, observações, relatório e sinais vitais, anexe fotos e vídeos (já dá para
+   escolher antes de salvar: eles seguem junto com o registro) e salve.
+   *O sistema numera as sessões sozinho (1, 2, 3...), a barra do tratamento avança e a primeira
+   sessão registrada põe um tratamento planejado em andamento. No campo "Sessão" aparecem as
+   sessões agendadas até hoje e ainda não registradas; se a sessão não estava agendada,
+   escolha "Sessão de agora, sem agendamento", que entra na agenda já concluída. Todas as
+   sessões do animal ficam na aba **Sessões** do prontuário, que também tem o botão
+   **Registrar sessão**, e no menu **Sessões**, onde você escolhe o animal e o tratamento.*
    Para marcar as próximas sessões, use **Agenda geral → Nova sessão**.
    *Tente marcar outra sessão no mesmo horário do mesmo veterinário: o sistema recusa — é a
-   RN-002. Na agenda, cada sessão também tem o botão **Registrar evolução**.*
+   RN-002. Na agenda, cada sessão também tem o botão **Registrar sessão**.*
 7. **Prontuário → Vacinação → Registrar.** Lance uma vacina com data da próxima dose.
    *Marque "Faz parte de um esquema com várias doses" e informe "dose 1 de 3": o sistema exige que a
    dose 2 venha depois da 1 e recusa uma dose 2 sem a 1 lançada. Escolha a recorrência
@@ -646,16 +647,17 @@ Faça nesta ordem, porque cada passo depende do anterior:
 11. **Prontuário → Avaliações → Emitir receita** (ou **Medicação → Nova receita**, escolhendo
     a origem). Adicione dois medicamentos, escolha o **veterinário responsável** e emita.
     Depois clique em imprimir.
-    *Toda receita vem de uma avaliação ou de uma evolução — a evolução também tem o botão
-    "Emitir receita desta evolução". A validade vai de 1 a 365 dias; cancelar uma receita pede
-    o motivo. No mesmo cartão da avaliação, **Pedir exames** gera o pedido de exames, que fica
-    na aba Exames e também pode ser impresso.*
+    *Toda receita vem de uma avaliação ou de uma sessão — a sessão registrada também tem o
+    botão "Emitir receita desta sessão". A validade vai de 1 a 365 dias; cancelar uma receita
+    pede o motivo. No mesmo cartão da avaliação, **Pedir exames** gera o pedido de exames, que
+    fica na aba Exames e também pode ser impresso. Lá, o lápis edita o pedido e a lixeira o
+    exclui de vez, depois de confirmar; a exclusão aparece na Auditoria.*
 12. **Prontuário → Linha do tempo.** Clique num evento para abrir o registro completo.
     *Cada evento mostra à esquerda a data (e a hora) em que foi feito. Os campos **De** e
     **Até** filtram por período, e os botões de categoria filtram por tipo — por exemplo,
-    desligue "Evolução" para ver só avaliações, tratamentos, vacinas, receitas e exames.*
-13. **Menu Evoluções** (administrador e veterinário). Filtre por animal, tratamento, período,
-    veterinário e número da sessão; clique numa linha para abrir a evolução.
+    desligue "Sessão" para ver só avaliações, tratamentos, vacinas, receitas e exames.*
+13. **Menu Sessões** (administrador e veterinário). Filtre por animal, tratamento, período,
+    veterinário e número da sessão; clique numa linha para abrir a sessão.
 
 > Sobre o campo "Veterinário responsável": ele aparece para você porque está logado como
 > administrador, que não é um profissional habilitado a prescrever. A receita é um documento
@@ -726,7 +728,7 @@ npm --prefix testes i puppeteer-core@23
 node testes/teste-navegador.mjs
 ```
 
-Ele gera prints em `capturas/` e termina com `OK: 44   FALHAS: 0`.
+Ele gera prints em `capturas/` e termina com `OK: 47   FALHAS: 0`.
 
 E os testes das regras isoladas, que não precisam do sistema no ar:
 
@@ -734,7 +736,7 @@ E os testes das regras isoladas, que não precisam do sistema no ar:
 dotnet test VetCare.Tests/VetCare.Tests.csproj
 ```
 
-Esperado: `Falhou: 0` (são 260 testes hoje; o número cresce a cada regra nova).
+Esperado: `Falhou: 0` (são 264 testes hoje; o número cresce a cada regra nova).
 
 ---
 

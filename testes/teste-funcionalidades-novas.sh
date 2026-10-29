@@ -147,7 +147,7 @@ PRESC=$(val "$r" id)
 r=$(get "/api/prescricoes/$PRESC" "$TUTOR")
 checa "tutor acessa a própria receita" "\"pacienteId\":\"$PET\"" "$r"
 checa "receita traz CRMV para impressão" '"crmv"' "$r"
-checa "receita informa a origem (avaliação ou evolução)" '"origem":"[AE]' "$r"
+checa "receita informa a origem (avaliação ou sessão)" '"origem":"[AS]' "$r"
 
 r=$(envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"itens\":[]}")
 checa "receita sem medicamento é recusada" "medicamento" "$r"

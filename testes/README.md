@@ -6,11 +6,11 @@ em execução, comprovando o comportamento ponta a ponta.
 
 | Roteiro | Verificações | Precisa de |
 |---|---|---|
-| `teste-regras-negocio.sh` | 73 a 74 | API em `http://localhost:5265` |
+| `teste-regras-negocio.sh` | 76 a 77 | API em `http://localhost:5265` |
 | `teste-api-mobile.sh` | 28 | API + dados de demonstração |
 | `teste-funcionalidades-novas.sh` | 58 a 65 | API + dados de demonstração |
 | `teste-tempo-real.sh` | 27 | API + dados de demonstração |
-| `teste-navegador.mjs` | 44 | API + front-end em `http://localhost:5173` + Microsoft Edge |
+| `teste-navegador.mjs` | 47 | API + front-end em `http://localhost:5173` + Microsoft Edge |
 | `criar-dados-demonstracao.sh` | — | API |
 
 `comum.sh` não é executável: reúne as funções que os roteiros de shell compartilham
@@ -50,11 +50,12 @@ usuários (tutor nasce em `/api/tutores`), o telefone do tutor com DDD e máscar
 dígitos verificadores e a recusa de pacientes que não sejam cães.
 
 Percorre também o fluxo clínico: a avaliação do animal, o tratamento que só nasce a partir
-dela (planejado até a primeira evolução), a evolução que exige a reação do animal e recebe o
-número da sessão, a sessão realizada sem agendamento (registrada direto no tratamento e já
-concluída na agenda), o filtro de evoluções por tratamento, a receita que exige origem, o pedido
-de exame emitido da avaliação, a inativação e a reativação do tratamento sem perder as
-evoluções e a garantia de que paciente não é excluído, só inativado.
+dela (planejado até a primeira sessão registrada), o registro da sessão que exige a reação do
+animal e recebe o número, a sessão realizada sem agendamento (registrada direto no tratamento
+e já concluída na agenda), o filtro de sessões por tratamento, a receita que exige origem, o
+pedido de exame emitido da avaliação, editado e excluído (sai do prontuário em vez de ficar
+cancelado), a inativação e a reativação do tratamento sem perder as sessões registradas e a
+garantia de que paciente não é excluído, só inativado.
 
 ```bash
 bash testes/teste-regras-negocio.sh
@@ -116,10 +117,11 @@ bash testes/teste-tempo-real.sh
 
 Roteiro com Puppeteer sobre o Microsoft Edge: percorre login, painel, pacientes (ações
 reduzidas a visualizar e inativar, filtro por raça), prontuário com todas as abas
-(avaliações, tratamentos com a avaliação de origem, as próprias evoluções e o botão
-"Registrar sessão", medicação, exames, sem a antiga aba de gráficos), a linha do tempo com a
-data de cada evento, o filtro por período e o registro completo, a tela de evoluções com os
-filtros e o "Registrar sessão", agenda
+(avaliações, tratamentos com a avaliação de origem, as próprias sessões e o botão
+"Registrar sessão", a aba Sessões, medicação, exames, sem a antiga aba de gráficos), a linha
+do tempo com a data de cada evento, o filtro por período e o registro completo, a tela de
+sessões com os filtros e o "Registrar sessão", o cursor de mão nos itens clicáveis, o chat sem
+seletor de pet e com o foco mantido no campo depois do Enter, agenda
 geral, tutores em tabela com os animais vinculados, digitação contínua nos formulários,
 auditoria, responsividade em tela de celular e a visão filtrada do tutor. Gera capturas de
 tela na pasta indicada.
@@ -145,9 +147,9 @@ WEB_URL=http://localhost:8080 PACIENTE_DEMO=Nina \
 coerente com a documentação: veterinária, recepção, tutor, dois pacientes, alertas
 clínicos, carteira de vacinação com um esquema de três doses e reforço anual a vencer,
 antirrábica vencida e vermífugo e antipulgas recorrentes e o fluxo clínico completo de Thor
-— avaliação, tratamento pós-cirúrgico originado dela, três sessões com a sua evolução (peso,
-dor e reação do animal), duas sessões futuras aguardando confirmação, uma receita emitida da
-avaliação, outra da última evolução e um pedido de exames. Nina tem uma avaliação que não
+— avaliação, tratamento pós-cirúrgico originado dela, três sessões registradas (peso, dor e
+reação do animal), duas sessões futuras aguardando confirmação, uma receita emitida da
+avaliação, outra da última sessão e um pedido de exames. Nina tem uma avaliação que não
 originou tratamento, só um pedido de exames. Há também observações internas restritas.
 
 As contas criadas usam a senha `vetcare123` e servem apenas para avaliação do sistema.

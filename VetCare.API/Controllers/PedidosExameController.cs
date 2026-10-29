@@ -37,12 +37,20 @@ namespace VetCare.API.Controllers
             return this.ResponderCriado(await _useCase.Emitir(dto));
         }
 
-        /// <summary>RN-004: o pedido é cancelado, não excluído.</summary>
-        [HttpPatch("{id:guid}/cancelar")]
+        /// <summary>Correção do pedido; a versão anterior fica guardada.</summary>
+        [HttpPut("{id:guid}")]
         [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
-        public async Task<IActionResult> Cancelar(Guid id, [FromBody] CancelarPedidoExameDTO dto)
+        public async Task<IActionResult> Atualizar(Guid id, AtualizarPedidoExameDTO dto)
         {
-            return this.Responder(await _useCase.Cancelar(id, dto.Motivo));
+            return this.Responder(await _useCase.Atualizar(id, dto));
+        }
+
+        /// <summary>Exclui o pedido do prontuário; a auditoria registra a exclusão.</summary>
+        [HttpDelete("{id:guid}")]
+        [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
+        public async Task<IActionResult> Excluir(Guid id)
+        {
+            return this.Responder(await _useCase.Excluir(id));
         }
     }
 }

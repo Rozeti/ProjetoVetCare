@@ -25,8 +25,9 @@ const FILTROS_VAZIOS = {
 type Filtros = typeof FILTROS_VAZIOS;
 
 /**
- * Evoluções registradas nas sessões dos tratamentos, com filtro por animal, tratamento,
- * período, veterinário e número da sessão. Administração e qualquer veterinário veem as
+ * Tela "Sessões": o registro de cada sessão realizada nos tratamentos (a evolução, no
+ * vocabulário do requisito HU-008), com filtro por animal, tratamento, período, veterinário e
+ * número da sessão. Administração e qualquer veterinário veem as
  * evoluções de todos os pacientes da clínica. Filtradas por tratamento, saem em ordem cronológica.
  */
 export function Evolucoes() {
@@ -100,7 +101,7 @@ export function Evolucoes() {
 
   const { dados, carregando, erro, setErro, recarregar } = useCarregamento(
     buscar,
-    'Não foi possível carregar as evoluções.',
+    'Não foi possível carregar as sessões.',
     300,
   );
 
@@ -116,15 +117,15 @@ export function Evolucoes() {
       const { data } = await api.get<Atendimento>(`/api/atendimentos/${evolucao.id}`);
       setEvolucaoAberta(data);
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível abrir a evolução.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível abrir a sessão.'));
     }
   }
 
   return (
     <>
       <CabecalhoPagina
-        titulo="Evoluções"
-        descricao="Evoluções registradas nas sessões dos tratamentos da clínica, uma por sessão realizada."
+        titulo="Sessões"
+        descricao="Sessões de fisioterapia registradas nos tratamentos da clínica: o que foi feito em cada uma e como o animal reagiu."
         acoes={
           podeRegistrar && (
             <button type="button" className="vc-botao-primario" onClick={() => setEscolhendoTratamento(true)}>
@@ -251,16 +252,16 @@ export function Evolucoes() {
       </Card>
 
       {carregando ? (
-        <Carregando texto="Carregando evoluções..." />
+        <Carregando texto="Carregando sessões..." />
       ) : pagina.itens.length === 0 ? (
         <Card>
           <SemDados
             icone={<Activity size={40} />}
-            titulo={filtrando ? 'Nenhuma evolução encontrada' : 'Nenhuma evolução registrada'}
+            titulo={filtrando ? 'Nenhuma sessão encontrada' : 'Nenhuma sessão registrada'}
             descricao={
               filtrando
-                ? 'Ajuste ou limpe os filtros para ver outras evoluções.'
-                : 'Cada sessão realizada num tratamento gera uma evolução. Registre-a em “Registrar sessão”, no tratamento do prontuário ou pela sessão na Agenda.'
+                ? 'Ajuste ou limpe os filtros para ver outras sessões.'
+                : 'Registre cada sessão realizada em “Registrar sessão”: aqui, no tratamento do prontuário ou pela sessão na Agenda.'
             }
           />
         </Card>
@@ -285,7 +286,7 @@ export function Evolucoes() {
                     key={evolucao.id}
                     onClick={() => abrir(evolucao)}
                     className="cursor-pointer hover:bg-slate-50"
-                    title="Abrir a evolução"
+                    title="Abrir a sessão"
                   >
                     <td className="whitespace-nowrap">
                       <button
@@ -330,7 +331,7 @@ export function Evolucoes() {
             </table>
           </div>
 
-          <Paginacao pagina={pagina} aoMudarPagina={setNumeroPagina} rotuloItens="evoluções" />
+          <Paginacao pagina={pagina} aoMudarPagina={setNumeroPagina} rotuloItens="sessões" />
         </Card>
       )}
 

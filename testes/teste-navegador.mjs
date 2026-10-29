@@ -189,11 +189,25 @@ try {
       await pagina.keyboard.press('Escape');
     }
 
-    // A aba de gráficos saiu do prontuário, e a de receitas passou a se chamar Medicação.
+    // A aba de gráficos saiu do prontuário, a de receitas passou a se chamar Medicação e as
+    // sessões registradas (antes "evoluções") ganharam aba própria.
     registrar(
-      'Prontuário sem a aba de gráficos e com a aba Medicação',
-      !abas.some((t) => t.startsWith('Gráficos')) && abas.some((t) => t.startsWith('Medicação')),
+      'Prontuário sem a aba de gráficos e com as abas Sessões e Medicação',
+      !abas.some((t) => t.startsWith('Gráficos')) &&
+        abas.some((t) => t.startsWith('Sessões')) &&
+        abas.some((t) => t.startsWith('Medicação')),
       abas.join(' | '),
+    );
+
+    // O que é clicável mostra a mão ao passar o mouse.
+    const cursores = await pagina.evaluate(() => ({
+      aba: getComputedStyle(document.querySelector('[role="tab"]')).cursor,
+      botao: getComputedStyle([...document.querySelectorAll('button')].find((b) => !b.disabled)).cursor,
+    }));
+    registrar(
+      'Itens clicáveis mostram a mão ao passar o mouse',
+      cursores.aba === 'pointer' && cursores.botao === 'pointer',
+      `aba: ${cursores.aba}, botão: ${cursores.botao}`,
     );
 
     // Linha do tempo: cada evento traz a data em que foi feito, e o período filtra a lista.
@@ -227,7 +241,8 @@ try {
     // As demais abas precisam abrir sem erro: cada uma tem um texto próprio de cabeçalho.
     const abasEsperadas = [
       { prefixo: 'Avaliações', texto: 'Avaliação de', captura: '05c-avaliacoes' },
-      { prefixo: 'Tratamentos', texto: 'Evoluções deste tratamento', captura: '05d-tratamentos' },
+      { prefixo: 'Tratamentos', texto: 'Sessões deste tratamento', captura: '05d-tratamentos' },
+      { prefixo: 'Sessões', texto: 'Cada sessão de fisioterapia realizada, com o que foi feito', captura: '05j-sessoes' },
       { prefixo: 'Vacinação', texto: 'Carteira de vacinação', captura: '05a-vacinacao' },
       { prefixo: 'Medicação', texto: 'Receitas com os medicamentos prescritos', captura: '05b-medicacao' },
       { prefixo: 'Exames', texto: 'Pedidos de exame', captura: '05e-exames' },
@@ -252,12 +267,12 @@ try {
     if (indiceTratamentos >= 0) {
       const botoes = await pagina.$$('[role="tab"]');
       await botoes[indiceTratamentos].click();
-      await esperarTexto('Evoluções deste tratamento');
+      await esperarTexto('Sessões deste tratamento');
       const doTratamento = await pagina.evaluate(() => ({
         origem: document.body.innerText.includes('Avaliação de origem'),
         expandiu: (() => {
           const botao = [...document.querySelectorAll('button[aria-expanded]')].find((b) =>
-            b.innerText.includes('Evoluções deste tratamento'),
+            b.innerText.includes('Sessões deste tratamento'),
           );
           botao?.click();
           return !!botao;
@@ -308,15 +323,15 @@ try {
     registrar('HU-011 prontuário', false, 'nenhum paciente na tabela');
   }
 
-  // ---- Evoluções: filtros por animal, tratamento, período, veterinário e sessão
-  await irPara(`/evolucoes`, 'networkidle2');
-  await esperarTexto('Evoluções');
+  // ---- Sessões (antes "Evoluções"): filtros por animal, tratamento, período, veterinário e nº
+  await irPara(`/sessoes`, 'networkidle2');
+  await esperarTexto('Sessões de fisioterapia registradas');
   const telaEvolucoes = await pagina.evaluate(() => ({
     tabela: !!document.querySelector('table'),
     filtros: document.querySelectorAll('select, input[type="date"], input[type="number"]').length,
   }));
   registrar(
-    'Tela de evoluções com filtros e lista',
+    'Tela de sessões com filtros e lista',
     telaEvolucoes.tabela && telaEvolucoes.filtros >= 5,
     `${telaEvolucoes.filtros} filtros`,
   );
@@ -329,9 +344,9 @@ try {
     return !!botao;
   });
   const escolhaDoTratamento = abriuEscolha
-    ? await esperarTexto('vira uma evolução numerada do tratamento').then(() => true).catch(() => false)
+    ? await esperarTexto('Escolha o animal e o tratamento').then(() => true).catch(() => false)
     : false;
-  registrar('Evoluções: Registrar sessão escolhe o animal e o tratamento', escolhaDoTratamento);
+  registrar('Sessões: Registrar sessão escolhe o animal e o tratamento', escolhaDoTratamento);
   if (escolhaDoTratamento) {
     await capturar('05i-evolucoes-registrar-sessao');
     await pagina.keyboard.press('Escape');
@@ -452,6 +467,39 @@ try {
     `${alturaDaPagina.pagina}px de página para ${alturaDaPagina.janela}px de janela`,
   );
   await capturar('09-mensagens');
+
+  // O chat não tem mais o seletor de pet, e o campo continua com o foco depois do Enter.
+  let campoDoChat = await pagina.$('textarea[aria-label="Mensagem"]');
+  if (!campoDoChat) {
+    await pagina.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.innerText.includes('Nova conversa'))?.click();
+    });
+    await pagina.waitForSelector('[role="dialog"] ul li button', { timeout: 8000 }).catch(() => null);
+    await pagina.evaluate(() => document.querySelector('[role="dialog"] ul li button')?.click());
+    campoDoChat = await pagina.waitForSelector('textarea[aria-label="Mensagem"]', { timeout: 8000 }).catch(() => null);
+  }
+  if (campoDoChat) {
+    const seletorDePet = await pagina.$('select[aria-label="Pet a que a mensagem se refere"]');
+    const baloesAntes = await pagina.$$eval('p.whitespace-pre-wrap', (ps) => ps.length);
+    await campoDoChat.click();
+    await pagina.keyboard.type('Mensagem do roteiro de testes');
+    await pagina.keyboard.press('Enter');
+    const enviou = await pagina
+      .waitForFunction((n) => document.querySelectorAll('p.whitespace-pre-wrap').length > n, { timeout: 8000 }, baloesAntes)
+      .then(() => true)
+      .catch(() => false);
+    // Sem clicar de novo no campo, a próxima mensagem já pode ser digitada.
+    await pagina.keyboard.type('x');
+    const digitouDireto = await pagina.$eval('textarea[aria-label="Mensagem"]', (c) => c.value === 'x');
+    registrar(
+      'Chat: sem seletor de pet, e o campo segue com o foco depois do Enter',
+      !seletorDePet && enviou && digitouDireto,
+      `seletor de pet: ${seletorDePet ? 'presente' : 'ausente'}, enviou: ${enviou}, digitou direto: ${digitouDireto}`,
+    );
+    await capturar('09a-mensagem-enviada');
+  } else {
+    registrar('Chat: sem seletor de pet, e o campo segue com o foco depois do Enter', false, 'nenhuma conversa disponível');
+  }
 
   // ---- Responsividade (RNF-006)
   await pagina.setViewport({ width: 390, height: 844 });

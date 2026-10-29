@@ -46,6 +46,36 @@
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
   }
+
+  /*
+   * Tudo o que é clicável mostra a mão ao passar o mouse. O Tailwind v4 deixa a seta nos
+   * botões; aqui ela volta a indicar a ação. O que está desabilitado mostra que não aceita clique.
+   */
+  button,
+  [role='button'],
+  [role='tab'],
+  [role='link'],
+  a[href],
+  summary,
+  select,
+  label:has(> input[type='file']),
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']),
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  input[type='file'],
+  input[type='color'],
+  ::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
 }
 
 /*

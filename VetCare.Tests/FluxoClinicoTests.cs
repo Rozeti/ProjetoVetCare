@@ -4,6 +4,7 @@ using VetCare.API.Data;
 using VetCare.API.DTOs;
 using VetCare.API.Models;
 using VetCare.API.Security;
+using VetCare.API.Services;
 using VetCare.API.UseCases;
 using VetCare.Tests.Suporte;
 
@@ -110,6 +111,7 @@ namespace VetCare.Tests
             new PetRepository(Contexto),
             new ProntuarioRepository(Contexto),
             new VeterinarioRepository(Contexto),
+            new VersaoRegistroRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
             Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
@@ -358,7 +360,7 @@ namespace VetCare.Tests
             var segunda = await CasoDeReceitas(ComoVeterinario()).Emitir(daEvolucao);
 
             segunda.Sucesso.Should().BeTrue(segunda.Mensagem);
-            segunda.Dados!.Origem.Should().Be("Evolução nº 1 — Reabilitação de teste");
+            segunda.Dados!.Origem.Should().Be("Sessão nº 1 — Reabilitação de teste");
         }
 
         [Fact]
@@ -392,12 +394,9 @@ namespace VetCare.Tests
             resultado.Mensagem.Should().Contain("não pertence a este paciente");
         }
 
-        [Fact]
-        public async Task Pedido_de_exame_nasce_da_avaliacao_e_e_cancelado_sem_ser_apagado()
+        private async Task<PedidoExameDTO> PedidoEmitido()
         {
-            var casoDeUso = CasoDeExames(ComoVeterinario());
-
-            var emitido = await casoDeUso.Emitir(new CriarPedidoExameDTO
+            var emitido = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
             {
                 AvaliacaoId = Avaliacao.Id,
                 Exames = "Radiografia do joelho direito\nHemograma completo",
@@ -405,13 +404,107 @@ namespace VetCare.Tests
             });
 
             emitido.Sucesso.Should().BeTrue(emitido.Mensagem);
-            emitido.Dados!.PacienteId.Should().Be(Paciente.Id);
-            emitido.Dados.MotivoAvaliacao.Should().Be(Avaliacao.MotivoConsulta);
+            return emitido.Dados!;
+        }
 
-            var cancelado = await casoDeUso.Cancelar(emitido.Dados.Id, "Exame já realizado em outra clínica");
+        [Fact]
+        public async Task Pedido_de_exame_nasce_da_avaliacao_assinado_por_quem_emite()
+        {
+            var pedido = await PedidoEmitido();
 
-            cancelado.Sucesso.Should().BeTrue(cancelado.Mensagem);
-            Contexto.PedidosExame.Single().Status.Should().Be(StatusPedidoExame.Cancelado);
+            pedido.PacienteId.Should().Be(Paciente.Id);
+            pedido.MotivoAvaliacao.Should().Be(Avaliacao.MotivoConsulta);
+            pedido.VeterinarioId.Should().Be(Veterinario.Id);
+        }
+
+        [Fact]
+        public async Task Pedido_de_exame_e_editado_e_a_versao_anterior_fica_guardada()
+        {
+            var pedido = await PedidoEmitido();
+
+            var retorno = await CasoDeAvaliacao(ComoVeterinario()).Executar(new CriarAvaliacaoDTO
+            {
+                PacienteId = Paciente.Id,
+                MotivoConsulta = "Retorno com claudicação",
+                Observacoes = "Piora após exercício",
+                DiagnosticoPossivel = "Lesão meniscal"
+            });
+
+            var editado = await CasoDeExames(ComoVeterinario()).Atualizar(pedido.Id, new AtualizarPedidoExameDTO
+            {
+                AvaliacaoId = retorno.Dados!.Id,
+                Exames = "Ultrassonografia do joelho direito",
+                Justificativa = "Avaliar menisco"
+            });
+
+            editado.Sucesso.Should().BeTrue(editado.Mensagem);
+            editado.Dados!.Exames.Should().Be("Ultrassonografia do joelho direito");
+            editado.Dados.AvaliacaoId.Should().Be(retorno.Dados.Id);
+            editado.Dados.MotivoAvaliacao.Should().Be("Retorno com claudicação");
+
+            Contexto.VersoesRegistrosClinicos.Should().ContainSingle(v =>
+                v.TipoRegistro == GerenciarPedidosExameUseCase.TipoRegistro && v.RegistroId == pedido.Id &&
+                v.ConteudoAnterior.Contains("Hemograma completo"));
+            Contexto.RegistrosAuditoria.Should().Contain(r =>
+                r.Acao == AuditoriaService.Acoes.Alteracao && r.EntidadeId == pedido.Id);
+        }
+
+        [Fact]
+        public async Task Pedido_de_exame_nao_passa_para_avaliacao_de_outro_animal()
+        {
+            var pedido = await PedidoEmitido();
+
+            var deOutroAnimal = await CasoDeAvaliacao(ComoOutroVeterinario()).Executar(new CriarAvaliacaoDTO
+            {
+                PacienteId = _pacienteDoOutro.Id,
+                MotivoConsulta = "Check-up",
+                Observacoes = "Sem queixas",
+                DiagnosticoPossivel = "Saudável"
+            });
+
+            var resultado = await CasoDeExames(ComoVeterinario()).Atualizar(pedido.Id, new AtualizarPedidoExameDTO
+            {
+                AvaliacaoId = deOutroAnimal.Dados!.Id,
+                Exames = "Hemograma"
+            });
+
+            resultado.Sucesso.Should().BeFalse();
+            resultado.Mensagem.Should().Contain("mesmo animal");
+        }
+
+        [Fact]
+        public async Task Pedido_de_exame_excluido_sai_do_prontuario_e_fica_na_auditoria()
+        {
+            var pedido = await PedidoEmitido();
+
+            var resultado = await CasoDeExames(ComoVeterinario()).Excluir(pedido.Id);
+
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            Contexto.PedidosExame.Should().BeEmpty("a exclusão tira o pedido do sistema, não o deixa cancelado");
+
+            var prontuario = await CasoDeProntuario(ComoVeterinario()).Executar(Paciente.Id);
+            prontuario.Dados!.PedidosExame.Should().BeEmpty();
+            prontuario.Dados.Historico.Should().NotContain(e => e.Categoria == LinhaDoTempo.Categorias.Exame);
+
+            Contexto.RegistrosAuditoria.Should().Contain(r =>
+                r.Acao == AuditoriaService.Acoes.Exclusao && r.EntidadeId == pedido.Id && r.Detalhe.Contains("Hemograma completo"));
+        }
+
+        [Fact]
+        public async Task Colega_nao_edita_nem_exclui_pedido_de_exame_de_outro_veterinario()
+        {
+            var pedido = await PedidoEmitido();
+            var casoDoColega = CasoDeExames(ComoOutroVeterinario());
+
+            var edicao = await casoDoColega.Atualizar(pedido.Id, new AtualizarPedidoExameDTO { Exames = "Hemograma" });
+            var exclusao = await casoDoColega.Excluir(pedido.Id);
+
+            edicao.Falha.Should().Be(TipoFalha.NaoAutorizado);
+            exclusao.Falha.Should().Be(TipoFalha.NaoAutorizado);
+            Contexto.PedidosExame.Should().ContainSingle();
+
+            // A administração pode corrigir e excluir qualquer pedido da clínica.
+            (await CasoDeExames(ComoAdministrador()).Excluir(pedido.Id)).Sucesso.Should().BeTrue();
         }
 
         [Fact]
@@ -470,7 +563,7 @@ namespace VetCare.Tests
             {
                 LinhaDoTempo.Categorias.Avaliacao,
                 LinhaDoTempo.Categorias.Tratamento,
-                LinhaDoTempo.Categorias.Evolucao,
+                LinhaDoTempo.Categorias.Sessao,
                 LinhaDoTempo.Categorias.Vacinacao,
                 LinhaDoTempo.Categorias.Cirurgia,
                 LinhaDoTempo.Categorias.Receita,
@@ -482,7 +575,8 @@ namespace VetCare.Tests
             linha.Should().BeInDescendingOrder(e => e.Data);
 
             // Cada evento identifica o registro completo e quem é o responsável.
-            var evolucao = linha.Single(e => e.Categoria == LinhaDoTempo.Categorias.Evolucao);
+            var evolucao = linha.Single(e => e.Categoria == LinhaDoTempo.Categorias.Sessao);
+            evolucao.Tipo.Should().Be("Sessão nº 1");
             evolucao.NumeroSessao.Should().Be(1);
             evolucao.TratamentoId.Should().Be(Tratamento.Id);
             evolucao.Autor.Should().Be("Dra. Veterinária");

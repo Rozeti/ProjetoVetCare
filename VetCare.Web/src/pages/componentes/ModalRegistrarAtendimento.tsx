@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Loader2, Lock, Paperclip, Pencil, Pill, Trash2 } from 'lucide-react';
+import { FileText, Loader2, Lock, Paperclip, Pencil, Pill, Trash2, X } from 'lucide-react';
 import { api, mensagemDeErro, urlDoArquivo } from '../../services/api';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import { useAuth } from '../../contexts/auth';
@@ -62,6 +62,36 @@ const LIMITES = {
   proximosPassos: 2000,
   observacaoInterna: 2000,
 } as const;
+
+/** Mesmos formatos e limite de AnexarMidiaUseCase (RN-011). */
+const FORMATOS_DE_MIDIA = ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov'];
+const TAMANHO_MAXIMO_MIDIA = 25 * 1024 * 1024;
+
+/** Arquivo escolhido antes de a sessão existir: vai para a API junto com o registro. */
+interface MidiaPendente {
+  chave: string;
+  arquivo: File;
+  url: string;
+  video: boolean;
+}
+
+function extensaoDe(nome: string): string {
+  const ponto = nome.lastIndexOf('.');
+  return ponto >= 0 ? nome.slice(ponto).toLowerCase() : '';
+}
+
+/** Recusa na hora o que a API recusaria no envio. */
+function problemaDoArquivo(arquivo: File): string | null {
+  if (!FORMATOS_DE_MIDIA.includes(extensaoDe(arquivo.name))) {
+    return `"${arquivo.name}" não é um formato aceito. Use JPG, PNG, WEBP, MP4 ou MOV.`;
+  }
+
+  if (arquivo.size > TAMANHO_MAXIMO_MIDIA) {
+    return `"${arquivo.name}" passa de 25 MB.`;
+  }
+
+  return null;
+}
 
 /** Faixas clínicas aceitas pela API (CriarAtendimentoDTO), usadas nos campos e na validação. */
 const FAIXAS_DE_SINAIS = {
@@ -181,8 +211,17 @@ function Formulario({
   const [salvando, setSalvando] = useState(false);
   const [enviandoMidia, setEnviandoMidia] = useState(false);
   const [houveAlteracao, setHouveAlteracao] = useState(false);
+  // Fotos e vídeos escolhidos antes de salvar, quando a sessão ainda não existe.
+  const [midiasPendentes, setMidiasPendentes] = useState<MidiaPendente[]>([]);
 
   const campoArquivo = useRef<HTMLInputElement>(null);
+  const urlsCriadas = useRef<string[]>([]);
+
+  // As pré-visualizações locais são liberadas quando o modal fecha.
+  useEffect(() => {
+    const urls = urlsCriadas.current;
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
   // Aberto pela agenda, a sessão pode já ter evolução: nesse caso o modal abre em modo resumo.
   useEffect(() => {
@@ -293,7 +332,7 @@ function Formulario({
       atendimentoSalvo &&
       editando &&
       !(await confirmarEdicao(
-        'Salvar a correção desta evolução? A versão anterior fica preservada no histórico do prontuário.',
+        'Salvar a correção desta sessão? A versão anterior fica preservada no histórico do prontuário.',
         'Salvar correção',
       ))
     ) {
@@ -326,7 +365,7 @@ function Formulario({
         setAtendimentoSalvo({ ...data, midias });
         setEditando(false);
         setHouveAlteracao(true);
-        setAviso('Evolução corrigida. A versão anterior foi preservada no histórico.');
+        setAviso('Registro da sessão corrigido. A versão anterior foi preservada no histórico.');
       } else {
         // Pela agenda, a sessão já vem escolhida; pelo tratamento, é a sessão agendada
         // escolhida ou, sem ela, a sessão de agora, que a API cria já concluída.
@@ -345,15 +384,83 @@ function Formulario({
 
         setAtendimentoSalvo(data);
         setHouveAlteracao(true);
+
+        // Os arquivos escolhidos antes de salvar seguem agora para a sessão registrada.
+        const { enviadas, falharam } = await enviarPendentes(data);
+        setMidias([...enviadas, ...data.midias]);
+
         setAviso(
-          `Evolução nº ${data.numeroSessao} registrada e sessão concluída. Você ainda pode anexar fotos e vídeos desta sessão.`,
+          enviadas.length > 0
+            ? `Sessão nº ${data.numeroSessao} registrada e concluída, com ${enviadas.length} ${enviadas.length === 1 ? 'arquivo anexado' : 'arquivos anexados'}.`
+            : `Sessão nº ${data.numeroSessao} registrada e concluída. Você ainda pode anexar fotos e vídeos desta sessão.`,
         );
+
+        if (falharam.length > 0) {
+          setErro(`A sessão foi salva, mas não foi possível anexar: ${falharam.join(', ')}. Tente anexar de novo.`);
+        }
       }
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível salvar a evolução.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível salvar a sessão.'));
     } finally {
       setSalvando(false);
     }
+  }
+
+  /** Envia, depois do registro, os arquivos escolhidos enquanto a sessão ainda não existia. */
+  async function enviarPendentes(registro: Atendimento): Promise<{ enviadas: Midia[]; falharam: string[] }> {
+    const enviadas: Midia[] = [];
+    const falharam: string[] = [];
+
+    for (const pendente of midiasPendentes) {
+      const corpo = new FormData();
+      corpo.append('sessaoId', registro.sessaoId);
+      corpo.append('atendimentoId', registro.id);
+      corpo.append('arquivo', pendente.arquivo);
+
+      try {
+        const { data } = await api.post<Midia>('/api/midias', corpo);
+        enviadas.unshift(data);
+      } catch {
+        falharam.push(pendente.arquivo.name);
+      }
+    }
+
+    setMidiasPendentes([]);
+    return { enviadas, falharam };
+  }
+
+  /** Com a sessão registrada, o arquivo vai direto; antes disso, espera o salvamento. */
+  function escolherArquivo(arquivo: File) {
+    if (campoArquivo.current) campoArquivo.current.value = '';
+
+    if (sessaoId) {
+      enviarMidia(arquivo);
+      return;
+    }
+
+    const problema = problemaDoArquivo(arquivo);
+
+    if (problema) {
+      setErro(problema);
+      return;
+    }
+
+    const url = URL.createObjectURL(arquivo);
+    urlsCriadas.current.push(url);
+
+    setMidiasPendentes((atual) => [
+      ...atual,
+      {
+        chave: `${arquivo.name}-${arquivo.lastModified}-${atual.length}`,
+        arquivo,
+        url,
+        video: ['.mp4', '.mov'].includes(extensaoDe(arquivo.name)),
+      },
+    ]);
+  }
+
+  function retirarPendente(chave: string) {
+    setMidiasPendentes((atual) => atual.filter((p) => p.chave !== chave));
   }
 
   /** HU-010: upload de mídia vinculada à sessão. */
@@ -406,12 +513,10 @@ function Formulario({
 
   const titulo =
     editando && atendimentoSalvo
-      ? 'Corrigir evolução'
+      ? 'Corrigir registro da sessão'
       : atendimentoSalvo
-        ? `Evolução — sessão nº ${atendimentoSalvo.numeroSessao}`
-        : tratamentoDoProntuario
-          ? 'Registrar sessão realizada'
-          : 'Registrar evolução';
+        ? `Sessão nº ${atendimentoSalvo.numeroSessao}`
+        : 'Registrar sessão realizada';
 
   return (
     <Modal
@@ -479,7 +584,7 @@ function Formulario({
               (aoEmitirReceita ? (
                 <button type="button" className="vc-botao-secundario" onClick={() => aoEmitirReceita(atendimentoSalvo)}>
                   <Pill size={15} />
-                  Emitir receita desta evolução
+                  Emitir receita desta sessão
                 </button>
               ) : (
                 <Link
@@ -487,7 +592,7 @@ function Formulario({
                   className="vc-botao-secundario"
                 >
                   <Pill size={15} />
-                  Emitir receita desta evolução
+                  Emitir receita desta sessão
                 </Link>
               ))}
 
@@ -522,7 +627,7 @@ function Formulario({
                 sessoesPendentes === null
                   ? 'Buscando as sessões agendadas deste tratamento...'
                   : sessoesPendentes.length > 0
-                    ? 'Sessões agendadas até hoje e ainda sem evolução. Se a sessão não estava agendada, escolha a de agora.'
+                    ? 'Sessões agendadas até hoje e ainda não registradas. Se a sessão não estava agendada, escolha a de agora.'
                     : 'Nenhuma sessão agendada pendente: a sessão de agora entra na agenda já concluída.'
               }
             >
@@ -730,7 +835,7 @@ function Formulario({
             </button>
             <button type="submit" className="vc-botao-primario" disabled={salvando}>
               {salvando && <Loader2 className="animate-spin" size={16} />}
-              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar evolução'}
+              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar sessão'}
             </button>
           </div>
         </form>
@@ -741,20 +846,18 @@ function Formulario({
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-slate-700">Fotografias e vídeos da sessão</h3>
 
-          {sessaoId && (
-            <label className="vc-botao-secundario cursor-pointer">
-              {enviandoMidia ? <Loader2 className="animate-spin" size={16} /> : <Paperclip size={16} />}
-              Anexar
-              <input
-                ref={campoArquivo}
-                type="file"
-                className="sr-only"
-                accept=".jpg,.jpeg,.png,.webp,.mp4,.mov"
-                disabled={enviandoMidia}
-                onChange={(e) => e.target.files?.[0] && enviarMidia(e.target.files[0])}
-              />
-            </label>
-          )}
+          <label className={`vc-botao-secundario cursor-pointer ${enviandoMidia || salvando ? 'pointer-events-none opacity-60' : ''}`}>
+            {enviandoMidia ? <Loader2 className="animate-spin" size={16} /> : <Paperclip size={16} />}
+            Anexar
+            <input
+              ref={campoArquivo}
+              type="file"
+              className="sr-only"
+              accept={FORMATOS_DE_MIDIA.join(',')}
+              disabled={enviandoMidia || salvando}
+              onChange={(e) => e.target.files?.[0] && escolherArquivo(e.target.files[0])}
+            />
+          </label>
         </div>
 
         {erro && !mostrarFormulario && (
@@ -765,10 +868,45 @@ function Formulario({
           </div>
         )}
 
+        {/* Antes de a sessão existir, os arquivos ficam aqui e seguem junto com o registro. */}
+        {midiasPendentes.length > 0 && (
+          <ul className="mb-3 grid gap-3 sm:grid-cols-3">
+            {midiasPendentes.map((pendente) => (
+              <li key={pendente.chave} className="relative overflow-hidden rounded-xl border border-dashed border-brand-300">
+                {pendente.video ? (
+                  <video src={pendente.url} controls className="h-32 w-full bg-slate-900 object-cover" />
+                ) : (
+                  <img src={pendente.url} alt={pendente.arquivo.name} className="h-32 w-full object-cover" />
+                )}
+
+                <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs text-slate-600" title={pendente.arquivo.name}>
+                      {pendente.arquivo.name}
+                    </span>
+                    <span className="block text-[11px] font-medium text-brand">Enviado ao salvar a sessão</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => retirarPendente(pendente.chave)}
+                    className="shrink-0 rounded p-1 text-slate-400 hover:bg-perigo-claro hover:text-perigo"
+                    aria-label={`Retirar ${pendente.arquivo.name}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {!sessaoId ? (
-          <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-            Salve a evolução para anexar fotos e vídeos desta sessão.
-          </p>
+          midiasPendentes.length === 0 && (
+            <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              Anexe fotos e vídeos da sessão: eles são enviados junto com o registro, ao salvar. Formatos aceitos:
+              JPG, PNG, WEBP, MP4 e MOV (até 25 MB).
+            </p>
+          )
         ) : midias.length === 0 ? (
           <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
             Nenhum arquivo anexado a esta sessão. Formatos aceitos: JPG, PNG, WEBP, MP4 e MOV (até 25 MB).

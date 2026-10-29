@@ -90,13 +90,13 @@ export function TratamentosDoPaciente({
       },
       Inativado: {
         titulo: 'Inativar tratamento',
-        mensagem: `Inativar "${tratamento.nome}"? Nada é apagado: as sessões e evoluções continuam no histórico, e o tratamento pode ser reativado depois.`,
+        mensagem: `Inativar "${tratamento.nome}"? Nada é apagado: as sessões registradas continuam no histórico, e o tratamento pode ser reativado depois.`,
         rotulo: 'Inativar',
         perigo: true,
       },
       'Em Andamento': {
         titulo: 'Reativar tratamento',
-        mensagem: `Reativar "${tratamento.nome}"? Ele volta a aceitar sessões e evoluções.`,
+        mensagem: `Reativar "${tratamento.nome}"? Ele volta a aceitar novas sessões.`,
         rotulo: 'Reativar',
       },
     };
@@ -116,7 +116,7 @@ export function TratamentosDoPaciente({
       await api.put(`/api/tratamentos/${tratamento.id}`, { status });
       aoAtualizar(
         status === 'Inativado'
-          ? 'Tratamento inativado. As sessões e evoluções continuam no histórico.'
+          ? 'Tratamento inativado. As sessões registradas continuam no histórico.'
           : status === 'Concluído'
             ? 'Tratamento concluído.'
             : 'Tratamento reativado.',
@@ -144,9 +144,9 @@ export function TratamentosDoPaciente({
     <div className="space-y-4">
       {aoRegistrarSessao && tratamentos.some((t) => tratamentoAtivo(t.status)) && (
         <p className="rounded-xl bg-brand-50 px-4 py-3 text-sm text-slate-700">
-          Cada sessão de fisioterapia realizada vira uma evolução numerada do tratamento: use{' '}
-          <strong>Registrar sessão</strong> no tratamento ao fim de cada sessão. As sessões agendadas também podem
-          ser registradas pela Agenda.
+          Ao fim de cada sessão de fisioterapia, use <strong>Registrar sessão</strong> no tratamento: o sistema
+          numera as sessões (1, 2, 3...) e guarda o que foi feito. As sessões agendadas também podem ser registradas
+          pela Agenda, e todas aparecem na aba Sessões.
         </p>
       )}
 
@@ -274,7 +274,7 @@ export function TratamentosDoPaciente({
 
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <Activity size={14} />
-              {tratamento.evolucoesRegistradas} de {tratamento.sessoesPrevistas} sessões com evolução registrada
+              {tratamento.evolucoesRegistradas} de {tratamento.sessoesPrevistas} sessões registradas
               {tratamento.totalSessoes > 0 && ` · ${tratamento.totalSessoes} na agenda`}
             </div>
             <div
@@ -283,7 +283,7 @@ export function TratamentosDoPaciente({
               aria-valuemin={0}
               aria-valuemax={tratamento.sessoesPrevistas}
               aria-valuenow={tratamento.evolucoesRegistradas}
-              aria-label={`Evoluções de ${tratamento.nome}`}
+              aria-label={`Sessões registradas de ${tratamento.nome}`}
             >
               <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${progresso}%` }} />
             </div>
@@ -296,7 +296,7 @@ export function TratamentosDoPaciente({
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-brand"
               >
                 {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Evoluções deste tratamento ({doTratamento.length})
+                Sessões deste tratamento ({doTratamento.length})
               </button>
 
               {aberto && (
@@ -311,11 +311,11 @@ export function TratamentosDoPaciente({
                       </button>
                       {exibeLinkDeEvolucoes && (
                         <Link
-                          to={`/evolucoes?pacienteId=${pacienteId}&tratamentoId=${tratamento.id}`}
+                          to={`/sessoes?pacienteId=${pacienteId}&tratamentoId=${tratamento.id}`}
                           className="inline-flex items-center gap-1 text-brand hover:underline"
                         >
                           <ListFilter size={14} />
-                          Abrir na tela de evoluções
+                          Abrir na tela de sessões
                         </Link>
                       )}
                     </div>
@@ -395,8 +395,8 @@ function EvolucoesDoTratamento({
       {filtradas.length === 0 ? (
         <p className="rounded-xl bg-slate-50 px-4 py-4 text-center text-sm text-slate-500">
           {evolucoes.length === 0
-            ? 'Nenhuma evolução registrada neste tratamento. Cada sessão realizada gera uma evolução: use “Registrar sessão” acima ou o botão da sessão na Agenda.'
-            : 'Nenhuma evolução no filtro escolhido.'}
+            ? 'Nenhuma sessão registrada neste tratamento. Use “Registrar sessão” acima ao fim de cada sessão, ou o botão da sessão na Agenda.'
+            : 'Nenhuma sessão no filtro escolhido.'}
         </p>
       ) : (
         <ol className="divide-y divide-slate-100 rounded-xl border border-slate-200">

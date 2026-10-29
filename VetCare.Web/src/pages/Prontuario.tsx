@@ -25,6 +25,7 @@ import type {
   Avaliacao,
   Documento,
   ItemLinhaTempo,
+  PedidoExame,
   Pet,
   Prontuario as ProntuarioDTO,
   Tratamento,
@@ -44,24 +45,36 @@ import { ModalPedidoExame, PedidosExame } from './componentes/PedidosExame';
 import { LinhaDoTempo, ModalRegistroCompleto } from './componentes/LinhaDoTempoClinica';
 import { AvaliacoesDoPaciente } from './componentes/AvaliacoesDoPaciente';
 import { TratamentosDoPaciente } from './componentes/TratamentosDoPaciente';
+import { SessoesDoPaciente } from './componentes/SessoesDoPaciente';
 
 type Aba =
   | 'linha-do-tempo'
   | 'avaliacoes'
   | 'tratamentos'
+  | 'sessoes'
   | 'vacinas'
   | 'medicacao'
   | 'exames'
   | 'documentos';
 
-const ABAS: Aba[] = ['linha-do-tempo', 'avaliacoes', 'tratamentos', 'vacinas', 'medicacao', 'exames', 'documentos'];
+const ABAS: Aba[] = [
+  'linha-do-tempo',
+  'avaliacoes',
+  'tratamentos',
+  'sessoes',
+  'vacinas',
+  'medicacao',
+  'exames',
+  'documentos',
+];
 
 /**
- * Endereços antigos continuam abrindo a aba equivalente: a de receitas virou Medicação, e a
- * de gráficos saiu do prontuário.
+ * Endereços antigos continuam abrindo a aba equivalente: as evoluções viraram Sessões, a aba
+ * de receitas virou Medicação e a de gráficos saiu do prontuário.
  */
 const ABAS_RENOMEADAS: Record<string, Aba> = {
-  evolucao: 'tratamentos',
+  evolucao: 'sessoes',
+  evolucoes: 'sessoes',
   graficos: 'linha-do-tempo',
   receitas: 'medicacao',
 };
@@ -117,7 +130,10 @@ export function Prontuario() {
   // Tratamento cuja sessão realizada está sendo registrada (vira a evolução seguinte dele).
   const [sessaoDoTratamento, setSessaoDoTratamento] = useState<Tratamento | null>(null);
   const [receita, setReceita] = useState<{ aberta: boolean; origem: OrigemDaReceita | null }>({ aberta: false, origem: null });
-  const [pedidoExame, setPedidoExame] = useState<{ aberto: boolean; avaliacaoId?: string }>({ aberto: false });
+  // Pedido novo (a partir de uma avaliação) ou em edição.
+  const [pedidoExame, setPedidoExame] = useState<{ aberto: boolean; avaliacaoId?: string; pedido?: PedidoExame }>({
+    aberto: false,
+  });
   const [registroAberto, setRegistroAberto] = useState<ItemLinhaTempo | null>(null);
   const [modalAlerta, setModalAlerta] = useState(false);
   const [petEmEdicao, setPetEmEdicao] = useState<Pet | null>(null);
@@ -214,7 +230,7 @@ export function Prontuario() {
       setRegistroAberto(null);
       setEvolucaoAberta({ atendimento: data, corrigir });
     } catch (falha) {
-      setErro(mensagemDeErro(falha, 'Não foi possível abrir a evolução.'));
+      setErro(mensagemDeErro(falha, 'Não foi possível abrir a sessão.'));
     }
   }
 
@@ -295,7 +311,8 @@ export function Prontuario() {
   // Doses vencidas entram nos alertas clínicos, ao lado das alergias e comorbidades.
   const dosesVencidas = prontuario.vacinas.filter((v) => v.situacaoDose === 'Vencida');
 
-  const evolucoes = prontuario.historico.filter((item) => item.categoria === 'Evolução');
+  // As sessões registradas (a evolução de cada tratamento), da mais recente à mais antiga.
+  const evolucoes = prontuario.historico.filter((item) => item.categoria === 'Sessão');
   const evolucoesParaReceita: EvolucaoParaReceita[] = evolucoes.map((item) => ({
     id: item.id,
     data: item.data,
@@ -307,6 +324,7 @@ export function Prontuario() {
     { valor: 'linha-do-tempo', rotulo: 'Linha do tempo', contador: prontuario.historico.length },
     { valor: 'avaliacoes', rotulo: 'Avaliações', contador: prontuario.avaliacoes.length },
     { valor: 'tratamentos', rotulo: 'Tratamentos', contador: prontuario.tratamentos.length },
+    { valor: 'sessoes', rotulo: 'Sessões', contador: evolucoes.length },
     { valor: 'vacinas', rotulo: 'Vacinação', contador: dosesPendentes, alerta: dosesPendentes > 0 },
     { valor: 'medicacao', rotulo: 'Medicação', contador: prontuario.prescricoes.length },
     { valor: 'exames', rotulo: 'Exames', contador: prontuario.pedidosExame.length },
@@ -372,12 +390,12 @@ export function Prontuario() {
       }
       case 'Tratamento':
         return botao('Abrir tratamento', <Stethoscope size={15} />, () => verTratamento(item.id), true);
-      case 'Evolução':
+      case 'Sessão':
         return [
           item.tratamentoId &&
             botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
           podeAgir && botao('Emitir receita', <Pill size={15} />, () => emitirReceita({ atendimentoId: item.id })),
-          podeRegistrar && botao('Abrir evolução', <Activity size={15} />, () => abrirEvolucao(item.id), true),
+          podeRegistrar && botao('Abrir sessão', <Activity size={15} />, () => abrirEvolucao(item.id), true),
         ];
       case 'Receita':
         return botao('Ver medicação', <Pill size={15} />, () => irPara('medicacao'), true);
@@ -580,6 +598,17 @@ export function Prontuario() {
         />
       )}
 
+      {aba === 'sessoes' && (
+        <SessoesDoPaciente
+          pacienteId={pacienteId}
+          sessoes={evolucoes}
+          tratamentos={prontuario.tratamentos}
+          aoAbrir={setRegistroAberto}
+          aoRegistrar={podeAgir ? setSessaoDoTratamento : undefined}
+          exibeLinkDaTela={podeRegistrar}
+        />
+      )}
+
       {aba === 'vacinas' && (
         <CarteiraVacinacao
           pacienteId={pacienteId}
@@ -610,6 +639,7 @@ export function Prontuario() {
           nomeClinica={nomeClinica}
           avaliacoes={prontuario.avaliacoes}
           aoPedir={podeAgir ? () => pedirExames() : undefined}
+          aoEditar={podeRegistrar ? (pedido) => setPedidoExame({ aberto: true, pedido }) : undefined}
           aoAtualizar={(mensagem) => {
             if (mensagem) setAviso(mensagem);
             recarregar();
@@ -771,6 +801,7 @@ export function Prontuario() {
         aberto={pedidoExame.aberto}
         avaliacoes={prontuario.avaliacoes}
         avaliacaoId={pedidoExame.avaliacaoId}
+        pedido={pedidoExame.pedido}
         aoFechar={() => setPedidoExame({ aberto: false })}
         aoSalvar={(mensagem) => {
           setPedidoExame({ aberto: false });

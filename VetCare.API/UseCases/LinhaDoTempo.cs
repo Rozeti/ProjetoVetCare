@@ -18,7 +18,8 @@ namespace VetCare.API.UseCases
         {
             public const string Avaliacao = "Avaliação";
             public const string Tratamento = "Tratamento";
-            public const string Evolucao = "Evolução";
+            /// <summary>O registro de cada sessão realizada (a evolução do tratamento).</summary>
+            public const string Sessao = "Sessão";
             public const string Cirurgia = "Cirurgia";
             public const string Vacinacao = "Vacinação";
             public const string Receita = "Receita";
@@ -165,7 +166,7 @@ namespace VetCare.API.UseCases
                 Descricao = tratamento.Nome,
                 Detalhes = concluido
                     ? "Tratamento encerrado."
-                    : "Tratamento inativado; as sessões e evoluções continuam no histórico.",
+                    : "Tratamento inativado; as sessões registradas continuam no histórico.",
                 TratamentoId = tratamento.Id
             };
         }
@@ -185,8 +186,8 @@ namespace VetCare.API.UseCases
                 Id = evolucao.Id,
                 Chave = $"evolucao-{evolucao.Id}",
                 Data = evolucao.DataRegistro,
-                Categoria = Categorias.Evolucao,
-                Tipo = $"Evolução — sessão {evolucao.NumeroSessao}",
+                Categoria = Categorias.Sessao,
+                Tipo = $"Sessão nº {evolucao.NumeroSessao}",
                 Autor = evolucao.Veterinario?.Usuario?.Nome ?? string.Empty,
                 Descricao = string.IsNullOrWhiteSpace(nomeTratamento)
                     ? evolucao.TecnicasAplicadas

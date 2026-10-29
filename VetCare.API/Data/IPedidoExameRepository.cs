@@ -11,6 +11,7 @@ namespace VetCare.API.Data
 
         Task<List<PedidoExame>> ObterPorProntuario(Guid prontuarioId);
         void Atualizar(PedidoExame pedido);
+        void Remover(PedidoExame pedido);
         Task SalvarAlteracoes();
     }
 }

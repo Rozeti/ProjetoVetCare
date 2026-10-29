@@ -30,7 +30,7 @@ import {
 const CATEGORIAS: Record<CategoriaLinhaTempo, { Icone: LucideIcon; estilo: string; marcador: string }> = {
   Avaliação: { Icone: ClipboardList, estilo: 'bg-brand-100 text-brand-dark', marcador: 'bg-brand' },
   Tratamento: { Icone: Stethoscope, estilo: 'bg-info-claro text-violet-800', marcador: 'bg-info' },
-  Evolução: { Icone: Activity, estilo: 'bg-cyan-100 text-cyan-800', marcador: 'bg-cyan-600' },
+  Sessão: { Icone: Activity, estilo: 'bg-cyan-100 text-cyan-800', marcador: 'bg-cyan-600' },
   Cirurgia: { Icone: Scissors, estilo: 'bg-perigo-claro text-red-800', marcador: 'bg-perigo' },
   Vacinação: { Icone: Syringe, estilo: 'bg-sucesso-claro text-emerald-800', marcador: 'bg-sucesso' },
   Receita: { Icone: Pill, estilo: 'bg-alerta-claro text-amber-800', marcador: 'bg-alerta' },
@@ -60,7 +60,7 @@ interface LinhaProps {
 /**
  * HU-011, CA-1: linha do tempo clínica do animal. Cada evento mostra em destaque a data em que
  * foi feito, com categoria, descrição resumida e responsável; selecionado, abre o registro
- * completo. O período (de/até) e as categorias filtram a lista — as evoluções, por exemplo,
+ * completo. O período (de/até) e as categorias filtram a lista — as sessões, por exemplo,
  * podem ficar de fora para uma leitura geral.
  */
 export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
@@ -74,7 +74,7 @@ export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
         <SemDados
           icone={<ClipboardList size={40} />}
           titulo="Prontuário ainda sem registros"
-          descricao="Avaliações, tratamentos, evoluções, vacinas, receitas e exames aparecem aqui em ordem cronológica assim que forem registrados."
+          descricao="Avaliações, tratamentos, sessões, vacinas, receitas e exames aparecem aqui em ordem cronológica assim que forem registrados."
         />
       </Card>
     );

@@ -33,6 +33,8 @@ namespace VetCare.API.Data
 
         public void Atualizar(PedidoExame pedido) => _context.PedidosExame.Update(pedido);
 
+        public void Remover(PedidoExame pedido) => _context.PedidosExame.Remove(pedido);
+
         public async Task SalvarAlteracoes() => await _context.SaveChangesAsync();
     }
 }

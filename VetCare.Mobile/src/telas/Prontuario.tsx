@@ -28,11 +28,12 @@ import { AlertasClinicos } from '../componentes/AlertasClinicos';
 import { cores, espacos, estiloEscalaDor, raios } from '../tema';
 import { formatarData, formatarDataHora, formatarDia, formatarPeso } from '../utils/formato';
 
-type Aba = 'historico' | 'tratamentos' | 'vacinas' | 'medicacao' | 'exames' | 'documentos';
+type Aba = 'historico' | 'tratamentos' | 'sessoes' | 'vacinas' | 'medicacao' | 'exames' | 'documentos';
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: 'historico', rotulo: 'Histórico' },
   { valor: 'tratamentos', rotulo: 'Tratamentos' },
+  { valor: 'sessoes', rotulo: 'Sessões' },
   { valor: 'vacinas', rotulo: 'Vacinação' },
   { valor: 'medicacao', rotulo: 'Medicação' },
   { valor: 'exames', rotulo: 'Exames' },
@@ -223,6 +224,17 @@ export function Prontuario() {
 
           {aba === 'historico' && <Historico itens={prontuario.historico} />}
 
+          {/* Cada sessão de fisioterapia realizada: o que foi feito e como o pet reagiu. */}
+          {aba === 'sessoes' && (
+            <Historico
+              itens={prontuario.historico.filter((item) => item.categoria === 'Sessão')}
+              vazio={{
+                titulo: 'Nenhuma sessão registrada',
+                descricao: 'Cada sessão de fisioterapia do seu pet aparece aqui, com o que foi feito e como ele reagiu.',
+              }}
+            />
+          )}
+
           {aba === 'vacinas' && <Carteira vacinas={prontuario.vacinas} />}
 
           {aba === 'medicacao' && <Medicacao prescricoes={prontuario.prescricoes} />}
@@ -367,8 +379,11 @@ function PedidosExame({ pedidos }: { pedidos: PedidoExame[] }) {
   );
 }
 
-/** HU-011, CA-1: principais eventos clínicos do pet, do mais recente ao mais antigo. */
-function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
+/**
+ * HU-011, CA-1: principais eventos clínicos do pet, do mais recente ao mais antigo. A aba
+ * Sessões usa a mesma lista, só com as sessões registradas.
+ */
+function Historico({ itens, vazio }: { itens: ItemLinhaTempo[]; vazio?: { titulo: string; descricao: string } }) {
   const [expandido, setExpandido] = useState<string | null>(null);
 
   if (itens.length === 0) {
@@ -376,8 +391,11 @@ function Historico({ itens }: { itens: ItemLinhaTempo[] }) {
       <Cartao>
         <SemDados
           icone="🩺"
-          titulo="Prontuário ainda sem registros"
-          descricao="Avaliações, tratamentos, evoluções, vacinas, receitas e exames aparecem aqui assim que forem registrados."
+          titulo={vazio?.titulo ?? 'Prontuário ainda sem registros'}
+          descricao={
+            vazio?.descricao ??
+            'Avaliações, tratamentos, sessões, vacinas, receitas e exames aparecem aqui assim que forem registrados.'
+          }
         />
       </Cartao>
     );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
   FlatList,
@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { api, mensagemDeErro } from '../services/api';
 import { useAtualizacao } from '../contextos/AtualizacoesContext';
-import type { Conversa, Mensagem, Pet, Usuario } from '../tipos';
+import type { Conversa, Mensagem, Usuario } from '../tipos';
 import { Alerta, Avatar, Cartao, Carregando, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
 import { cores, espacos, raios } from '../tema';
@@ -25,12 +25,11 @@ import { formatarHora, tempoRelativo } from '../utils/formato';
 export function Mensagens() {
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [contatos, setContatos] = useState<Usuario[]>([]);
-  const [pets, setPets] = useState<Pet[]>([]);
   const [selecionado, setSelecionado] = useState<{ id: string; nome: string } | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [texto, setTexto] = useState('');
-  /** Pet a que a próxima mensagem se refere; opcional, mas ajuda a equipe a se situar. */
-  const [petDaMensagem, setPetDaMensagem] = useState<string | null>(null);
+  // O campo continua com o foco (e o teclado aberto) depois do envio.
+  const campoMensagem = useRef<TextInput>(null);
 
   const [carregando, setCarregando] = useState(true);
   const [carregandoConversa, setCarregandoConversa] = useState(false);
@@ -48,14 +47,6 @@ export function Mensagens() {
 
       setConversas(respostaConversas.data);
       setContatos(respostaContatos.data);
-
-      // Os pets só alimentam as etiquetas da conversa: se a leitura falhar, a tela segue sem elas.
-      try {
-        const respostaPets = await api.get<Pet[]>('/api/pets/meus');
-        setPets(respostaPets.data.filter((pet) => pet.ativo));
-      } catch {
-        setPets([]);
-      }
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível carregar as conversas.'));
     } finally {
@@ -110,7 +101,7 @@ export function Mensagens() {
   }, []);
 
   async function enviar() {
-    if (!selecionado || !texto.trim()) return;
+    if (!selecionado || !texto.trim() || enviando) return;
 
     setEnviando(true);
     setErro('');
@@ -119,7 +110,6 @@ export function Mensagens() {
       const { data } = await api.post<Mensagem>('/api/mensagens', {
         destinatarioId: selecionado.id,
         conteudo: texto.trim(),
-        pacienteId: petDaMensagem,
       });
 
       setMensagens((atual) => [...atual, data]);
@@ -128,13 +118,13 @@ export function Mensagens() {
       setErro(mensagemDeErro(falha, 'Não foi possível enviar a mensagem.'));
     } finally {
       setEnviando(false);
+      campoMensagem.current?.focus();
     }
   }
 
   const voltar = useCallback(() => {
     setSelecionado(null);
     setMensagens([]);
-    setPetDaMensagem(null);
     carregarConversas();
   }, [carregarConversas]);
 
@@ -208,41 +198,15 @@ export function Mensagens() {
             </View>
           ) : null}
 
-          {pets.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={estilos.seletorPets}
-            >
-              <Text style={estilos.seletorRotulo}>Sobre:</Text>
-              {pets.map((pet) => {
-                const ativo = petDaMensagem === pet.id;
-
-                return (
-                  <TouchableOpacity
-                    key={pet.id}
-                    style={[estilos.chipPet, ativo && estilos.chipPetAtivo]}
-                    onPress={() => setPetDaMensagem(ativo ? null : pet.id)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: ativo }}
-                  >
-                    <Text style={[estilos.chipPetTexto, ativo && estilos.chipPetTextoAtivo]}>{pet.nome}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-
           <View style={estilos.barraEnvio}>
             <TextInput
+              ref={campoMensagem}
               style={estilos.campoMensagem}
               placeholder="Escreva sua mensagem..."
               placeholderTextColor={cores.textoSuave}
               value={texto}
               onChangeText={setTexto}
               multiline
-              editable={!enviando}
               maxLength={2000}
             />
 
@@ -441,41 +405,6 @@ const estilos = StyleSheet.create({
   contadorTexto: {
     color: '#ffffff',
     fontSize: 11,
-    fontWeight: '700',
-  },
-  seletorPets: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: espacos.sm,
-    paddingHorizontal: espacos.md,
-    paddingVertical: espacos.sm,
-    backgroundColor: cores.superficie,
-    borderTopWidth: 1,
-    borderTopColor: cores.borda,
-  },
-  seletorRotulo: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: cores.textoSecundario,
-  },
-  chipPet: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: raios.cheio,
-    borderWidth: 1,
-    borderColor: cores.borda,
-    backgroundColor: cores.fundo,
-  },
-  chipPetAtivo: {
-    borderColor: cores.marca,
-    backgroundColor: cores.marcaClara,
-  },
-  chipPetTexto: {
-    fontSize: 12,
-    color: cores.textoSecundario,
-  },
-  chipPetTextoAtivo: {
-    color: cores.marcaEscura,
     fontWeight: '700',
   },
   cabecalhoConversa: {

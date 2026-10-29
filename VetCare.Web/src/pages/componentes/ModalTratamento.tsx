@@ -169,7 +169,7 @@ function Formulario({
 
         aoSalvar(
           form.status === 'Planejado'
-            ? 'Tratamento planejado. Ele passa a "em andamento" na primeira evolução registrada.'
+            ? 'Tratamento planejado. Ele passa a "em andamento" na primeira sessão registrada.'
             : 'Tratamento iniciado com sucesso.',
         );
       }
@@ -190,8 +190,8 @@ function Formulario({
       titulo={emEdicao ? 'Editar tratamento' : 'Novo tratamento'}
       descricao={
         emEdicao
-          ? 'Atualize o plano terapêutico. As sessões e evoluções já registradas não mudam.'
-          : 'O tratamento é encaminhado a partir da avaliação abaixo. Cada sessão realizada gera uma evolução.'
+          ? 'Atualize o plano terapêutico. As sessões já registradas não mudam.'
+          : 'O tratamento é encaminhado a partir da avaliação abaixo. Cada sessão realizada é registrada nele.'
       }
       aoFechar={aoFechar}
       largura="max-w-2xl"
@@ -281,7 +281,7 @@ function Formulario({
             <Campo
               rotulo="Status"
               obrigatorio
-              dica="Planejado passa a em andamento na primeira evolução registrada."
+              dica="Planejado passa a em andamento na primeira sessão registrada."
             >
               <select
                 className="vc-campo"

@@ -179,7 +179,7 @@ export interface Midia {
 export type CategoriaLinhaTempo =
   | 'Avaliação'
   | 'Tratamento'
-  | 'Evolução'
+  | 'Sessão'
   | 'Cirurgia'
   | 'Vacinação'
   | 'Receita'
@@ -193,7 +193,7 @@ export interface ItemLinhaTempo {
   chave: string;
   data: string;
   categoria: CategoriaLinhaTempo;
-  /** Título do evento, por exemplo "Avaliação clínica" ou "Evolução — sessão 3". */
+  /** Título do evento, por exemplo "Avaliação clínica" ou "Sessão nº 3". */
   tipo: string;
   tratamentoId?: string | null;
   numeroSessao?: number | null;

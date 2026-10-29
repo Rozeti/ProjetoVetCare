@@ -94,7 +94,7 @@ export function Dashboard() {
               icone={<ClipboardList size={20} />}
             />
             <Estatistica
-              rotulo="Evoluções do dia"
+              rotulo="Sessões registradas hoje"
               valor={indicadores.atendimentosDoDia}
               icone={<Activity size={20} />}
               cor="text-info"

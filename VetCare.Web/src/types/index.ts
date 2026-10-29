@@ -209,12 +209,15 @@ export interface PedidoExame {
   avaliacaoId: string;
   dataAvaliacao?: string | null;
   motivoAvaliacao: string;
+  /** Quem assinou: o veterinário só edita e exclui os próprios pedidos. */
+  veterinarioId: string;
   nomeVeterinario: string;
   crmv: string;
   dataEmissao: string;
   /** Exames solicitados, um por linha. */
   exames: string;
   justificativa: string;
+  /** "Cancelado" só nos pedidos antigos: hoje um pedido que não serve mais é excluído. */
   status: 'Ativo' | 'Cancelado';
   motivoCancelamento: string;
 }
@@ -340,7 +343,7 @@ export interface ObservacaoInterna {
 export type CategoriaLinhaTempo =
   | 'Avaliação'
   | 'Tratamento'
-  | 'Evolução'
+  | 'Sessão'
   | 'Cirurgia'
   | 'Vacinação'
   | 'Receita'

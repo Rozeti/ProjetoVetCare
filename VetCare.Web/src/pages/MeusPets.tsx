@@ -95,7 +95,7 @@ export function MeusPets() {
     <>
       <CabecalhoPagina
         titulo="Meus pets"
-        descricao="Acompanhe o tratamento e a evolução clínica dos seus animais."
+        descricao="Acompanhe o tratamento e o histórico clínico dos seus animais."
         acoes={
           <button type="button" className="vc-botao-primario" onClick={abrirCadastro}>
             <Plus size={16} />

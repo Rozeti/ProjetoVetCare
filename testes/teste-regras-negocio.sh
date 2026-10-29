@@ -143,7 +143,7 @@ r=$(get "/api/tratamentos/$TRATID" "$ADMIN")
 checa "a primeira evolução põe o tratamento em andamento" "Em Andamento" "$r"
 
 r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\",\"reacaoAnimal\":\"z\"}")
-checa "uma sessão gera uma única evolução" "já possui" "$r"
+checa "uma sessão é registrada uma única vez" "já foi registrada" "$r"
 
 # Sessão realizada sem agendamento: a evolução nasce do tratamento, e a sessão entra na
 # agenda já concluída.
@@ -164,10 +164,24 @@ r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\"
 checa "receita sem origem é recusada" "origem da receita" "$r"
 
 r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"atendimentoId\":\"$ATENDID\",\"itens\":[{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
-checa "receita emitida a partir da evolução" "Evolução nº 1" "$r"
+checa "receita emitida a partir da sessão registrada" "Sessão nº 1" "$r"
 
 r=$(post /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"exames\":\"Raio-X do joelho\",\"justificativa\":\"Controle pós-operatório\"}")
 checa "pedido de exame emitido a partir da avaliação" "\"avaliacaoId\":\"$AVALID\"" "$r"
+PEDIDOID=$(jsonval "$r" id)
+
+r=$(put "/api/pedidos-exame/$PEDIDOID" "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"exames\":\"Ultrassonografia do joelho\",\"justificativa\":\"Avaliar o menisco\"}")
+checa "pedido de exame editado" "Ultrassonografia do joelho" "$r"
+
+# Excluir tira o pedido do sistema: ele não fica no prontuário como cancelado.
+r=$(curl -s -X DELETE "$API/api/pedidos-exame/$PEDIDOID" -H "Authorization: Bearer $ADMIN")
+checa "pedido de exame excluído" "exclu" "$r"
+r=$(get "/api/pedidos-exame/paciente/$PETID" "$ADMIN")
+if grep -q "$PEDIDOID" <<<"$r"; then
+  echo "  FALHA o pedido excluído sai do prontuário"; falhou=$((falhou+1))
+else
+  echo "  OK   o pedido excluído sai do prontuário"; ok=$((ok+1))
+fi
 
 echo "== Situação do tratamento =="
 r=$(put "/api/tratamentos/$TRATID" "$ADMIN" '{"status":"Inativado"}')
@@ -185,7 +199,7 @@ checa "paciente não é excluído, só inativado (405)" "405" "$r"
 echo "== HU-011 / RN-003 prontuário =="
 r=$(get "/api/prontuarios/paciente/$PETID" "$ADMIN")
 checa "HU-011 CA-1 linha do tempo" "historico" "$r"
-checa "linha do tempo com categoria e responsável" "\"categoria\":\"Evolução\"" "$r"
+checa "linha do tempo com categoria e responsável" "\"categoria\":\"Sessão\"" "$r"
 checa "HU-011 CA-3 série de peso" "evolucaoPeso" "$r"
 checa "RN-003 admin vê observações internas" "reativo ao manuseio" "$r"
 
