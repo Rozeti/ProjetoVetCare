@@ -113,6 +113,25 @@ try {
   registrar('HU-001 CA-2 mensagem genérica de credenciais inválidas', true);
   await capturar('01-login-erro');
 
+  // ---- Esqueci minha senha: o e-mail traz só o código, e quem já o tem segue direto (sem
+  // pedir outro, o que invalidaria o anterior). Não chama a API: não gasta o limite do login.
+  await irPara(`/recuperar-senha`, 'networkidle2');
+  await pagina.waitForSelector('#email');
+  const botoesDaRecuperacao = await pagina.$$eval('button', (bs) => bs.map((b) => b.innerText.trim()));
+  await pagina.type('#email', 'tutor@vetcare.com');
+  await pagina.evaluate(() => {
+    [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Já tenho um código')?.click();
+  });
+  const segueComOCodigo = await esperarTexto('Digite o código de 6 dígitos enviado para')
+    .then(() => true)
+    .catch(() => false);
+  registrar(
+    'Recuperação de senha por código, com a opção "Já tenho um código"',
+    botoesDaRecuperacao.includes('Enviar código') && botoesDaRecuperacao.includes('Já tenho um código') && segueComOCodigo,
+    botoesDaRecuperacao.join(' | '),
+  );
+  await capturar('01b-recuperar-senha-codigo');
+
   // ---- Login do administrador
   await entrar('admin@vetcare.com', 'vetcare123');
   const urlAdmin = pagina.url();
@@ -281,7 +300,7 @@ try {
       await new Promise((r) => setTimeout(r, 400));
       const evolucoesVisiveis = await pagina.evaluate(() => document.body.innerText.includes('Histórico completo do animal'));
       registrar(
-        'Tratamento mostra a avaliação de origem e as próprias evoluções',
+        'Tratamento mostra a avaliação de origem e as próprias sessões',
         doTratamento.origem && doTratamento.expandiu && evolucoesVisiveis,
       );
       await capturar('05f-tratamento-evolucoes');
@@ -300,7 +319,7 @@ try {
         ? await pagina.$$eval('[role="dialog"] select option', (os) => os.map((o) => o.textContent.trim()))
         : [];
       registrar(
-        'Tratamento: Registrar sessão abre a evolução com a escolha da sessão',
+        'Tratamento: Registrar sessão abre o registro com a escolha da sessão',
         opcoesDeSessao.some((o) => o.includes('sem agendamento')),
         opcoesDeSessao.join(' | '),
       );

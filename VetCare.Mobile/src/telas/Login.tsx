@@ -130,8 +130,8 @@ export function Login() {
           </TouchableOpacity>
 
           <Text style={estilos.ajuda}>
-            Primeiro acesso? Use o código recebido no e-mail de boas-vindas em "Esqueci minha senha" para
-            criar a sua senha.
+            Primeiro acesso? Toque em "Esqueci minha senha", informe o seu e-mail e escolha "Já tenho um
+            código" para usar o código do e-mail de boas-vindas.
           </Text>
         </View>
       </ScrollView>

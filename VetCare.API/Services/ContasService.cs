@@ -6,8 +6,8 @@ using VetCare.API.Services.Email;
 
 namespace VetCare.API.Services
 {
-    /// <summary>Token e código recém-gerados, ainda em claro, para irem no e-mail.</summary>
-    public sealed record CredenciaisEmitidas(string Token, string Codigo, DateTime ExpiraEm);
+    /// <summary>Código recém-gerado, ainda em claro, para ir no e-mail.</summary>
+    public sealed record CredenciaisEmitidas(string Codigo, DateTime ExpiraEm);
 
     /// <summary>
     /// Comunicação do ciclo de vida da conta: boas-vindas, recuperação de senha, senha
@@ -54,7 +54,7 @@ namespace VetCare.API.Services
         {
             var credenciais = await EmitirCredenciais(usuario, FinalidadesDoToken.Recuperacao, ValidadeDaRecuperacao);
 
-            _fila.Enfileirar(_modelos.RecuperacaoDeSenha(usuario, credenciais.Token, credenciais.Codigo, ValidadeDaRecuperacao));
+            _fila.Enfileirar(_modelos.RecuperacaoDeSenha(usuario, credenciais.Codigo, ValidadeDaRecuperacao));
 
             return credenciais;
         }
@@ -73,7 +73,7 @@ namespace VetCare.API.Services
 
             var credenciais = await EmitirCredenciais(usuario, FinalidadesDoToken.PrimeiroAcesso, ValidadeDoPrimeiroAcesso);
 
-            _fila.Enfileirar(_modelos.PrimeiroAcesso(usuario, credenciais.Token, credenciais.Codigo, ValidadeDoPrimeiroAcesso));
+            _fila.Enfileirar(_modelos.PrimeiroAcesso(usuario, credenciais.Codigo, ValidadeDoPrimeiroAcesso));
 
             return credenciais;
         }
@@ -88,26 +88,27 @@ namespace VetCare.API.Services
 
         private async Task<CredenciaisEmitidas> EmitirCredenciais(Usuario usuario, string finalidade, TimeSpan validade)
         {
-            var token = CredenciaisTemporarias.GerarToken();
             var codigo = CredenciaisTemporarias.GerarCodigo();
 
             var registro = new TokenRedefinicaoSenha
             {
                 UsuarioId = usuario.Id,
                 Finalidade = finalidade,
-                ExpiraEm = DateTime.UtcNow.Add(validade)
+                ExpiraEm = DateTime.UtcNow.Add(validade),
+                // O e-mail leva só o código. A coluna do antigo token do link continua
+                // obrigatória e única, então recebe um valor aleatório que não sai daqui.
+                TokenHash = CredenciaisTemporarias.HashDoToken(CredenciaisTemporarias.GerarToken())
             };
 
-            registro.TokenHash = CredenciaisTemporarias.HashDoToken(token);
             registro.CodigoHash = CredenciaisTemporarias.HashDoCodigo(registro.Id, codigo);
 
-            // Só o pedido mais recente vale: um link antigo esquecido na caixa de entrada
+            // Só o pedido mais recente vale: um código antigo esquecido na caixa de entrada
             // não pode continuar abrindo a conta.
             await _tokens.InvalidarAnteriores(usuario.Id);
             await _tokens.Adicionar(registro);
             await _tokens.SalvarAlteracoes();
 
-            return new CredenciaisEmitidas(token, codigo, registro.ExpiraEm);
+            return new CredenciaisEmitidas(codigo, registro.ExpiraEm);
         }
     }
 }

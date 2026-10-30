@@ -73,7 +73,10 @@ namespace VetCare.Tests
 
             var email = EsvaziarFila().Should().ContainSingle().Subject;
             email.Destinatario.Should().Be("ana@teste.com");
-            email.CorpoHtml.Should().Contain("/primeiro-acesso?token=");
+
+            // Como na recuperação, o e-mail leva só o código: nenhum link abre a criação da senha.
+            email.CorpoHtml.Should().NotContain("<a ");
+            email.CorpoHtml.Should().NotContain("token=");
 
             var pedido = Contexto.TokensRedefinicaoSenha.Single(t => t.UsuarioId == cadastro.Dados!.UsuarioId);
             pedido.Finalidade.Should().Be(FinalidadesDoToken.PrimeiroAcesso);
@@ -160,7 +163,7 @@ namespace VetCare.Tests
         }
 
         [Fact]
-        public async Task Usuario_cadastrado_pelo_administrador_sem_senha_recebe_link_de_primeiro_acesso()
+        public async Task Usuario_cadastrado_pelo_administrador_sem_senha_recebe_codigo_de_primeiro_acesso()
         {
             var resultado = await CriarCasoDeUsuarios(ComoAdministrador()).Cadastrar(new CriarUsuarioDTO
             {
@@ -173,7 +176,9 @@ namespace VetCare.Tests
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
 
             var email = EsvaziarFila().Should().ContainSingle().Subject;
-            email.CorpoHtml.Should().Contain("/primeiro-acesso?token=");
+            email.Assunto.Should().Contain("crie sua senha");
+            ExtrairCodigo(email.CorpoTexto).Should().MatchRegex("^[0-9]{6}$");
+            email.CorpoHtml.Should().NotContain("token=");
         }
 
         [Fact]

@@ -12,13 +12,6 @@ namespace VetCare.API.Data
         public async Task Adicionar(TokenRedefinicaoSenha token) =>
             await _context.TokensRedefinicaoSenha.AddAsync(token);
 
-        public async Task<TokenRedefinicaoSenha?> ObterPorHash(string tokenHash)
-        {
-            return await _context.TokensRedefinicaoSenha
-                .Include(t => t.Usuario)
-                .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
-        }
-
         public async Task<TokenRedefinicaoSenha?> ObterAbertoDoUsuario(Guid usuarioId)
         {
             return await _context.TokensRedefinicaoSenha

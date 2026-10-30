@@ -19,7 +19,7 @@ namespace VetCare.API.DTOs
         public string Email { get; set; } = string.Empty;
 
         /// <summary>
-        /// Opcional. Em branco, o usuário recebe por e-mail um link e um código para criar a
+        /// Opcional. Em branco, o usuário recebe por e-mail um código para criar a
         /// própria senha; preenchida, a clínica a comunica pessoalmente.
         /// </summary>
         [StringLength(64, ErrorMessage = "A senha deve ter no máximo 64 caracteres.")]

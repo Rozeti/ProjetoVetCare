@@ -188,7 +188,7 @@ export function Tutores() {
         setAviso(
           form.senha
             ? 'Tutor cadastrado com sucesso. Ele recebeu um e-mail de boas-vindas.'
-            : 'Tutor cadastrado. Ele recebeu por e-mail o link para criar a própria senha.',
+            : 'Tutor cadastrado. Ele recebeu por e-mail o código para criar a própria senha.',
         );
       }
 
@@ -370,7 +370,7 @@ export function Tutores() {
             <Campo
               rotulo="Senha inicial"
               erro={erros.senha}
-              dica={`${DICA_SENHA} Deixe em branco para o tutor criar a própria senha pelo link enviado por e-mail (válido por 72 horas).`}
+              dica={`${DICA_SENHA} Deixe em branco para o tutor criar a própria senha com o código enviado por e-mail (válido por 72 horas).`}
             >
               <input
                 type="password"

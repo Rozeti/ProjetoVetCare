@@ -80,7 +80,7 @@ Carteira de vacinação (classificação das doses, esquema com várias doses, r
 edição, exclusão com justificativa, filtro e paginação), receituário, alertas clínicos,
 bloqueios de agenda, trilha de auditoria (só criações, alterações, inativações e exclusões), paginação (RNF-004), preferências de notificação
 por e-mail e push, registro do aparelho do tutor, conta criada sem senha (primeiro acesso),
-recuperação de senha pelo código de 6 dígitos (aplicativo) e pelo link (portal), e
+recuperação de senha pelo código de 6 dígitos (o e-mail não traz mais link), e
 limitação de requisições nos endpoints de autenticação.
 
 ```bash

@@ -4,9 +4,9 @@ using System.Text;
 namespace VetCare.API.Security
 {
     /// <summary>
-    /// Geração e verificação das credenciais de uso único usadas para definir uma senha:
-    /// o token longo do link e o código curto digitado no aplicativo. Nada aqui é
-    /// reversível — o banco só conhece os hashes.
+    /// Geração e verificação das credenciais de uso único usadas para definir uma senha: o
+    /// código curto enviado por e-mail (e o identificador longo que preenche TokenHash). Nada
+    /// aqui é reversível — o banco só conhece os hashes.
     /// </summary>
     public static class CredenciaisTemporarias
     {

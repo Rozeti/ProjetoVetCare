@@ -8,10 +8,11 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// "Esqueci minha senha": o usuário informa o e-mail cadastrado e recebe um link (para o
-    /// portal) e um código de seis dígitos (para o aplicativo). Qualquer um dos dois define a
-    /// nova senha, uma única vez e dentro do prazo. O mesmo caminho conclui o primeiro acesso
-    /// de uma conta criada pela clínica.
+    /// "Esqueci minha senha": o usuário informa o e-mail cadastrado e recebe um código de seis
+    /// dígitos, que ele digita no portal ou no aplicativo junto com o e-mail para definir a nova
+    /// senha, uma única vez, dentro do prazo e com tentativas limitadas. O e-mail não traz link:
+    /// o código é o único caminho. O mesmo fluxo conclui o primeiro acesso de uma conta criada
+    /// pela clínica.
     /// </summary>
     public class RecuperarSenhaUseCase
     {
@@ -63,7 +64,6 @@ namespace VetCare.API.UseCases
 
             if (_contas.ExporCredenciaisNaResposta)
             {
-                resposta.TokenDesenvolvimento = credenciais.Token;
                 resposta.CodigoDesenvolvimento = credenciais.Codigo;
             }
 
@@ -76,7 +76,7 @@ namespace VetCare.API.UseCases
 
             if (falha != null || pedido?.Usuario == null)
             {
-                return falha ?? Resultado.Invalido("Link ou código inválido ou expirado. Solicite um novo.");
+                return falha ?? Resultado.Invalido("Código inválido ou expirado. Solicite um novo.");
             }
 
             var usuario = pedido.Usuario;
@@ -122,23 +122,14 @@ namespace VetCare.API.UseCases
         }
 
         /// <summary>
-        /// Encontra o pedido pelo token do link ou pelo par e-mail + código. As mensagens de
-        /// erro são genéricas de propósito: não dizem se o e-mail existe nem se há pedido aberto.
+        /// Encontra o pedido pelo par e-mail + código. As mensagens de erro são genéricas de
+        /// propósito: não dizem se o e-mail existe nem se há pedido aberto.
         /// </summary>
         private async Task<(TokenRedefinicaoSenha? Pedido, Resultado? Falha)> LocalizarPedido(RedefinirSenhaDTO dto)
         {
-            if (!string.IsNullOrWhiteSpace(dto.Token))
-            {
-                var pedido = await _tokens.ObterPorHash(CredenciaisTemporarias.HashDoToken(dto.Token.Trim()));
-
-                return pedido == null || !pedido.Valido
-                    ? (null, Resultado.Invalido("Link de redefinição inválido ou expirado. Solicite um novo."))
-                    : (pedido, null);
-            }
-
             if (string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.Codigo))
             {
-                return (null, Resultado.Invalido("Informe o link recebido por e-mail, ou o e-mail da conta e o código."));
+                return (null, Resultado.Invalido("Informe o e-mail da conta e o código recebido por e-mail."));
             }
 
             var usuario = await _usuarios.ObterPorEmail(dto.Email);

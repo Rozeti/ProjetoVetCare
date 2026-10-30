@@ -45,10 +45,9 @@ export interface RespostaLogin {
   usuario: Usuario;
 }
 
-/** Resposta do pedido de redefinição; os campos de desenvolvimento só existem sem SMTP configurado. */
+/** Resposta do pedido de redefinição; o código de desenvolvimento só existe sem SMTP configurado. */
 export interface RespostaRecuperacao {
   mensagem: string;
-  tokenDesenvolvimento?: string | null;
   codigoDesenvolvimento?: string | null;
 }
 

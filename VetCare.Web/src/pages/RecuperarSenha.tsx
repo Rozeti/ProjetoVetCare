@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ArrowLeft, KeyRound, Loader2, Mail, MailCheck, Stethoscope } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import { DICA_SENHA, emailValido, validarSenha } from '../utils/formato';
@@ -15,15 +15,15 @@ type Etapa = 'solicitar' | 'redefinir';
 
 /**
  * "Esqueci minha senha" e primeiro acesso, em duas etapas. A pessoa informa o e-mail
- * cadastrado e recebe um link (que abre esta tela já com o token) e um código de seis
- * dígitos (para quem prefere digitar, ou está no aplicativo). Qualquer um dos dois
- * define a nova senha, uma única vez e dentro do prazo.
+ * cadastrado e recebe um código de seis dígitos, que digita aqui junto com a nova senha. O
+ * e-mail não traz link para a troca de senha: o código é o único caminho, no portal e no
+ * aplicativo. Quem já tem um código (o do e-mail de boas-vindas, por exemplo) segue direto
+ * para a segunda etapa, sem pedir outro.
  */
 export function RecuperarSenha({ primeiroAcesso = false }: Props) {
-  const [parametros] = useSearchParams();
-  const tokenDaUrl = parametros.get('token') ?? '';
-
-  const [etapa, setEtapa] = useState<Etapa>(tokenDaUrl ? 'redefinir' : 'solicitar');
+  const [etapa, setEtapa] = useState<Etapa>('solicitar');
+  // Se a segunda etapa veio de um pedido feito agora ou de um código que a pessoa já tinha.
+  const [codigoJaRecebido, setCodigoJaRecebido] = useState(false);
   const [email, setEmail] = useState('');
   const [codigo, setCodigo] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
@@ -34,8 +34,6 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
   const [codigoPreenchidoEmDesenvolvimento, setCodigoPreenchidoEmDesenvolvimento] = useState(false);
   const [mensagemFinal, setMensagemFinal] = useState('');
   const [enviando, setEnviando] = useState(false);
-
-  const usaToken = !!tokenDaUrl;
 
   async function solicitar(evento: FormEvent) {
     evento.preventDefault();
@@ -63,6 +61,7 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
         setCodigoPreenchidoEmDesenvolvimento(true);
       }
 
+      setCodigoJaRecebido(false);
       setEtapa('redefinir');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível processar a solicitação.'));
@@ -71,11 +70,25 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
     }
   }
 
+  /** Quem já tem um código válido não precisa pedir outro (o novo invalidaria o anterior). */
+  function usarCodigoRecebido() {
+    setErro('');
+    setAviso('');
+
+    if (!emailValido(email)) {
+      setErro('Informe o e-mail da conta para usar o código que você recebeu.');
+      return;
+    }
+
+    setCodigoJaRecebido(true);
+    setEtapa('redefinir');
+  }
+
   async function redefinir(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
 
-    if (!usaToken && codigo.replace(/\D/g, '').length !== 6) {
+    if (codigo.replace(/\D/g, '').length !== 6) {
       setErro('Digite o código de 6 dígitos recebido por e-mail.');
       return;
     }
@@ -95,11 +108,11 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
     setEnviando(true);
 
     try {
-      const corpo = usaToken
-        ? { token: tokenDaUrl, novaSenha }
-        : { email: email.trim(), codigo: codigo.replace(/\D/g, ''), novaSenha };
-
-      const { data } = await api.post<{ mensagem: string }>('/api/usuarios/redefinir-senha', corpo);
+      const { data } = await api.post<{ mensagem: string }>('/api/usuarios/redefinir-senha', {
+        email: email.trim(),
+        codigo: codigo.replace(/\D/g, ''),
+        novaSenha,
+      });
 
       setMensagemFinal(data.mensagem || 'Senha redefinida com sucesso.');
     } catch (falha) {
@@ -148,8 +161,9 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
             <>
               <h2 className="mb-1 text-lg font-bold text-slate-900">{tituloDaEtapaInicial}</h2>
               <p className="mb-6 text-sm text-slate-500">
-                Informe o e-mail da sua conta. Você receberá um link e um código de 6 dígitos para
-                {primeiroAcesso ? ' criar a sua senha.' : ' definir uma nova senha.'}
+                {primeiroAcesso
+                  ? 'Informe o e-mail da sua conta e escolha "Já tenho um código" para usar o código do e-mail de boas-vindas. Se ele venceu, peça um novo.'
+                  : 'Informe o e-mail da sua conta. Enviaremos um código de 6 dígitos para você definir uma nova senha.'}
               </p>
 
               <form onSubmit={solicitar} className="space-y-4" noValidate>
@@ -179,7 +193,11 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
 
                 <button type="submit" className="vc-botao-primario w-full" disabled={enviando}>
                   {enviando && <Loader2 className="animate-spin" size={18} />}
-                  Enviar instruções
+                  {primeiroAcesso ? 'Receber um novo código' : 'Enviar código'}
+                </button>
+
+                <button type="button" className="vc-botao-secundario w-full" onClick={usarCodigoRecebido} disabled={enviando}>
+                  Já tenho um código
                 </button>
               </form>
             </>
@@ -187,44 +205,37 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
             <>
               <h2 className="mb-1 text-lg font-bold text-slate-900">{tituloDaEtapaFinal}</h2>
 
-              {usaToken ? (
-                <p className="mb-6 text-sm text-slate-500">
-                  Escolha a sua nova senha. Este link é de uso único e tem prazo de validade.
+              <div className="mb-6 flex items-start gap-3 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-dark">
+                <MailCheck size={18} className="mt-0.5 shrink-0" />
+                <p>
+                  {codigoJaRecebido
+                    ? `Digite o código de 6 dígitos enviado para ${email.trim()}.`
+                    : `${aviso || 'Se houver uma conta com este e-mail, enviamos um código.'} Abra o e-mail e digite abaixo o código de 6 dígitos.`}
                 </p>
-              ) : (
-                <div className="mb-6 flex items-start gap-3 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-dark">
-                  <MailCheck size={18} className="mt-0.5 shrink-0" />
-                  <p>
-                    {aviso || 'Se houver uma conta com este e-mail, enviamos as instruções.'}{' '}
-                    Abra o e-mail e digite abaixo o código de 6 dígitos, ou clique no link da mensagem.
-                  </p>
-                </div>
-              )}
+              </div>
 
               <form onSubmit={redefinir} className="space-y-4" noValidate>
-                {!usaToken && (
-                  <div>
-                    <label htmlFor="codigo" className="vc-rotulo">
-                      Código recebido por e-mail
-                    </label>
-                    <input
-                      id="codigo"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={7}
-                      className="vc-campo text-center font-mono text-lg tracking-[0.4em]"
-                      placeholder="000000"
-                      value={codigo}
-                      onChange={(e) => setCodigo(e.target.value)}
-                      disabled={enviando}
-                    />
-                    {codigoPreenchidoEmDesenvolvimento && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Ambiente de desenvolvimento sem servidor de e-mail: o código foi preenchido automaticamente.
-                      </p>
-                    )}
-                  </div>
-                )}
+                <div>
+                  <label htmlFor="codigo" className="vc-rotulo">
+                    Código recebido por e-mail
+                  </label>
+                  <input
+                    id="codigo"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={7}
+                    className="vc-campo text-center font-mono text-lg tracking-[0.4em]"
+                    placeholder="000000"
+                    value={codigo}
+                    onChange={(e) => setCodigo(e.target.value)}
+                    disabled={enviando}
+                  />
+                  {codigoPreenchidoEmDesenvolvimento && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Ambiente de desenvolvimento sem servidor de e-mail: o código foi preenchido automaticamente.
+                    </p>
+                  )}
+                </div>
 
                 <div>
                   <label htmlFor="novaSenha" className="vc-rotulo">
@@ -265,16 +276,14 @@ export function RecuperarSenha({ primeiroAcesso = false }: Props) {
                 </button>
               </form>
 
-              {!usaToken && (
-                <button
-                  type="button"
-                  onClick={voltarParaSolicitar}
-                  className="mt-4 block w-full text-center text-sm font-medium text-brand hover:underline"
-                  disabled={enviando}
-                >
-                  Não recebeu? Enviar novamente
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={voltarParaSolicitar}
+                className="mt-4 block w-full text-center text-sm font-medium text-brand hover:underline"
+                disabled={enviando}
+              >
+                {codigoJaRecebido ? 'Receber um novo código' : 'Não recebeu? Enviar novamente'}
+              </button>
             </>
           )}
 

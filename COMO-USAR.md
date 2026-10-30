@@ -121,7 +121,7 @@ O banco se chama `vetcare_db` e tem **26 tabelas**. As principais:
 | `Mensagens`, `Notificacoes`, `DispositivosDoUsuario` | A comunicação e os aparelhos que recebem push |
 | `MidiasSessao`, `DocumentosClinicos` | Fotos, vídeos e documentos anexados ao prontuário |
 | `BloqueiosAgenda` | Férias e congressos que fecham a agenda do veterinário |
-| `TokensRedefinicaoSenha` | Códigos e links de recuperação de senha, já com validade |
+| `TokensRedefinicaoSenha` | Códigos de recuperação de senha e de primeiro acesso, já com validade |
 | `RegistrosAuditoria` | Quem fez o quê e quando |
 
 Você **não precisa criar nenhuma tabela**. Quando a API inicia e encontra um banco vazio, ela
@@ -265,9 +265,10 @@ Abra o navegador em **http://localhost:8080**
 em "Alterar senha". Essa senha inicial existe só para destravar o primeiro acesso.
 
 Quando cadastrar a equipe e os tutores, **não precisa inventar senha para eles**: deixe o campo
-em branco e cada pessoa recebe por e-mail um convite para criar a própria senha. E quem
-esquecer a senha usa o "Esqueci minha senha" da tela de login, que envia um link e um código
-de 6 dígitos para o e-mail cadastrado.
+em branco e cada pessoa recebe por e-mail um código para criar a própria senha, em "Esqueci
+minha senha → Já tenho um código". E quem esquecer a senha usa o "Esqueci minha senha" da tela
+de login, que envia um código de 6 dígitos para o e-mail cadastrado. Os e-mails de senha não
+trazem link: o código é digitado na própria tela.
 
 ### Para desligar tudo
 
@@ -469,7 +470,7 @@ E para copiá-los para a pasta do projeto e abrir no navegador:
 docker compose cp api:/app/emails-enviados ./emails-enviados
 ```
 
-Cada arquivo é um e-mail completo, com o link e o código de recuperação dentro. No modo
+Cada arquivo é um e-mail completo, com o código de recuperação dentro. No modo
 desenvolvimento (Parte 4) a pasta fica direto em `VetCare.API/emails-enviados`, e a tela
 "Esqueci minha senha" já preenche o código sozinha, para você testar o fluxo sem abrir nada.
 
@@ -522,9 +523,10 @@ exemplo `nao-responda@suaclinica.com.br`, informado em `EMAIL_REMETENTE`.
 
 Dois detalhes importam para quem recebe:
 
-- Os links dos e-mails apontam para `WEB_URL`. Com `http://localhost:8080`, o link só abre
-  no próprio computador que roda o Docker; para abrir pelo celular, troque pelo IP da
-  máquina (Parte 5). O aplicativo do tutor não depende disso: ele usa o código de 6 dígitos.
+- Os botões dos e-mails (entrar no sistema, abrir uma notificação) apontam para `WEB_URL`.
+  Com `http://localhost:8080`, o link só abre no próprio computador que roda o Docker; para
+  abrir pelo celular, troque pelo IP da máquina (Parte 5). Os códigos de senha não dependem
+  disso: são digitados na tela do portal ou do aplicativo.
 - Na subida, a API já testa a conexão com o servidor de e-mail e escreve o resultado em
   `docker compose logs api`. Se um envio falhar depois, ela tenta de novo sozinha, algumas
   vezes, antes de desistir, sempre com o motivo explicado em português no log.

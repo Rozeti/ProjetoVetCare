@@ -1,10 +1,10 @@
 namespace VetCare.API.Models
 {
     /// <summary>
-    /// Credencial temporária para definir uma senha sem conhecer a atual. Cada pedido gera
-    /// duas formas da mesma credencial: um token longo, que vai no link do e-mail e serve ao
-    /// portal web, e um código numérico curto, que a pessoa digita no aplicativo. O banco
-    /// guarda apenas os hashes; os valores originais só existem no e-mail enviado.
+    /// Credencial temporária para definir uma senha sem conhecer a atual: um código numérico
+    /// curto, enviado por e-mail e digitado no portal ou no aplicativo. O banco guarda apenas
+    /// o hash; o código original só existe no e-mail enviado. TokenHash é do tempo em que o
+    /// e-mail levava também um link: continua obrigatório e único, mas não sai mais do servidor.
     /// </summary>
     public class TokenRedefinicaoSenha
     {

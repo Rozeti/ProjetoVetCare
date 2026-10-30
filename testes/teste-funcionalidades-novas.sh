@@ -214,12 +214,16 @@ r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"n
 checa "e-mail inexistente recebe resposta neutra" "Se houver uma conta" "$r"
 
 if [ "$AMBIENTE" = "Development" ]; then
-  # Fora de produção, e sem servidor de e-mail, o link e o código vêm na própria resposta,
-  # o que permite percorrer os dois caminhos (portal e aplicativo) sem caixa de entrada.
+  # Fora de produção, e sem servidor de e-mail, o código vem na própria resposta, o que
+  # permite percorrer o fluxo sem caixa de entrada. O e-mail não leva mais link: só o código.
   r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" "{\"email\":\"$NOVO_EMAIL\"}")
   CODIGO=$(val "$r" codigoDesenvolvimento)
-  checa "solicitação gera código de 6 dígitos (aplicativo)" '^[0-9]\{6\}$' "$CODIGO"
-  checa "solicitação gera link (portal)" '"tokenDesenvolvimento":"' "$r"
+  checa "solicitação gera código de 6 dígitos" '^[0-9]\{6\}$' "$CODIGO"
+  if grep -q '"tokenDesenvolvimento"' <<<"$r"; then
+    echo "  FALHA a recuperação ainda gera link para a troca de senha"; falhou=$((falhou+1))
+  else
+    echo "  OK   a recuperação não gera link, só o código"; ok=$((ok+1))
+  fi
 
   r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"email\":\"$NOVO_EMAIL\",\"codigo\":\"000000\",\"novaSenha\":\"NovaSenha2026\"}")
   checa "código errado é recusado e conta a tentativa" "Código incorreto" "$r"
@@ -231,39 +235,33 @@ if [ "$AMBIENTE" = "Development" ]; then
   checa "usuário sem senha inicial consegue entrar" "." "$NOVO"
 
   r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"apoio@vetcare.com"}')
-  TOKEN=$(val "$r" tokenDesenvolvimento)
+  CODIGO=$(val "$r" codigoDesenvolvimento)
 
-  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"token\":\"$TOKEN\",\"novaSenha\":\"NovaSenha2026\"}")
-  checa "senha redefinida pelo link do e-mail" "sucesso" "$r"
+  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"email\":\"apoio@vetcare.com\",\"codigo\":\"$CODIGO\",\"novaSenha\":\"NovaSenha2026\"}")
+  checa "senha redefinida com o código do e-mail" "sucesso" "$r"
 
   NOVO=$(entrar apoio@vetcare.com NovaSenha2026)
   checa "login com a nova senha funciona" "." "$NOVO"
 
-  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"token\":\"$TOKEN\",\"novaSenha\":\"OutraSenha2026\"}")
-  checa "link de uso único não é reaproveitado" "inválido ou expirado" "$r"
+  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" "{\"email\":\"apoio@vetcare.com\",\"codigo\":\"$CODIGO\",\"novaSenha\":\"OutraSenha2026\"}")
+  checa "código de uso único não é reaproveitado" "inválido ou expirado" "$r"
 
   r=$(envia PUT /api/usuarios/me/senha "$NOVO" '{"senhaAtual":"NovaSenha2026","novaSenha":"vetcare123"}')
   checa "senha restaurada para o padrão de demonstração" "sucesso" "$r"
 else
-  # Em produção o link e o código só saem por e-mail: a resposta não pode entregá-los a quem pediu.
+  # Em produção o código só sai por e-mail: a resposta não pode entregá-lo a quem pediu.
   r=$(repetir_se_limitado envia POST /api/usuarios/recuperar-senha "" '{"email":"apoio@vetcare.com"}')
   checa "solicitação aceita sem expor as credenciais" "Se houver uma conta" "$r"
 
   # Procura um valor de verdade, e não só o nome do campo.
-  if grep -q '"tokenDesenvolvimento":"' <<<"$r"; then
-    echo "  FALHA link de recuperação vazou em produção"; falhou=$((falhou+1))
-  else
-    echo "  OK   link de recuperação não é exposto em produção"; ok=$((ok+1))
-  fi
-
   if grep -q '"codigoDesenvolvimento":"' <<<"$r"; then
     echo "  FALHA código de recuperação vazou em produção"; falhou=$((falhou+1))
   else
     echo "  OK   código de recuperação não é exposto em produção"; ok=$((ok+1))
   fi
 
-  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" '{"token":"token-invalido","novaSenha":"NovaSenha2026"}')
-  checa "link inválido é recusado" "inválido ou expirado" "$r"
+  r=$(repetir_se_limitado envia POST /api/usuarios/redefinir-senha "" '{"email":"apoio@vetcare.com","codigo":"000000","novaSenha":"NovaSenha2026"}')
+  checa "código errado é recusado" "Código" "$r"
 fi
 
 echo "== Saúde e documentação =="

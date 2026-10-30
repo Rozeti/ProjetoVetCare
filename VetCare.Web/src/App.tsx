@@ -84,7 +84,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/recuperar-senha" element={<RecuperarSenha />} />
-            {/* Link do e-mail de boas-vindas: a conta criada pela clínica define a primeira senha aqui. */}
+            {/* Primeiro acesso de quem foi cadastrado pela clínica: a página pede o código do e-mail de boas-vindas. */}
             <Route path="/primeiro-acesso" element={<RecuperarSenha primeiroAcesso />} />
 
             <Route

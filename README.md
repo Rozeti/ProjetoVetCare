@@ -281,11 +281,13 @@ mensagens. Detalhes do funcionamento em [Sincronia entre as telas](#sincronia-en
 - Autenticação JWT com emissor e público validados, bloqueio após tentativas seguidas e
   limitação de requisições; contas desativadas perdem o acesso em até um minuto, mesmo com
   o token ainda válido.
-- **Esqueci minha senha**: o usuário informa o e-mail cadastrado e recebe um link (para o
-  portal) e um código de 6 dígitos (para o aplicativo), válidos por 30 minutos, de uso único,
-  com no máximo 5 tentativas de código. A resposta é a mesma para e-mails desconhecidos.
-- **Primeiro acesso**: contas criadas pela clínica sem senha recebem um convite por e-mail
-  para defini-la (válido por 72 horas). Toda troca de senha gera um aviso de segurança.
+- **Esqueci minha senha**: o usuário informa o e-mail cadastrado e recebe só um código de 6
+  dígitos, válido por 30 minutos, de uso único e com no máximo 5 tentativas, que ele digita no
+  portal ou no aplicativo. O e-mail não traz botão nem link para a troca de senha: o código é
+  o único caminho. A resposta é a mesma para e-mails desconhecidos.
+- **Primeiro acesso**: contas criadas pela clínica sem senha recebem por e-mail um código para
+  defini-la (válido por 72 horas), usado em "Esqueci minha senha → Já tenho um código". Toda
+  troca de senha gera um aviso de segurança.
 - Mídias e documentos clínicos são servidos apenas por URLs assinadas com prazo de validade,
   nunca como arquivos estáticos públicos.
 
@@ -490,7 +492,7 @@ O sistema está funcional, mas alguns itens dependem de decisões de infraestrut
    (veja "Sincronia entre as telas"). O DAS prevê WebSocket; a troca afeta apenas a camada
    de transporte, não as regras já implementadas.
 5. **E-mail e push** — sem `SMTP_HOST` os e-mails ficam em `emails-enviados` e, em
-   `Development`, o link e o código de recuperação voltam na própria resposta da API para
+   `Development`, o código de recuperação volta na própria resposta da API para
    permitir a demonstração. Em produção configure o SMTP e gere o `projectId` do Expo
    para o aplicativo (veja [E-mail e notificações no celular](#e-mail-e-notificações-no-celular)).
 6. **Backup** — o DAS exige backup diário com zero perda de registros confirmados; isso é

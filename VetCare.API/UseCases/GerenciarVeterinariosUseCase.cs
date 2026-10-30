@@ -170,7 +170,7 @@ namespace VetCare.API.UseCases
             return Resultado<VeterinarioDTO>.Ok(
                 MapearParaDTO(veterinario),
                 usuarioNovo && !senhaDefinidaPelaClinica
-                    ? "Veterinário cadastrado. Ele recebeu por e-mail o link para criar a própria senha."
+                    ? "Veterinário cadastrado. Ele recebeu por e-mail o código para criar a própria senha."
                     : "Veterinário cadastrado com sucesso.");
         }
 

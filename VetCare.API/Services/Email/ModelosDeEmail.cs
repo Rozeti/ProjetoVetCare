@@ -26,25 +26,34 @@ namespace VetCare.API.Services.Email
             _aplicacao = aplicacao.Value;
         }
 
-        public MensagemDeEmail RecuperacaoDeSenha(Usuario usuario, string token, string codigo, TimeSpan validade)
+        /// <summary>
+        /// "Esqueci minha senha": o e-mail leva só o código, sem botão nem link para a troca de
+        /// senha. A pessoa digita o código na tela em que fez o pedido, no portal ou no
+        /// aplicativo; quem tiver acesso à caixa de entrada não consegue trocar a senha com um
+        /// clique, e um e-mail falso com link é fácil de reconhecer.
+        /// </summary>
+        public MensagemDeEmail RecuperacaoDeSenha(Usuario usuario, string codigo, TimeSpan validade)
         {
             return Montar(
                 usuario,
-                assunto: "Redefinição de senha",
-                titulo: "Vamos redefinir sua senha",
+                assunto: "Código para redefinir a senha",
+                titulo: "Seu código para redefinir a senha",
                 paragrafos: new[]
                 {
                     $"Recebemos um pedido para redefinir a senha da sua conta no {_aplicacao.NomeDoSistema}.",
-                    "Pelo computador, clique no botão abaixo. Pelo aplicativo, digite o código a seguir na tela \"Esqueci minha senha\".",
+                    "Para escolher a nova senha, digite o código abaixo na tela \"Esqueci minha senha\", no portal " +
+                    "ou no aplicativo, onde você fez o pedido.",
                 },
-                botao: new Botao("Redefinir minha senha", LinkDeRedefinicao("/recuperar-senha", token)),
+                botao: null,
                 codigo: codigo,
                 observacao:
-                    $"O link e o código valem por {DescreverValidade(validade)} e só podem ser usados uma vez. " +
-                    "Se você não pediu a redefinição, ignore este e-mail: sua senha continua a mesma.");
+                    $"O código vale por {DescreverValidade(validade)} e só pode ser usado uma vez. A clínica nunca pede " +
+                    $"este código, e o {_aplicacao.NomeDoSistema} não envia links para trocar a senha. Se você não pediu " +
+                    "a redefinição, ignore este e-mail: sua senha continua a mesma.");
         }
 
-        public MensagemDeEmail PrimeiroAcesso(Usuario usuario, string token, string codigo, TimeSpan validade)
+        /// <summary>Conta criada pela clínica sem senha: como na recuperação, o e-mail leva só o código.</summary>
+        public MensagemDeEmail PrimeiroAcesso(Usuario usuario, string codigo, TimeSpan validade)
         {
             return Montar(
                 usuario,
@@ -53,14 +62,14 @@ namespace VetCare.API.Services.Email
                 paragrafos: new[]
                 {
                     $"A {_aplicacao.NomeDaClinica} criou o seu acesso ao {_aplicacao.NomeDoSistema}, com o e-mail {usuario.Email}.",
-                    "Para começar, defina a sua senha. Pelo computador, clique no botão abaixo. Pelo aplicativo, " +
-                    "toque em \"Esqueci minha senha\" na tela de entrada e digite o código a seguir.",
+                    "Para criar a sua senha, abra o portal ou o aplicativo, toque em \"Esqueci minha senha\" na tela de " +
+                    "entrada, informe o seu e-mail, escolha \"Já tenho um código\" e digite o código abaixo.",
                 },
-                botao: new Botao("Criar minha senha", LinkDeRedefinicao("/primeiro-acesso", token)),
+                botao: null,
                 codigo: codigo,
                 observacao:
-                    $"O link e o código valem por {DescreverValidade(validade)}. Se o prazo passar, use " +
-                    "\"Esqueci minha senha\" para receber novos.");
+                    $"O código vale por {DescreverValidade(validade)}. Se o prazo passar, use \"Esqueci minha senha\" " +
+                    "para receber um novo. A clínica nunca pede este código.");
         }
 
         public MensagemDeEmail BoasVindas(Usuario usuario)
@@ -128,9 +137,6 @@ namespace VetCare.API.Services.Email
                     "Você recebe este aviso porque ativou as notificações por e-mail. " +
                     "Para parar de recebê-las, desative a opção em \"Minha conta\".");
         }
-
-        private string LinkDeRedefinicao(string caminho, string token) =>
-            _aplicacao.LinkDoPortal($"{caminho}?token={Uri.EscapeDataString(token)}");
 
         private static string DescreverValidade(TimeSpan validade)
         {

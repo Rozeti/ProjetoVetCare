@@ -66,7 +66,7 @@ namespace VetCare.API.Controllers
         }
 
         /// <summary>
-        /// "Esqueci minha senha": envia ao e-mail cadastrado um link e um código de uso único.
+        /// "Esqueci minha senha": envia ao e-mail cadastrado um código de uso único.
         /// A resposta é a mesma exista a conta ou não.
         /// </summary>
         [HttpPost("recuperar-senha")]
@@ -77,7 +77,7 @@ namespace VetCare.API.Controllers
             return this.Responder(await _recuperarSenha.Solicitar(dto));
         }
 
-        /// <summary>Define a nova senha com o token do link ou com o e-mail e o código recebidos.</summary>
+        /// <summary>Define a nova senha com o e-mail e o código recebidos.</summary>
         [HttpPost("redefinir-senha")]
         [AllowAnonymous]
         [EnableRateLimiting(LimitesDeRequisicao.Autenticacao)]

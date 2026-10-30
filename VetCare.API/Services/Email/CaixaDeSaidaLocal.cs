@@ -6,9 +6,9 @@ namespace VetCare.API.Services.Email
     /// <summary>
     /// Substituto do SMTP enquanto nenhum servidor está configurado: cada e-mail vira um
     /// arquivo .html numa pasta da aplicação, que pode ser aberto no navegador. É assim
-    /// que o fluxo inteiro — inclusive o link de redefinição de senha — pode ser testado
-    /// numa máquina sem conta de e-mail. O conteúdo nunca vai para o log: links e
-    /// códigos de senha não devem aparecer em arquivos de log, nem em desenvolvimento.
+    /// que o fluxo inteiro — inclusive o código de redefinição de senha — pode ser testado
+    /// numa máquina sem conta de e-mail. O conteúdo nunca vai para o log: códigos de
+    /// senha não devem aparecer em arquivos de log, nem em desenvolvimento.
     /// </summary>
     public class CaixaDeSaidaLocal : IServicoDeEmail
     {

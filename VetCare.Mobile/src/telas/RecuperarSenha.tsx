@@ -24,14 +24,16 @@ type Etapa = 'solicitar' | 'redefinir';
 
 /**
  * "Esqueci minha senha" no aplicativo. O tutor informa o e-mail cadastrado, recebe um
- * código de seis dígitos (e um link, para quem preferir o portal) e define a nova
- * senha aqui mesmo. O mesmo caminho conclui o primeiro acesso de uma conta criada
- * pela clínica.
+ * código de seis dígitos (o e-mail não traz link: o código é o único caminho) e define a
+ * nova senha aqui mesmo. Quem já tem um código, como o do e-mail de boas-vindas de uma
+ * conta criada pela clínica, segue direto para a segunda etapa.
  */
 export function RecuperarSenha() {
   const navegacao = useNavigation<NavigationProp<RotasDaPilha>>();
 
   const [etapa, setEtapa] = useState<Etapa>('solicitar');
+  // Se a segunda etapa veio de um pedido feito agora ou de um código que a pessoa já tinha.
+  const [codigoJaRecebido, setCodigoJaRecebido] = useState(false);
   const [email, setEmail] = useState('');
   const [codigo, setCodigo] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
@@ -67,12 +69,27 @@ export function RecuperarSenha() {
         setCodigoPreenchidoEmDesenvolvimento(true);
       }
 
+      setCodigoJaRecebido(false);
       setEtapa('redefinir');
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível processar a solicitação.'));
     } finally {
       setEnviando(false);
     }
+  }
+
+  /** Quem já tem um código válido não precisa pedir outro (o novo invalidaria o anterior). */
+  function usarCodigoRecebido() {
+    setErro('');
+    setAviso('');
+
+    if (!/^[^\s@]+@[^\s@]+$/.test(email.trim())) {
+      setErro('Informe o e-mail da conta para usar o código que você recebeu.');
+      return;
+    }
+
+    setCodigoJaRecebido(true);
+    setEtapa('redefinir');
   }
 
   async function redefinir() {
@@ -174,6 +191,15 @@ export function RecuperarSenha() {
                 >
                   {enviando ? <ActivityIndicator color="#ffffff" /> : <Text style={estilos.botaoTexto}>Enviar código</Text>}
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={estilos.botaoSecundario}
+                  onPress={usarCodigoRecebido}
+                  disabled={enviando}
+                  accessibilityRole="button"
+                >
+                  <Text style={estilos.botaoSecundarioTexto}>Já tenho um código</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <>
@@ -181,8 +207,9 @@ export function RecuperarSenha() {
 
                 <View style={estilos.mensagem}>
                   <Alerta tipo="info">
-                    {aviso || 'Se houver uma conta com este e-mail, enviamos as instruções.'} Abra o e-mail e
-                    digite abaixo o código de 6 dígitos.
+                    {codigoJaRecebido
+                      ? `Digite o código de 6 dígitos enviado para ${email.trim()}.`
+                      : `${aviso || 'Se houver uma conta com este e-mail, enviamos um código.'} Abra o e-mail e digite abaixo o código de 6 dígitos.`}
                   </Alerta>
                 </View>
 
@@ -246,7 +273,9 @@ export function RecuperarSenha() {
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={voltarParaSolicitar} disabled={enviando} accessibilityRole="button">
-                  <Text style={estilos.ligacao}>Não recebeu? Enviar novamente</Text>
+                  <Text style={estilos.ligacao}>
+                    {codigoJaRecebido ? 'Receber um novo código' : 'Não recebeu? Enviar novamente'}
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -347,6 +376,20 @@ const estilos = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  botaoSecundario: {
+    paddingVertical: 14,
+    borderRadius: raios.md,
+    alignItems: 'center',
+    marginTop: espacos.sm,
+    borderWidth: 1,
+    borderColor: cores.borda,
+    backgroundColor: cores.superficie,
+  },
+  botaoSecundarioTexto: {
+    color: cores.texto,
+    fontSize: 15,
+    fontWeight: '600',
   },
   ligacao: {
     marginTop: espacos.md,

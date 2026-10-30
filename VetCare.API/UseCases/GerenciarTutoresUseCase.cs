@@ -190,7 +190,7 @@ namespace VetCare.API.UseCases
             return Resultado<TutorDTO>.Ok(
                 MapearParaDTO(tutor),
                 usuarioNovo && !senhaDefinidaPelaClinica
-                    ? "Tutor cadastrado. Ele recebeu por e-mail o link para criar a própria senha."
+                    ? "Tutor cadastrado. Ele recebeu por e-mail o código para criar a própria senha."
                     : "Tutor cadastrado com sucesso.");
         }
 

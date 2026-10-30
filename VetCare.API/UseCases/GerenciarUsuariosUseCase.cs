@@ -145,7 +145,7 @@ namespace VetCare.API.UseCases
                 Nome = ValidacaoDeCadastro.Compactar(dto.Nome),
                 Email = dto.Email.Trim().ToLowerInvariant(),
                 // Sem senha informada, a conta nasce com uma senha aleatória que ninguém conhece;
-                // o usuário define a própria pelo link e código do e-mail de boas-vindas.
+                // o usuário define a própria com o código do e-mail de boas-vindas.
                 SenhaHash = _hasher.Gerar(senhaDefinidaPelaClinica ? dto.Senha! : _hasher.GerarSenhaProvisoria()),
                 Perfil = perfil
             };
@@ -168,7 +168,7 @@ namespace VetCare.API.UseCases
                 await MapearComVinculos(usuario),
                 senhaDefinidaPelaClinica
                     ? "Usuário cadastrado com sucesso."
-                    : "Usuário cadastrado. Ele recebeu por e-mail o link para criar a própria senha.");
+                    : "Usuário cadastrado. Ele recebeu por e-mail o código para criar a própria senha.");
         }
 
         public async Task<Resultado<UsuarioDTO>> Atualizar(Guid id, AtualizarUsuarioDTO dto)
