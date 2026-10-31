@@ -84,14 +84,14 @@ namespace VetCare.API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = Perfis.EquipeClinica)]
+        [Authorize(Roles = Perfis.AdministradorOuApoio)]
         public async Task<IActionResult> Cadastrar(CriarPetDTO dto)
         {
             return this.ResponderCriado(await _useCase.Cadastrar(dto));
         }
 
         [HttpPut("{id:guid}")]
-        [Authorize(Roles = Perfis.EquipeClinica)]
+        [Authorize(Roles = Perfis.AdministradorOuApoio)]
         public async Task<IActionResult> Atualizar(Guid id, AtualizarPetDTO dto)
         {
             return this.Responder(await _useCase.Atualizar(id, dto));
@@ -102,7 +102,7 @@ namespace VetCare.API.Controllers
         /// clínico permanecem (RN-004), e o paciente pode ser reativado depois.
         /// </summary>
         [HttpPatch("{id:guid}/status")]
-        [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
+        [Authorize(Roles = Perfis.AdministradorOuApoio)]
         public async Task<IActionResult> AlterarStatus(Guid id, [FromBody] AlterarStatusDTO dto)
         {
             return this.Responder(await _useCase.AlterarStatus(id, dto.Ativo));

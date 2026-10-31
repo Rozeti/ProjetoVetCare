@@ -120,7 +120,7 @@ namespace VetCare.Tests
                 Raca = Paciente.Raca,
                 DataNascimento = Paciente.DataNascimento,
                 TutorId = Tutor.Id,
-                DataObito = DateTime.UtcNow.Date
+                DataObito = DateTime.SpecifyKind(RelogioDaClinica.Padrao.Hoje, DateTimeKind.Utc)
             });
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);

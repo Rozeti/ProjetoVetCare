@@ -43,7 +43,7 @@ namespace VetCare.API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = Perfis.EquipeClinica)]
+        [Authorize(Roles = Perfis.AdministradorOuApoio)]
         public async Task<IActionResult> Cadastrar(CriarTutorDTO dto)
         {
             return this.ResponderCriado(await _useCase.Cadastrar(dto));

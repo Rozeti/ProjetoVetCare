@@ -211,6 +211,15 @@ namespace VetCare.API.UseCases
                     : "Você não tem acesso a este tutor.");
             }
 
+            // RN-014: o veterinário consulta os tutores, mas a ficha cadastral é mantida pela
+            // administração. A rota é a mesma que o tutor usa para o próprio contato, por isso
+            // a restrição fica aqui e não no controlador.
+            if (_usuarioAtual.EhVeterinario)
+            {
+                return Resultado<TutorDTO>.NaoAutorizado(
+                    "O cadastro de tutores é mantido pelo administrador ou pelo assistente administrativo.");
+            }
+
             // Nome e e-mail são o acesso da pessoa: só a equipe clínica os altera.
             if (_usuarioAtual.EhTutor && (dto.Nome != null || dto.Email != null))
             {

@@ -167,14 +167,29 @@ namespace VetCare.Tests
                 .Contain(new[] { "Tutor Recém-chegado", _usuarioOutroTutor.Nome, UsuarioTutor.Nome });
         }
 
+        /// <summary>
+        /// RN-014: o veterinário alcança a ficha de qualquer tutor para atender o animal, mas
+        /// não a mantém — o cadastro é do administrador e do assistente administrativo.
+        /// </summary>
         [Fact]
-        public async Task Qualquer_veterinario_abre_e_atualiza_o_contato_de_qualquer_tutor()
+        public async Task Qualquer_veterinario_abre_o_tutor_mas_nao_altera_o_cadastro()
         {
             var leitura = await CasoDeTutores(ComoOutroVeterinario()).ObterPorId(Tutor.Id);
             var alteracao = await CasoDeTutores(ComoOutroVeterinario())
                 .Atualizar(Tutor.Id, new AtualizarTutorDTO { Telefone = "(61) 90000-9999" });
 
             leitura.Sucesso.Should().BeTrue(leitura.Mensagem);
+            alteracao.Sucesso.Should().BeFalse();
+            alteracao.Falha.Should().Be(TipoFalha.NaoAutorizado);
+        }
+
+        /// <summary>O administrador continua mantendo o contato do tutor.</summary>
+        [Fact]
+        public async Task Administrador_atualiza_o_contato_do_tutor()
+        {
+            var alteracao = await CasoDeTutores(ComoAdministrador())
+                .Atualizar(Tutor.Id, new AtualizarTutorDTO { Telefone = "(61) 90000-9999" });
+
             alteracao.Sucesso.Should().BeTrue(alteracao.Mensagem);
             alteracao.Dados!.Telefone.Should().Be("(61) 90000-9999");
         }

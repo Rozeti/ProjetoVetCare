@@ -41,7 +41,8 @@ type CampoDoForm = keyof typeof FORM_VAZIO;
 export function Tutores() {
   const { temPerfil } = useAuth();
   const { confirmarEdicao } = useConfirmacao();
-  const podeEditar = temPerfil('Administrador', 'Veterinario', 'Apoio');
+  // RN-014: o veterinário consulta a lista; a ficha é mantida pela administração.
+  const podeEditar = temPerfil('Administrador', 'Apoio');
 
   const [numeroPagina, setNumeroPagina] = useState(1);
   const [busca, setBusca] = useState('');

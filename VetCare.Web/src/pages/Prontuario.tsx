@@ -93,7 +93,9 @@ export function Prontuario() {
   const { podeVerObservacoesInternas, temPerfil, ehTutor } = useAuth();
 
   const podeRegistrar = temPerfil('Administrador', 'Veterinario');
-  const podeEditarCadastro = temPerfil('Administrador', 'Veterinario', 'Apoio');
+  // RN-014: a ficha cadastral do paciente é mantida pela administração; o veterinário
+  // registra o conteúdo clínico do prontuário, não o cadastro.
+  const podeEditarCadastro = temPerfil('Administrador', 'Apoio');
   const podeAnexarDocumento = temPerfil('Administrador', 'Veterinario', 'Apoio');
 
   // O tutor não alcança a lista geral de pacientes: ele volta para os próprios pets.

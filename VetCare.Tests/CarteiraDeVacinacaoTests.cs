@@ -27,7 +27,8 @@ namespace VetCare.Tests
                 atual);
         }
 
-        private static DateTime Dias(int quantidade) => DateTime.UtcNow.Date.AddDays(quantidade);
+        private static DateTime Dias(int quantidade) =>
+            DateTime.SpecifyKind(RelogioDaClinica.Padrao.Hoje.AddDays(quantidade), DateTimeKind.Utc);
 
         private static ParametrosPagina Pagina(int numero = 1, int tamanho = 20) => new() { Pagina = numero, Tamanho = tamanho };
 

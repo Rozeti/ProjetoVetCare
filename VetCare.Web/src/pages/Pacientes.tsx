@@ -26,8 +26,10 @@ const SEM_RESPONSAVEL = 'sem-responsavel';
  */
 export function Pacientes() {
   const { temPerfil, ehVeterinario, usuario } = useAuth();
-  const podeCadastrar = temPerfil('Administrador', 'Veterinario', 'Apoio');
-  const podeInativar = temPerfil('Administrador', 'Veterinario');
+  // RN-014: o veterinário consulta os pacientes e abre os prontuários; o cadastro em si
+  // é mantido pelo administrador e pelo assistente administrativo.
+  const podeCadastrar = temPerfil('Administrador', 'Apoio');
+  const podeInativar = temPerfil('Administrador', 'Apoio');
   const meuVeterinarioId = ehVeterinario ? usuario?.veterinarioId ?? '' : '';
 
   // O atalho "Ver pacientes" da tela de tutores chega com ?tutor=<id>.
