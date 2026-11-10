@@ -190,8 +190,10 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
   origem do cadastro fica registrada na auditoria.
 
 ### Agenda
-- Agenda individual do veterinário (Dia/Semana/Mês) e agenda geral da clínica.
-- Bloqueio de períodos por veterinário (férias, congressos), respeitado no agendamento.
+- Agenda individual do veterinário (Dia/Semana/Mês) e agenda geral da clínica, com o
+  horário de início e o de término de cada sessão. As agendas mostram e organizam as sessões;
+  elas são cadastradas no tratamento (veja "Sessão", no fluxo clínico).
+- Bloqueio de períodos por veterinário (férias, congressos), respeitado no cadastro de sessões.
 - Confirmação e cancelamento pelo tutor, pela web ou pelo aplicativo.
 - Lembretes automáticos de confirmação e de vacinas a vencer, em segundo plano.
 
@@ -207,7 +209,8 @@ Para avaliar o sistema com dados de exemplo em vez de cadastrar tudo à mão, us
 - **Qualquer veterinário atende qualquer paciente**: toda a equipe clínica, inclusive todos os
   veterinários, vê e acessa todos os pacientes da clínica, com prontuário, tutores, vacinas e
   registros. Se a veterinária que acompanha a Pipoca faltar, um colega abre o prontuário,
-  agenda a sessão na própria agenda e registra a sessão em nome próprio, sem transferência.
+  cadastra a sessão na própria agenda e registra o atendimento em nome próprio, sem
+  transferência.
   O responsável organiza a clínica (painel do veterinário e filtro "Meus pacientes"), mas não
   restringe o acesso. A antiga transferência de paciente deixou de existir.
 - Os pacientes cadastrados pelo tutor no aplicativo chegam sem responsável. O prontuário avisa,
@@ -232,30 +235,65 @@ evolução; na interface tudo se chama sessão, para não haver dois nomes para 
 - **Tratamento**: só existe a partir de uma avaliação. Tem nome, tipo, descrição, duração
   prevista, frequência, sessões previstas e veterinário, com a situação **Planejado**, **Em
   andamento**, **Concluído** ou **Inativado**. Pode ser editado; inativar não apaga as sessões
-  registradas e permite reativar; concluído é definitivo. A primeira sessão registrada põe um
-  tratamento planejado em andamento.
-- **Sessão**: o registro de cada sessão realizada, ligado ao tratamento, com data, número
-  (atribuído pelo sistema), procedimentos realizados, o que foi feito, reação do animal,
-  observações, relatório, sinais vitais, escala de dor e fotos e vídeos, que podem ser
-  escolhidos no próprio formulário, antes de salvar. Pode originar uma receita. É registrada
-  no botão **Registrar sessão** do tratamento, da aba Sessões do prontuário ou do menu
-  Sessões, escolhendo uma sessão agendada ainda não registrada ou a sessão de agora, sem
-  agendamento, que entra na agenda já concluída; na agenda, cada sessão também tem
-  **Registrar sessão**.
-- **Sessões**, no menu (Administrador e Veterinário) e como aba do prontuário: filtros por
-  animal, tratamento, período, veterinário e número da sessão. Dentro de um tratamento
-  aparecem só as sessões dele, em ordem cronológica e com filtro, e o histórico completo do
-  animal fica a um clique.
+  registradas e permite reativar; concluído é definitivo. O primeiro atendimento registrado
+  põe um tratamento planejado em andamento. Na aba Tratamentos cada tratamento ocupa uma linha
+  resumida (nome, situação, tipo, veterinário, início, próxima sessão e sessões realizadas do
+  total previsto) que se expande com os detalhes, as ações e as sessões dele; a aba
+  Avaliações segue o mesmo formato.
+- **Sessão**: cadastrada no tratamento — o único lugar do sistema onde se cadastram sessões.
+  O cadastro é feito pelo plano: **quantas sessões**, **a partir de quando**, em **quais dias
+  da semana** e em **que horário** (início e término, os dois obrigatórios; a duração padrão
+  da clínica sugere o término). Antes de gravar, a **prévia** mostra as datas exatas; um dia em
+  que a sessão não cabe (outra sessão do veterinário, agenda bloqueada ou horário já passado)
+  é pulado com o motivo, e a sessão vai para o próximo dia escolhido, mantendo a quantidade.
+  No começo o botão é **Cadastrar sessões** (a quantidade sugerida é a das sessões previstas);
+  depois vira **Adicionar sessões**, disponível durante todo o tratamento: o veterinário
+  acrescenta sessões no meio do plano, antes de as programadas acabarem, ou no fim. Quando
+  todas as sessões cadastradas foram realizadas, o tratamento mostra o aviso com **Adicionar
+  sessões** e **Concluir tratamento**. Sessões além do previsto ampliam o plano: as sessões
+  previstas do tratamento passam a ser as cadastradas (a prévia avisa, e a auditoria
+  registra). O cadastro é tudo ou nada: se uma das sessões não couber na agenda no momento de
+  gravar, nenhuma é gravada; o tutor recebe um aviso só pelo cadastro. A lista de sessões do
+  tratamento e a aba Sessões do prontuário mostram em blocos **Hoje**, **Próximas** (as que
+  ainda vão acontecer, a mais próxima primeiro) e **Anteriores** (as que já passaram ou foram
+  realizadas ou canceladas, da mais recente para a mais antiga), com os blocos longos
+  recolhidos — a sessão do dia fica sempre no topo. Uma sessão sem atendimento registrado pode ser
+  **inativada**, com motivo opcional: sai da agenda, das contagens do tratamento e da visão
+  do tutor, libera o horário e pode ser reativada se o horário ainda estiver livre. Sessão
+  com atendimento registrado faz parte do prontuário e não é inativada. O veterinário inativa
+  e reativa as sessões da própria agenda; a administração e o apoio, qualquer uma.
+- **Registro do atendimento** (a evolução do HU-008): feito sempre numa sessão cadastrada, no
+  botão **Registrar atendimento** da agenda, da lista de sessões do tratamento ou da aba
+  Sessões do prontuário. Guarda o número da sessão (atribuído pelo sistema), procedimentos
+  realizados, o que foi feito, reação do animal, observações, relatório, sinais vitais,
+  escala de dor e fotos e vídeos. No registro de uma sessão já feita, o botão **Receita ou
+  pedido de exame** abre um formulário único: o veterinário escolhe receita de medicamento ou
+  pedido de exame, preenche e vai direto para a aba Medicação ou Exames do prontuário. O
+  documento fica ligado à sessão e ao tratamento dela.
+- **Sessões**, no menu (Administrador e Veterinário): a gestão das sessões da clínica,
+  separadas pela situação em abas com a contagem de cada uma — **Agendadas**, **Aguardando
+  registro** (o horário já passou e o atendimento ainda não foi registrado), **Realizadas**,
+  **Canceladas** e **Inativadas** —, com filtros por animal, tratamento, veterinário e
+  período. Daqui se abre o registro do atendimento, se inativa ou reativa uma sessão e se vai
+  ao tratamento no prontuário; a tela não cadastra sessões. No prontuário, a aba Sessões lista
+  as sessões do animal com filtro por tratamento, situação e período.
 - **Linha do tempo**: avaliações, início e encerramento (conclusão ou inativação) dos
   tratamentos, sessões, cirurgias e procedimentos, vacinações, receitas, pedidos de exame e
   observações internas. Cada evento mostra em destaque a data em que foi feito, com
   categoria, descrição resumida e responsável; o período (de/até) e as categorias filtram a
-  lista, e selecionar um evento abre o registro completo.
+  lista, e selecionar um evento abre o registro completo. A lista é neutra: o tipo de
+  registro aparece pelo ícone e pelo nome, sem uma cor para cada categoria.
 - **Medicação**: as receitas vêm de uma avaliação ou de uma sessão (a origem é
-  obrigatória), podem ser impressas e são canceladas com motivo, nunca apagadas.
-- **Pedidos de exame** vêm de uma avaliação e podem ser impressos. Quem assinou (e a
+  obrigatória), podem ser impressas e são canceladas com motivo, nunca apagadas. Cada receita
+  mostra o **tratamento** para o qual foi prescrita: na receita de uma sessão é sempre o
+  tratamento da sessão; na de uma avaliação é opcional (vem sugerido quando a avaliação
+  originou um único tratamento ativo). O nome do tratamento leva a ele, e a lista ganha um
+  filtro por tratamento quando mistura mais de um.
+- **Pedidos de exame** vêm de uma avaliação ou de uma sessão registrada, mostram o
+  tratamento e a origem como as receitas e podem ser impressos. Quem assinou (e a
   administração) edita o pedido, com a versão anterior guardada, ou o exclui: depois da
-  confirmação, a exclusão tira o pedido do prontuário e fica registrada na auditoria.
+  confirmação, a exclusão tira o pedido do prontuário e fica registrada na auditoria. O
+  pedido feito numa sessão continua ligado a ela e ao tratamento dela.
 - **Alertas clínicos** no topo do prontuário, sem título nem moldura: cada um é só o nome e a
   descrição, na cor da gravidade.
 - Mídias, documentos e observações internas restritas à equipe clínica.
@@ -321,7 +359,7 @@ Todas as Histórias de Usuário do Documento de Requisitos estão implementadas.
 | RN | Onde é garantida |
 |---|---|
 | RN-001 Associação tutor–paciente | `GerenciarPacientesUseCase`; chave estrangeira obrigatória. No cadastro feito pelo tutor o responsável vem do token, não do corpo da requisição |
-| RN-002 Exclusividade de horário | `SessaoRepository.ExisteConflitoHorario`, considerando a duração da sessão, mais os bloqueios de agenda |
+| RN-002 Exclusividade de horário | `SessaoRepository.ExisteConflitoHorario`, pelo intervalo entre o início e o término informados (sessões canceladas e inativadas não ocupam horário), mais os bloqueios de agenda |
 | RN-003 Observações internas restritas | `ConsultarProntuarioUseCase` nem consulta as observações para o Tutor; rota dedicada fechada por perfil |
 | RN-004 Integridade do prontuário | Registros não são excluídos; cada edição arquiva a versão anterior em `VersoesRegistrosClinicos`, e nenhuma exclusão do domínio é feita em cascata |
 | RN-005 Controle de acesso por perfil | `[Authorize(Roles = ...)]` nos controllers e verificação nos casos de uso |
@@ -373,11 +411,17 @@ controller traduz isso no status correto (400, 401, 403, 404, 409 ou 423).
 
 ### Banco de dados
 
-O esquema tem **26 tabelas, 50 chaves estrangeiras e 88 índices** (contando as chaves
-primárias), criado por cinco migrações: a inicial; os canais de entrega das notificações, os
+O esquema tem **26 tabelas, 53 chaves estrangeiras e 91 índices** (contando as chaves
+primárias), criado por sete migrações: a inicial; os canais de entrega das notificações, os
 aparelhos registrados para push e o código de recuperação de senha; o veterinário responsável
-por paciente; o esquema de doses e a recorrência da carteira de vacinação; e o fluxo clínico
-(avaliação do animal → tratamento → evolução, com os pedidos de exame). Nenhum relacionamento
+por paciente; o esquema de doses e a recorrência da carteira de vacinação; o fluxo clínico
+(avaliação do animal → tratamento → evolução, com os pedidos de exame); o horário de término
+e a inativação das sessões (`SessoesComHorarioDeFimEInativacao`), que preenche o término das
+sessões existentes com a duração padrão da clínica; e o vínculo de receitas e pedidos de
+exame com o tratamento (`VinculoDeReceitasEPedidosAoTratamento`), que também permite o pedido
+de exame feito numa sessão e liga os registros existentes só quando o tratamento é certo — o
+da sessão de origem, ou o único tratamento que a avaliação originou. As duas últimas podem
+ser desfeitas (`Down`). Nenhum relacionamento
 do domínio apaga em cascata: excluir um registro clínico precisa ser uma decisão explícita, o
 que preserva a integridade do histórico (RN-004).
 

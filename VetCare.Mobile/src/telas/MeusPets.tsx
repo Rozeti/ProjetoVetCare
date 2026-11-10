@@ -11,7 +11,7 @@ import { Alerta, Avatar, Botao, Cartao, Carregando, Etiqueta, SemDados, TituloSe
 import { FormularioNovoPet } from '../componentes/FormularioNovoPet';
 import { Icone, iconeDaEspecie } from '../componentes/Icone';
 import { cores, espacos, estiloStatusSessao, raios } from '../tema';
-import { diaDoMes, formatarHora, formatarPeso, mesAbreviado } from '../utils/formato';
+import { diaDoMes, formatarIntervalo, formatarPeso, mesAbreviado } from '../utils/formato';
 
 /** HU-013, CA-1: o tutor vê apenas os pets sob sua responsabilidade. */
 export function MeusPets() {
@@ -226,7 +226,7 @@ export function MeusPets() {
                       <View style={estilos.infoSessao}>
                         <Text style={estilos.nomePet}>{sessao.nomePaciente}</Text>
                         <Text style={estilos.detalhePet}>
-                          {formatarHora(sessao.dataHora)}
+                          {formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}
                           {sessao.nomeVeterinario ? ` · ${sessao.nomeVeterinario}` : ''}
                         </Text>
 

@@ -361,6 +361,10 @@ function PedidosExame({ pedidos }: { pedidos: PedidoExame[] }) {
             {pedido.nomeVeterinario}
             {pedido.crmv ? ` · ${pedido.crmv}` : ''}
           </Text>
+          {pedido.nomeTratamento ? (
+            <Text style={estilos.detalheSuave}>Tratamento: {pedido.nomeTratamento}</Text>
+          ) : null}
+          {pedido.origem ? <Text style={estilos.detalheSuave}>Origem: {pedido.origem}</Text> : null}
 
           {pedido.exames
             .split(/\r?\n/)
@@ -569,6 +573,9 @@ function Medicacao({ prescricoes }: { prescricoes: Prescricao[] }) {
             {prescricao.crmv ? ` · ${prescricao.crmv}` : ''}
             {prescricao.validaAte ? ` · válida até ${formatarDia(prescricao.validaAte)}` : ''}
           </Text>
+          {prescricao.nomeTratamento ? (
+            <Text style={estilos.detalheSuave}>Tratamento: {prescricao.nomeTratamento}</Text>
+          ) : null}
           {prescricao.origem ? <Text style={estilos.detalheSuave}>Origem: {prescricao.origem}</Text> : null}
 
           {prescricao.itens.map((item) => (

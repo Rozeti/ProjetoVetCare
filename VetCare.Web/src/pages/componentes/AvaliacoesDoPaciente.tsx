@@ -1,11 +1,12 @@
-import { ClipboardList, FlaskConical, Pencil, Pill, Plus, Stethoscope } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, ClipboardList, FlaskConical, Pencil, Pill, Plus, Stethoscope } from 'lucide-react';
 import type { Avaliacao } from '../../types';
 import { Card, Etiqueta, SemDados } from '../../components/ui';
 import { estiloStatusTratamento, formatarDataHora } from '../../utils/formato';
 
 interface Props {
   avaliacoes: Avaliacao[];
-  /** Avaliação em destaque, vinda de um atalho da linha do tempo ou de um tratamento. */
+  /** Avaliação em destaque, vinda de um atalho da linha do tempo ou de um tratamento: abre expandida. */
   emFoco?: string;
   /** Ações clínicas; ausentes para quem só consulta ou com o prontuário encerrado. */
   aoRegistrar?: () => void;
@@ -16,10 +17,14 @@ interface Props {
   aoVerTratamento: (tratamentoId: string) => void;
 }
 
+function contar(quantidade: number, singular: string, varios: string): string {
+  return `${quantidade} ${quantidade === 1 ? singular : varios}`;
+}
+
 /**
- * Avaliações do animal. Cada uma registra o motivo da consulta, as observações, o possível
- * diagnóstico e o veterinário responsável, e é o ponto de partida dos tratamentos, receitas
- * e pedidos de exame.
+ * Avaliações do animal em linhas compactas: data, motivo da consulta e o que cada uma originou.
+ * Ao expandir, aparecem o registro completo (motivo, possível diagnóstico, observações), os
+ * tratamentos, receitas e pedidos de exame originados e as ações a partir da avaliação.
  */
 export function AvaliacoesDoPaciente({
   avaliacoes,
@@ -31,6 +36,18 @@ export function AvaliacoesDoPaciente({
   aoCorrigir,
   aoVerTratamento,
 }: Props) {
+  // A avaliação em foco abre expandida; clicar alterna a partir daí.
+  const [alternadas, setAlternadas] = useState<Set<string>>(new Set());
+
+  function alternar(id: string) {
+    setAlternadas((atual) => {
+      const nova = new Set(atual);
+      if (nova.has(id)) nova.delete(id);
+      else nova.add(id);
+      return nova;
+    });
+  }
+
   if (avaliacoes.length === 0) {
     return (
       <Card>
@@ -52,108 +69,133 @@ export function AvaliacoesDoPaciente({
   }
 
   return (
-    <div className="space-y-4">
-      {avaliacoes.map((avaliacao) => (
-        <Card
-          key={avaliacao.id}
-          className={`p-5 ${emFoco === avaliacao.id ? 'ring-2 ring-brand-300' : ''}`}
-        >
-          <div id={`avaliacao-${avaliacao.id}`} className="mb-3 flex scroll-mt-24 flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="font-semibold text-slate-900">Avaliação de {formatarDataHora(avaliacao.dataRegistro)}</h3>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {avaliacao.nomeVeterinario}
-                {avaliacao.dataUltimaEdicao && ' · corrigida (versão anterior no histórico)'}
-              </p>
-            </div>
+    <Card className="overflow-hidden">
+      <ul className="divide-y divide-slate-100">
+        {avaliacoes.map((avaliacao) => {
+          const aberta = (avaliacao.id === emFoco) !== alternadas.has(avaliacao.id);
+          const originou = [
+            avaliacao.tratamentos.length > 0 && contar(avaliacao.tratamentos.length, 'tratamento', 'tratamentos'),
+            avaliacao.quantidadeReceitas > 0 && contar(avaliacao.quantidadeReceitas, 'receita', 'receitas'),
+            avaliacao.quantidadePedidosExame > 0 &&
+              contar(avaliacao.quantidadePedidosExame, 'pedido de exame', 'pedidos de exame'),
+          ].filter(Boolean);
 
-            {aoCorrigir && (
+          return (
+            <li
+              key={avaliacao.id}
+              id={`avaliacao-${avaliacao.id}`}
+              className={`scroll-mt-24 ${avaliacao.id === emFoco ? 'bg-brand-50/40' : ''}`}
+            >
               <button
                 type="button"
-                onClick={() => aoCorrigir(avaliacao)}
-                className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-brand"
-                title="Corrigir esta avaliação; a versão anterior fica no histórico"
+                onClick={() => alternar(avaliacao.id)}
+                aria-expanded={aberta}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 sm:px-5"
               >
-                <Pencil size={14} />
-                Corrigir
+                {aberta ? (
+                  <ChevronDown size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
+                )}
+
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold text-slate-900" title={avaliacao.motivoConsulta}>
+                    {avaliacao.motivoConsulta}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-500">
+                    {[
+                      formatarDataHora(avaliacao.dataRegistro),
+                      avaliacao.nomeVeterinario,
+                      avaliacao.dataUltimaEdicao && 'corrigida',
+                      originou.length > 0 ? `originou ${originou.join(', ')}` : 'sem tratamento, receita ou exame',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
               </button>
-            )}
-          </div>
 
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Motivo da consulta</dt>
-              <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-800">{avaliacao.motivoConsulta}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Possível diagnóstico</dt>
-              <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-800">{avaliacao.diagnosticoPossivel}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</dt>
-              <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-700">{avaliacao.observacoes}</dd>
-            </div>
-          </dl>
+              {aberta && (
+                <div className="space-y-4 border-t border-slate-100 px-4 pb-5 pt-4 sm:px-5 sm:pl-12">
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Motivo da consulta</dt>
+                      <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-800">{avaliacao.motivoConsulta}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Possível diagnóstico</dt>
+                      <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-800">{avaliacao.diagnosticoPossivel}</dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</dt>
+                      <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-700">{avaliacao.observacoes}</dd>
+                    </div>
+                  </dl>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            <span className="font-semibold text-slate-600">Originou:</span>
-            {avaliacao.tratamentos.length === 0 && avaliacao.quantidadeReceitas === 0 && avaliacao.quantidadePedidosExame === 0 && (
-              <span>nenhum tratamento, receita ou pedido de exame</span>
-            )}
-            {avaliacao.tratamentos.map((tratamento) => (
-              <button
-                key={tratamento.id}
-                type="button"
-                onClick={() => aoVerTratamento(tratamento.id)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-200"
-                title="Abrir o tratamento"
-              >
-                <Stethoscope size={12} />
-                {tratamento.nome}
-                <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
-                  {tratamento.status}
-                </Etiqueta>
-              </button>
-            ))}
-            {avaliacao.quantidadeReceitas > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1">
-                <Pill size={12} />
-                {avaliacao.quantidadeReceitas} {avaliacao.quantidadeReceitas === 1 ? 'receita' : 'receitas'}
-              </span>
-            )}
-            {avaliacao.quantidadePedidosExame > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1">
-                <FlaskConical size={12} />
-                {avaliacao.quantidadePedidosExame}{' '}
-                {avaliacao.quantidadePedidosExame === 1 ? 'pedido de exame' : 'pedidos de exame'}
-              </span>
-            )}
-          </div>
+                  {avaliacao.dataUltimaEdicao && (
+                    <p className="text-xs text-slate-500">Corrigida; a versão anterior fica no histórico.</p>
+                  )}
 
-          {(aoCriarTratamento || aoEmitirReceita || aoPedirExames) && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {aoCriarTratamento && (
-                <button type="button" className="vc-botao-secundario" onClick={() => aoCriarTratamento(avaliacao)}>
-                  <Stethoscope size={15} />
-                  Criar tratamento
-                </button>
+                  {avaliacao.tratamentos.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className="font-semibold text-slate-600">Tratamentos:</span>
+                      {avaliacao.tratamentos.map((tratamento) => (
+                        <button
+                          key={tratamento.id}
+                          type="button"
+                          onClick={() => aoVerTratamento(tratamento.id)}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-200"
+                          title="Abrir o tratamento"
+                        >
+                          <Stethoscope size={12} />
+                          {tratamento.nome}
+                          <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
+                            {tratamento.status}
+                          </Etiqueta>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {(aoCriarTratamento || aoEmitirReceita || aoPedirExames || aoCorrigir) && (
+                    <div className="flex flex-wrap gap-2">
+                      {aoCriarTratamento && (
+                        <button type="button" className="vc-botao-secundario" onClick={() => aoCriarTratamento(avaliacao)}>
+                          <Stethoscope size={15} />
+                          Criar tratamento
+                        </button>
+                      )}
+                      {aoEmitirReceita && (
+                        <button type="button" className="vc-botao-secundario" onClick={() => aoEmitirReceita(avaliacao)}>
+                          <Pill size={15} />
+                          Emitir receita
+                        </button>
+                      )}
+                      {aoPedirExames && (
+                        <button type="button" className="vc-botao-secundario" onClick={() => aoPedirExames(avaliacao)}>
+                          <FlaskConical size={15} />
+                          Pedir exames
+                        </button>
+                      )}
+                      {aoCorrigir && (
+                        <button
+                          type="button"
+                          className="vc-botao-secundario"
+                          onClick={() => aoCorrigir(avaliacao)}
+                          title="Corrigir esta avaliação; a versão anterior fica no histórico"
+                        >
+                          <Pencil size={15} />
+                          Corrigir
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
-              {aoEmitirReceita && (
-                <button type="button" className="vc-botao-secundario" onClick={() => aoEmitirReceita(avaliacao)}>
-                  <Pill size={15} />
-                  Emitir receita
-                </button>
-              )}
-              {aoPedirExames && (
-                <button type="button" className="vc-botao-secundario" onClick={() => aoPedirExames(avaliacao)}>
-                  <FlaskConical size={15} />
-                  Pedir exames
-                </button>
-              )}
-            </div>
-          )}
-        </Card>
-      ))}
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

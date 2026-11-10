@@ -86,6 +86,11 @@ namespace VetCare.API.UseCases
                 return Resultado<MidiaDTO>.Invalido("Não é possível anexar mídias a uma sessão cancelada.");
             }
 
+            if (sessao.Inativa)
+            {
+                return Resultado<MidiaDTO>.Invalido("Não é possível anexar mídias a uma sessão inativada.");
+            }
+
             // Quando o atendimento não é informado, vinculamos ao da própria sessão, se existir.
             var atendimentoId = dto.AtendimentoId
                                 ?? (await _atendimentos.ObterPorSessao(dto.SessaoId))?.Id;

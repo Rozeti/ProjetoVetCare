@@ -47,5 +47,8 @@ namespace VetCare.API.DTOs
         public List<PedidoExameDTO> PedidosExame { get; set; } = new();
         public List<DocumentoDTO> Documentos { get; set; } = new();
         public List<TratamentoDTO> Tratamentos { get; set; } = new();
+
+        /// <summary>Sessões cadastradas nos tratamentos, com o registro do atendimento quando houver.</summary>
+        public List<SessaoDTO> Sessoes { get; set; } = new();
     }
 }

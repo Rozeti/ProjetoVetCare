@@ -38,6 +38,29 @@ namespace VetCare.API.Services
                 LinkAgendaDoTutor);
         }
 
+        /// <summary>HU-015, CA-1: várias sessões cadastradas de uma vez geram um único aviso ao tutor.</summary>
+        public Task NotificarSessoesAgendadas(Guid tutorUsuarioId, string nomePaciente, int quantidade, DateTime primeira)
+        {
+            return Registrar(
+                tutorUsuarioId,
+                TiposDeNotificacao.SessaoAgendada,
+                "Novas sessões agendadas",
+                $"{quantidade} sessões de fisioterapia foram marcadas para {nomePaciente}, a primeira em {FormatarDataHora(primeira)}. " +
+                "Confira as datas e confirme a presença.",
+                LinkAgendaDoTutor);
+        }
+
+        /// <summary>A clínica retirou da agenda uma sessão que ainda ia acontecer.</summary>
+        public Task NotificarSessaoRetirada(Guid tutorUsuarioId, string nomePaciente, DateTime dataHora)
+        {
+            return Registrar(
+                tutorUsuarioId,
+                TiposDeNotificacao.StatusSessao,
+                "Sessão retirada da agenda",
+                $"A sessão de {nomePaciente} em {FormatarDataHora(dataHora)} foi retirada da agenda pela clínica.",
+                LinkAgendaDoTutor);
+        }
+
         /// <summary>HU-015, CA-2: lembrete quando a sessão se aproxima sem confirmação.</summary>
         public Task NotificarLembreteConfirmacao(Guid tutorUsuarioId, string nomePaciente, DateTime dataHora)
         {

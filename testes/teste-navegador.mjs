@@ -208,6 +208,21 @@ try {
       await pagina.keyboard.press('Escape');
     }
 
+    // A linha do tempo é neutra: o tipo de registro aparece pelo ícone e pelo nome, não por
+    // uma cor diferente em cada categoria.
+    const coresDaLinha = await pagina.evaluate(() => {
+      const fundo = (el) => (el ? getComputedStyle(el).backgroundColor : '');
+      return {
+        marcadores: [...new Set([...document.querySelectorAll('ol li button > span[aria-hidden]')].map(fundo))],
+        filtros: [...new Set([...document.querySelectorAll('button[aria-pressed]')].map(fundo))],
+      };
+    });
+    registrar(
+      'Linha do tempo sem cores por categoria',
+      coresDaLinha.marcadores.length === 1 && coresDaLinha.filtros.length <= 1,
+      `marcadores: ${coresDaLinha.marcadores.join(' / ')}; filtros: ${coresDaLinha.filtros.join(' / ')}`,
+    );
+
     // A aba de gráficos saiu do prontuário, a de receitas passou a se chamar Medicação e as
     // sessões registradas (antes "evoluções") ganharam aba própria.
     registrar(
@@ -259,9 +274,9 @@ try {
 
     // As demais abas precisam abrir sem erro: cada uma tem um texto próprio de cabeçalho.
     const abasEsperadas = [
-      { prefixo: 'Avaliações', texto: 'Avaliação de', captura: '05c-avaliacoes' },
-      { prefixo: 'Tratamentos', texto: 'Sessões deste tratamento', captura: '05d-tratamentos' },
-      { prefixo: 'Sessões', texto: 'Cada sessão de fisioterapia realizada, com o que foi feito', captura: '05j-sessoes' },
+      { prefixo: 'Avaliações', seletor: 'li[id^="avaliacao-"] button[aria-expanded]', captura: '05c-avaliacoes' },
+      { prefixo: 'Tratamentos', seletor: 'li[id^="tratamento-"] button[aria-expanded]', captura: '05d-tratamentos' },
+      { prefixo: 'Sessões', texto: 'As sessões cadastradas nos tratamentos', captura: '05j-sessoes' },
       { prefixo: 'Vacinação', texto: 'Carteira de vacinação', captura: '05a-vacinacao' },
       { prefixo: 'Medicação', texto: 'Receitas com os medicamentos prescritos', captura: '05b-medicacao' },
       { prefixo: 'Exames', texto: 'Pedidos de exame', captura: '05e-exames' },
@@ -276,57 +291,128 @@ try {
       }
       const botoes = await pagina.$$('[role="tab"]');
       await botoes[indice].click();
-      const abriu = await esperarTexto(esperada.texto).then(() => true).catch(() => false);
+      const abriu = await (esperada.seletor
+        ? pagina.waitForSelector(esperada.seletor, { timeout: 8000 })
+        : esperarTexto(esperada.texto)
+      )
+        .then(() => true)
+        .catch(() => false);
       registrar(`HU-011 aba ${esperada.prefixo} renderiza`, abriu);
       if (abriu && esperada.captura) await capturar(esperada.captura);
     }
 
-    // O tratamento nasce de uma avaliação e mostra só as evoluções dele.
+    // Avaliações em lista resumida: uma linha por avaliação, que expande com os detalhes.
+    const indiceAvaliacoes = abas.findIndex((t) => t.startsWith('Avaliações'));
+    if (indiceAvaliacoes >= 0) {
+      const botoes = await pagina.$$('[role="tab"]');
+      await botoes[indiceAvaliacoes].click();
+      await pagina.waitForSelector('li[id^="avaliacao-"] button[aria-expanded]', { timeout: 8000 }).catch(() => null);
+      const resumida = await pagina.evaluate(() => {
+        const linhas = [...document.querySelectorAll('li[id^="avaliacao-"] button[aria-expanded]')];
+        const fechadas = linhas.length > 0 && linhas.every((b) => b.getAttribute('aria-expanded') === 'false');
+        const detalheAntes = document.body.textContent.includes('Motivo da consulta');
+        linhas[0]?.click();
+        return { fechadas, detalheAntes };
+      });
+      // O rótulo é exibido em caixa alta (CSS), por isso a busca é no textContent, não no innerText.
+      const detalheDepois = await pagina
+        .waitForFunction(() => document.body.textContent.includes('Motivo da consulta'), { timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+      registrar(
+        'Avaliações: itens resumidos que expandem com os detalhes',
+        resumida.fechadas && !resumida.detalheAntes && detalheDepois,
+      );
+      await capturar('05c-avaliacao-expandida');
+    }
+
+    // Tratamentos em lista resumida: o essencial numa linha; expandir mostra os detalhes, a
+    // avaliação de origem e as sessões do tratamento.
     const indiceTratamentos = abas.findIndex((t) => t.startsWith('Tratamentos'));
     if (indiceTratamentos >= 0) {
       const botoes = await pagina.$$('[role="tab"]');
       await botoes[indiceTratamentos].click();
-      await esperarTexto('Sessões deste tratamento');
-      const doTratamento = await pagina.evaluate(() => ({
-        origem: document.body.innerText.includes('Avaliação de origem'),
-        expandiu: (() => {
-          const botao = [...document.querySelectorAll('button[aria-expanded]')].find((b) =>
-            b.innerText.includes('Sessões deste tratamento'),
-          );
-          botao?.click();
-          return !!botao;
-        })(),
-      }));
-      await new Promise((r) => setTimeout(r, 400));
-      const evolucoesVisiveis = await pagina.evaluate(() => document.body.innerText.includes('Histórico completo do animal'));
-      registrar(
-        'Tratamento mostra a avaliação de origem e as próprias sessões',
-        doTratamento.origem && doTratamento.expandiu && evolucoesVisiveis,
-      );
-      await capturar('05f-tratamento-evolucoes');
-
-      // A sessão de fisioterapia realizada é registrada no próprio tratamento e vira a
-      // evolução seguinte; a sessão sem agendamento é sempre uma das opções.
-      const abriuSessao = await pagina.evaluate(() => {
-        const botao = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Registrar sessão');
-        botao?.click();
-        return !!botao;
+      await pagina.waitForSelector('li[id^="tratamento-"] button[aria-expanded]', { timeout: 8000 }).catch(() => null);
+      const resumido = await pagina.evaluate(() => {
+        const linhas = [...document.querySelectorAll('li[id^="tratamento-"] button[aria-expanded]')];
+        const fechados = linhas.length > 0 && linhas.every((b) => b.getAttribute('aria-expanded') === 'false');
+        const sessoesAntes = document.body.innerText.includes('Sessões do tratamento');
+        linhas[0]?.click();
+        return { fechados, sessoesAntes };
       });
-      const formularioDaSessao = abriuSessao
-        ? await esperarTexto('Registrar sessão realizada').then(() => true).catch(() => false)
-        : false;
-      const opcoesDeSessao = formularioDaSessao
-        ? await pagina.$$eval('[role="dialog"] select option', (os) => os.map((o) => o.textContent.trim()))
-        : [];
+      const expandiu = await esperarTexto('Sessões do tratamento').then(() => true).catch(() => false);
+      const origem = await pagina.evaluate(() => document.body.innerText.includes('Avaliação de origem'));
       registrar(
-        'Tratamento: Registrar sessão abre o registro com a escolha da sessão',
-        opcoesDeSessao.some((o) => o.includes('sem agendamento')),
-        opcoesDeSessao.join(' | '),
+        'Tratamentos: itens resumidos que expandem com a origem e as sessões',
+        resumido.fechados && !resumido.sessoesAntes && expandiu && origem,
       );
-      if (formularioDaSessao) {
-        await capturar('05h-registrar-sessao');
+      await capturar('05f-tratamento-expandido');
+
+      // As sessões do tratamento aparecem em blocos: hoje, as próximas (a mais próxima
+      // primeiro) e as anteriores (da mais recente para a mais antiga).
+      const blocos = await pagina.evaluate(() => {
+        const secoes = [...document.querySelectorAll('[id^="tratamento-"] section')].filter((s) => s.querySelector('h5'));
+        return secoes.map((s) => ({
+          titulo: s.querySelector('h5').innerText.replace(/\s*\(\d+\)$/, '').trim().toLowerCase(),
+          datas: [...s.querySelectorAll('ol li')].map((li) => {
+            const [, d, m, a] = li.innerText.match(/(\d{2})\/(\d{2})\/(\d{4})/) ?? [];
+            return `${a}${m}${d}`;
+          }),
+        }));
+      });
+      const ordemDosBlocos = blocos.map((b) => b.titulo);
+      const emOrdem = (lista, decrescente) =>
+        lista.every((data, i) => i === 0 || (decrescente ? lista[i - 1] >= data : lista[i - 1] <= data));
+      registrar(
+        'Sessões do tratamento: hoje, próximas e anteriores (mais recentes primeiro)',
+        blocos.length > 0 &&
+          ordemDosBlocos.join(',') === ['hoje', 'próximas', 'anteriores'].filter((t) => ordemDosBlocos.includes(t)).join(',') &&
+          blocos.every((b) => emOrdem(b.datas, b.titulo === 'anteriores')),
+        blocos.map((b) => `${b.titulo}: ${b.datas.length}`).join(' · '),
+      );
+
+      // O cadastro é o plano: quantas sessões, a partir de quando, em que dias e em que horário.
+      // A prévia mostra as datas antes de gravar. O mesmo botão acrescenta sessões depois.
+      const abriuCadastro = await pagina.evaluate(() => {
+        const botao = [...document.querySelectorAll('button')].find((b) =>
+          ['Cadastrar sessões', 'Adicionar sessões'].includes(b.innerText.trim()),
+        );
+        botao?.click();
+        return botao?.innerText.trim() ?? '';
+      });
+      const formulario = abriuCadastro
+        ? await esperarTexto('Datas das sessões').then(() => true).catch(() => false)
+        : false;
+      let previa = { campos: false, datas: 0, botao: '' };
+      if (formulario) {
+        await pagina.evaluate(() => {
+          const rotulo = [...document.querySelectorAll('[role="dialog"] label')].find((l) =>
+            l.innerText.trim().startsWith('Quantidade'),
+          );
+          const campo = rotulo?.parentElement?.querySelector('input') ?? rotulo?.querySelector('input');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(campo, '3');
+          campo.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await pagina
+          .waitForFunction(() => document.querySelectorAll('[role="dialog"] section ol li').length === 3, { timeout: 8000 })
+          .catch(() => null);
+        previa = await pagina.evaluate(() => {
+          const dialogo = document.querySelector('[role="dialog"]');
+          const texto = dialogo.innerText;
+          return {
+            campos: ['Quantidade de sessões', 'A partir de', 'Dias da semana', 'Início', 'Término'].every((t) => texto.includes(t)),
+            datas: dialogo.querySelectorAll('section ol li').length,
+            botao: dialogo.querySelector('button[type="submit"]')?.innerText.trim() ?? '',
+          };
+        });
+        await capturar('05h-cadastrar-sessoes');
         await pagina.keyboard.press('Escape');
       }
+      registrar(
+        'Tratamento: cadastro de sessões pela quantidade, dias e horário, com prévia das datas',
+        formulario && previa.campos && previa.datas === 3 && previa.botao === 'Cadastrar 3 sessões',
+        `botão "${abriuCadastro}", ${previa.datas} datas na prévia, "${previa.botao}"`,
+      );
     }
 
     // Carteira com filtro e paginação: a aba Vacinação tem busca e seletor de situação.
@@ -342,33 +428,140 @@ try {
     registrar('HU-011 prontuário', false, 'nenhum paciente na tabela');
   }
 
-  // ---- Sessões (antes "Evoluções"): filtros por animal, tratamento, período, veterinário e nº
+  // ---- Sessões: a gestão das sessões cadastradas, separadas pela situação, sem cadastro
   await irPara(`/sessoes`, 'networkidle2');
-  await esperarTexto('Sessões de fisioterapia registradas');
-  const telaEvolucoes = await pagina.evaluate(() => ({
+  await esperarTexto('As sessões cadastradas nos tratamentos da clínica');
+  await pagina.waitForSelector('table', { timeout: 8000 }).catch(() => null);
+  const telaSessoes = await pagina.evaluate(() => ({
     tabela: !!document.querySelector('table'),
-    filtros: document.querySelectorAll('select, input[type="date"], input[type="number"]').length,
+    situacoes: [...document.querySelectorAll('[role="tab"]')].map((b) => b.innerText.replace(/\s*\d+$/, '').trim()),
+    filtros: document.querySelectorAll('select, input[type="date"]').length,
+    cadastro: [...document.querySelectorAll('button')].some((b) => /^(Registrar|Cadastrar|Agendar)/.test(b.innerText.trim())),
   }));
   registrar(
-    'Tela de sessões com filtros e lista',
-    telaEvolucoes.tabela && telaEvolucoes.filtros >= 5,
-    `${telaEvolucoes.filtros} filtros`,
+    'Tela de sessões organizada pela situação, com filtros',
+    telaSessoes.tabela &&
+      ['Todas', 'Agendadas', 'Aguardando registro', 'Realizadas', 'Canceladas', 'Inativadas'].every((s) =>
+        telaSessoes.situacoes.includes(s),
+      ) &&
+      telaSessoes.filtros === 5,
+    `${telaSessoes.situacoes.join(' | ')}; ${telaSessoes.filtros} filtros`,
   );
-  await capturar('05g-evolucoes');
+  registrar('Tela de sessões sem cadastro de sessão', !telaSessoes.cadastro);
+  await capturar('05g-sessoes');
 
-  // O registro da sessão também começa por aqui: primeiro o animal e o tratamento.
-  const abriuEscolha = await pagina.evaluate(() => {
-    const botao = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Registrar sessão');
+  // A aba da situação filtra a lista: em "Realizadas", toda linha é uma sessão realizada.
+  await pagina.evaluate(() => {
+    [...document.querySelectorAll('[role="tab"]')].find((b) => b.innerText.startsWith('Realizadas'))?.click();
+  });
+  const soRealizadas = await pagina
+    .waitForFunction(
+      () => {
+        const linhas = [...document.querySelectorAll('table tbody tr')];
+        return linhas.length > 0 && linhas.every((l) => l.innerText.includes('Realizada'));
+      },
+      { timeout: 8000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  registrar('Sessões: a aba Realizadas lista só as sessões realizadas', soRealizadas);
+  await capturar('05i-sessoes-realizadas');
+
+  // Do registro da sessão sai uma receita ou um pedido de exame: o veterinário escolhe o tipo,
+  // preenche o formulário e vai para a aba do documento, que mostra o tratamento da sessão.
+  const abriuRegistro = await pagina.evaluate(() => {
+    const botao = document.querySelector('table tbody tr button[aria-label^="Ver o registro da sessão"]');
     botao?.click();
     return !!botao;
   });
-  const escolhaDoTratamento = abriuEscolha
-    ? await esperarTexto('Escolha o animal e o tratamento').then(() => true).catch(() => false)
-    : false;
-  registrar('Sessões: Registrar sessão escolhe o animal e o tratamento', escolhaDoTratamento);
-  if (escolhaDoTratamento) {
-    await capturar('05i-evolucoes-registrar-sessao');
-    await pagina.keyboard.press('Escape');
+
+  if (abriuRegistro) {
+    const temBotaoUnico = await pagina
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[role="dialog"] button')].some(
+            (b) => b.innerText.trim() === 'Receita ou pedido de exame',
+          ),
+        { timeout: 8000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    const semBotaoAntigo = await pagina.evaluate(() => !document.body.innerText.includes('Emitir receita desta sessão'));
+    registrar('Registro da sessão: um botão para receita ou pedido de exame', temBotaoUnico && semBotaoAntigo);
+
+    await pagina.evaluate(() =>
+      [...document.querySelectorAll('[role="dialog"] button')]
+        .find((b) => b.innerText.trim() === 'Receita ou pedido de exame')
+        ?.click(),
+    );
+    await esperarTexto('O que você vai emitir?');
+
+    // A escolha mostra o formulário certo; trocar de opção não perde o que foi digitado.
+    const escolher = (rotulo) =>
+      pagina.evaluate(
+        (r) => [...document.querySelectorAll('[role="dialog"] label')].find((l) => l.innerText.includes(r))?.click(),
+        rotulo,
+      );
+    const visivel = (seletor, texto) =>
+      pagina
+        .waitForFunction(
+          (s, t) =>
+            [...document.querySelectorAll(`[role="dialog"] ${s}`)].some(
+              (el) => el.getClientRects().length > 0 && (el.innerText || el.placeholder || '').includes(t),
+            ),
+          { timeout: 5000 },
+          seletor,
+          texto,
+        )
+        .then(() => true)
+        .catch(() => false);
+
+    await escolher('Receita de medicamento');
+    const formReceita = await visivel('legend', 'Medicamento 1');
+    await escolher('Pedido de exame');
+    const formPedido = await visivel('textarea', 'Hemograma');
+    const receitaEscondida = await pagina.evaluate(
+      () =>
+        ![...document.querySelectorAll('[role="dialog"] legend')].some(
+          (l) => l.getClientRects().length > 0 && l.innerText.includes('Medicamento 1'),
+        ),
+    );
+    registrar('Receita ou pedido: a escolha abre o formulário certo', formReceita && formPedido && receitaEscondida);
+    await capturar('05j-receita-ou-exame');
+
+    const campoExames = await pagina.evaluateHandle(() =>
+      [...document.querySelectorAll('[role="dialog"] textarea')].find(
+        (t) => t.getClientRects().length > 0 && t.placeholder.startsWith('Hemograma'),
+      ),
+    );
+    await campoExames.asElement()?.type('Raio-X de controle do joelho');
+    await pagina.evaluate(() =>
+      [...document.querySelectorAll('[role="dialog"] button[type="submit"]')]
+        .find((b) => b.getClientRects().length > 0 && b.innerText.includes('Emitir pedido'))
+        ?.click(),
+    );
+
+    const foiParaExames = await pagina
+      .waitForFunction(
+        () =>
+          location.pathname.startsWith('/prontuario/') &&
+          location.search.includes('aba=exames') &&
+          document.body.innerText.includes('Pedido de exame emitido'),
+        { timeout: 10000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    registrar('Pedido emitido na sessão leva à aba Exames do prontuário', foiParaExames, pagina.url());
+
+    const referencia = await pagina.evaluate(() => document.querySelector('li[id^="pedido-"]')?.innerText ?? '');
+    registrar(
+      'Pedido mostra o tratamento e a sessão de origem',
+      /Tratamento: \S/.test(referencia) && referencia.includes('Origem: Sessão nº'),
+      referencia.split('\n').slice(0, 3).join(' / '),
+    );
+    await capturar('05k-exames-com-tratamento');
+  } else {
+    registrar('Registro da sessão: um botão para receita ou pedido de exame', false, 'nenhuma sessão realizada');
   }
 
   // ---- Agenda geral (HU-005)
@@ -376,6 +569,11 @@ try {
   await esperarTexto('Agenda geral');
   const temLegenda = await pagina.$$eval('button[aria-pressed]', (bs) => bs.length);
   registrar('HU-005 CA-2 toggle de profissionais', temLegenda >= 1, `${temLegenda} profissional(is)`);
+  // Um cadastro só de sessões, no tratamento: a agenda geral não tem mais "Agendar sessão".
+  const agendarNaAgendaGeral = await pagina.evaluate(() =>
+    [...document.querySelectorAll('button')].some((b) => b.innerText.includes('Agendar sessão')),
+  );
+  registrar('Agenda geral sem o cadastro duplicado de sessões', !agendarNaAgendaGeral);
   await capturar('06-agenda-geral');
 
   // ---- Usuários (HU-002)

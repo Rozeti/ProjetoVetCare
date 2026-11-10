@@ -20,7 +20,7 @@ import {
   estiloStatusSessao,
   formatarDataExtensa,
   formatarDia,
-  formatarHora,
+  formatarIntervalo,
 } from '../utils/formato';
 
 /** Janela do painel de prevenção, igual à da classificação "A vencer" da carteira. */
@@ -138,8 +138,10 @@ export function Dashboard() {
                   <ul className="divide-y divide-slate-100">
                     {indicadores.proximasSessoes.map((sessao) => (
                       <li key={sessao.sessaoId} className="flex items-center gap-4 px-5 py-4">
-                        <div className="w-14 shrink-0 rounded-xl bg-slate-100 py-2 text-center">
-                          <p className="text-sm font-bold text-slate-900">{formatarHora(sessao.dataHora)}</p>
+                        <div className="w-24 shrink-0 rounded-xl bg-slate-100 py-2 text-center">
+                          <p className="text-sm font-bold tabular-nums text-slate-900">
+                            {formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}
+                          </p>
                         </div>
 
                         <div className="min-w-0 flex-1">

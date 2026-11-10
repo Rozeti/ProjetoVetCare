@@ -117,7 +117,7 @@ namespace VetCare.API.UseCases
 
             // Sem data o tratamento começa hoje. Só o planejado pode começar no futuro.
             var dataInicio = dto.DataInicio is { } informada && informada != default
-                ? AgendarSessaoUseCase.NormalizarParaUtc(informada)
+                ? CadastrarSessoesUseCase.NormalizarParaUtc(informada)
                 : DateTime.UtcNow;
 
             if (status == StatusTratamento.EmAndamento &&
@@ -305,7 +305,7 @@ namespace VetCare.API.UseCases
 
             if (dto.DataInicio.HasValue && dto.DataInicio.Value != default)
             {
-                tratamento.DataInicio = AgendarSessaoUseCase.NormalizarParaUtc(dto.DataInicio.Value);
+                tratamento.DataInicio = CadastrarSessoesUseCase.NormalizarParaUtc(dto.DataInicio.Value);
             }
 
             var statusFinal = novoStatus ?? tratamento.Status;
@@ -332,7 +332,7 @@ namespace VetCare.API.UseCases
                 if (!StatusTratamento.Ativo(novoStatus) && tratamento.DataFim == null)
                 {
                     tratamento.DataFim = dto.DataFim.HasValue
-                        ? AgendarSessaoUseCase.NormalizarParaUtc(dto.DataFim.Value)
+                        ? CadastrarSessoesUseCase.NormalizarParaUtc(dto.DataFim.Value)
                         : DateTime.UtcNow;
                 }
 
@@ -343,7 +343,7 @@ namespace VetCare.API.UseCases
             }
             else if (dto.DataFim.HasValue)
             {
-                tratamento.DataFim = AgendarSessaoUseCase.NormalizarParaUtc(dto.DataFim.Value);
+                tratamento.DataFim = CadastrarSessoesUseCase.NormalizarParaUtc(dto.DataFim.Value);
             }
 
             if (tratamento.DataFim.HasValue && tratamento.DataFim.Value < tratamento.DataInicio)

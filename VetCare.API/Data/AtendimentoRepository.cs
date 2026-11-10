@@ -126,6 +126,23 @@ namespace VetCare.API.Data
             return encontradas.ToHashSet();
         }
 
+        public async Task<Dictionary<Guid, AtendimentoFisioterapeutico>> ObterPorSessoes(IEnumerable<Guid> sessoesIds)
+        {
+            var ids = sessoesIds.Distinct().ToList();
+
+            if (ids.Count == 0)
+            {
+                return new Dictionary<Guid, AtendimentoFisioterapeutico>();
+            }
+
+            var registros = await _context.Atendimentos
+                .AsNoTracking()
+                .Where(a => ids.Contains(a.SessaoId))
+                .ToListAsync();
+
+            return registros.ToDictionary(a => a.SessaoId);
+        }
+
         public void Atualizar(AtendimentoFisioterapeutico atendimento)
         {
             _context.Atendimentos.Update(atendimento);

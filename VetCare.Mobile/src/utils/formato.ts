@@ -31,6 +31,11 @@ export function formatarHora(valor: string | Date): string {
   return paraData(valor).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** "09:00 às 10:00" — o horário de início e o de término da sessão. */
+export function formatarIntervalo(inicio: string | Date, fim?: string | Date | null): string {
+  return fim ? `${formatarHora(inicio)} às ${formatarHora(fim)}` : formatarHora(inicio);
+}
+
 export function formatarDataHora(valor: string | Date): string {
   return `${formatarData(valor)} às ${formatarHora(valor)}`;
 }

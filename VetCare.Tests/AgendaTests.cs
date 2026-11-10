@@ -9,23 +9,29 @@ using VetCare.Tests.Suporte;
 
 namespace VetCare.Tests
 {
-    /// <summary>HU-004 e HU-006: regras de agendamento, conflito e cancelamento.</summary>
+    /// <summary>HU-004 e HU-006: cadastro das sessões (início e fim, uma ou várias), conflito e cancelamento.</summary>
     public class AgendaTests : BaseDeTeste
     {
-        private AgendarSessaoUseCase CriarCasoDeUso(UsuarioAtual usuarioAtual) => new(
+        private CadastrarSessoesUseCase CriarCasoDeUso(UsuarioAtual usuarioAtual) => new(
             new SessaoRepository(Contexto),
             new TratamentoRepository(Contexto),
             new ClinicaRepository(Contexto),
             new VeterinarioRepository(Contexto),
             new BloqueioAgendaRepository(Contexto),
             Dependencias.Notificacoes(Contexto),
+            Dependencias.Auditoria(Contexto, usuarioAtual),
             usuarioAtual);
 
-        private AgendarSessaoDTO Agendamento(DateTime quando) => new()
+        private static HorarioDeSessaoDTO Horario(DateTime inicio, int minutos = 60) =>
+            new() { Inicio = inicio, Fim = inicio.AddMinutes(minutos) };
+
+        private CadastrarSessoesDTO Agendamento(DateTime quando, int minutos = 60) => Cadastro(Horario(quando, minutos));
+
+        private CadastrarSessoesDTO Cadastro(params HorarioDeSessaoDTO[] horarios) => new()
         {
             TratamentoId = Tratamento.Id,
             VeterinarioId = Veterinario.Id,
-            DataHora = quando
+            Sessoes = horarios.ToList()
         };
 
         /// <summary>Próximo dia útil às 14h locais, dentro do expediente da clínica.</summary>
@@ -47,7 +53,34 @@ namespace VetCare.Tests
             var resultado = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(ProximoHorarioValido()));
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
-            resultado.Dados!.Status.Should().Be("Aguardando confirmação");
+            resultado.Dados!.Should().ContainSingle();
+            resultado.Dados[0].Status.Should().Be("Aguardando confirmação");
+            resultado.Dados[0].Situacao.Should().Be(SituacaoSessao.Agendada);
+        }
+
+        [Fact]
+        public async Task Horario_de_fim_e_obrigatorio()
+        {
+            var dto = Cadastro(new HorarioDeSessaoDTO { Inicio = ProximoHorarioValido(), Fim = null });
+
+            var resultado = await CriarCasoDeUso(ComoAdministrador()).Executar(dto);
+
+            resultado.Sucesso.Should().BeFalse();
+            resultado.Falha.Should().Be(TipoFalha.Validacao);
+            resultado.Mensagem.Should().Contain("término");
+            Contexto.Sessoes.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Fim_antes_do_inicio_e_recusado()
+        {
+            var inicio = ProximoHorarioValido();
+
+            var resultado = await CriarCasoDeUso(ComoAdministrador())
+                .Executar(Cadastro(new HorarioDeSessaoDTO { Inicio = inicio, Fim = inicio.AddMinutes(-30) }));
+
+            resultado.Sucesso.Should().BeFalse();
+            resultado.Mensagem.Should().Contain("depois do início");
         }
 
         [Fact]
@@ -63,14 +96,72 @@ namespace VetCare.Tests
         }
 
         [Fact]
+        public async Task Varias_sessoes_sao_cadastradas_de_uma_vez_com_um_unico_aviso_ao_tutor()
+        {
+            var primeira = ProximoHorarioValido();
+
+            var resultado = await CriarCasoDeUso(ComoAdministrador()).Executar(Cadastro(
+                Horario(primeira), Horario(primeira.AddDays(7)), Horario(primeira.AddDays(14), minutos: 45)));
+
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            resultado.Mensagem.Should().Be("3 sessões cadastradas.");
+            resultado.Dados!.Select(s => s.DataHoraFim - s.DataHora)
+                .Should().Equal(TimeSpan.FromHours(1), TimeSpan.FromHours(1), TimeSpan.FromMinutes(45));
+
+            Contexto.Sessoes.Count(s => s.TratamentoId == Tratamento.Id).Should().Be(3);
+            Contexto.Notificacoes.Count(n => n.UsuarioId == UsuarioTutor.Id).Should().Be(1, "o cadastro em lote gera um só aviso");
+        }
+
+        [Fact]
+        public async Task Mais_sessoes_podem_ser_cadastradas_depois_no_mesmo_tratamento()
+        {
+            var inicio = ProximoHorarioValido();
+
+            (await CriarCasoDeUso(ComoAdministrador()).Executar(Cadastro(Horario(inicio), Horario(inicio.AddDays(7)))))
+                .Sucesso.Should().BeTrue();
+
+            var depois = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(inicio.AddDays(14)));
+
+            depois.Sucesso.Should().BeTrue(depois.Mensagem);
+            Contexto.Sessoes.Count(s => s.TratamentoId == Tratamento.Id).Should().Be(3);
+        }
+
+        [Fact]
+        public async Task Sessoes_do_mesmo_cadastro_nao_podem_se_sobrepor()
+        {
+            var inicio = ProximoHorarioValido();
+
+            var resultado = await CriarCasoDeUso(ComoAdministrador())
+                .Executar(Cadastro(Horario(inicio), Horario(inicio.AddMinutes(30))));
+
+            resultado.Sucesso.Should().BeFalse();
+            resultado.Mensagem.Should().Contain("se sobrepõem");
+            Contexto.Sessoes.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Cadastro_com_uma_sessao_em_conflito_nao_grava_nenhuma()
+        {
+            var ocupado = ProximoHorarioValido();
+            await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(ocupado));
+
+            var resultado = await CriarCasoDeUso(ComoAdministrador())
+                .Executar(Cadastro(Horario(ocupado.AddDays(7)), Horario(ocupado.AddMinutes(30))));
+
+            resultado.Sucesso.Should().BeFalse();
+            resultado.Falha.Should().Be(TipoFalha.Conflito);
+            resultado.Mensagem.Should().StartWith("Sessão de ");
+            Contexto.Sessoes.Count().Should().Be(1, "o cadastro é tudo ou nada");
+        }
+
+        [Fact]
         public async Task Duas_sessoes_no_mesmo_horario_violam_a_exclusividade()
         {
             var horario = ProximoHorarioValido();
-            var casoDeUso = CriarCasoDeUso(ComoAdministrador());
 
-            (await casoDeUso.Executar(Agendamento(horario))).Sucesso.Should().BeTrue();
+            (await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario))).Sucesso.Should().BeTrue();
 
-            var segunda = await casoDeUso.Executar(Agendamento(horario));
+            var segunda = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario));
 
             segunda.Sucesso.Should().BeFalse();
             segunda.Falha.Should().Be(TipoFalha.Conflito);
@@ -80,14 +171,28 @@ namespace VetCare.Tests
         public async Task Sessao_dentro_da_duracao_de_outra_tambem_conflita()
         {
             var horario = ProximoHorarioValido();
-            var casoDeUso = CriarCasoDeUso(ComoAdministrador());
 
-            await casoDeUso.Executar(Agendamento(horario));
+            await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario));
 
-            // A sessão padrão dura 60 minutos, então 30 minutos depois ainda colide.
-            var sobreposta = await casoDeUso.Executar(Agendamento(horario.AddMinutes(30)));
+            // A primeira vai das 14h às 15h, então uma sessão às 14h30 ainda colide.
+            var sobreposta = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario.AddMinutes(30)));
 
             sobreposta.Sucesso.Should().BeFalse();
+            sobreposta.Falha.Should().Be(TipoFalha.Conflito);
+        }
+
+        [Fact]
+        public async Task O_fim_informado_define_o_horario_ocupado()
+        {
+            var horario = ProximoHorarioValido();
+
+            // Das 14h às 14h30: a sessão seguinte pode começar às 14h30 em ponto.
+            await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario, minutos: 30));
+
+            var emSeguida = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario.AddMinutes(30), minutos: 30));
+            var sobreposta = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario.AddMinutes(15), minutos: 30));
+
+            emSeguida.Sucesso.Should().BeTrue(emSeguida.Mensagem);
             sobreposta.Falha.Should().Be(TipoFalha.Conflito);
         }
 
@@ -95,15 +200,14 @@ namespace VetCare.Tests
         public async Task Sessao_cancelada_libera_o_horario()
         {
             var horario = ProximoHorarioValido();
-            var casoDeUso = CriarCasoDeUso(ComoAdministrador());
 
-            var primeira = await casoDeUso.Executar(Agendamento(horario));
+            var primeira = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario));
 
-            var sessao = await Contexto.Sessoes.FindAsync(primeira.Dados!.Id);
+            var sessao = await Contexto.Sessoes.FindAsync(primeira.Dados![0].Id);
             sessao!.Status = "Cancelada";
             await Contexto.SaveChangesAsync();
 
-            var segunda = await casoDeUso.Executar(Agendamento(horario));
+            var segunda = await CriarCasoDeUso(ComoAdministrador()).Executar(Agendamento(horario));
 
             segunda.Sucesso.Should().BeTrue(segunda.Mensagem);
         }
@@ -224,7 +328,7 @@ namespace VetCare.Tests
             var resultado = await CriarCasoDeUso(comoOutro).Executar(agendamento);
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
-            resultado.Dados!.VeterinarioId.Should().Be(outroVeterinario.Id);
+            resultado.Dados![0].VeterinarioId.Should().Be(outroVeterinario.Id);
         }
     }
 }

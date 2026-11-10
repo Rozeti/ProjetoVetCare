@@ -146,8 +146,8 @@ export function MinhaAgenda() {
                       <Etiqueta className={estiloStatusSessao[sessao.status]}>{sessao.status}</Etiqueta>
                     </div>
 
-                    <p className="text-sm capitalize text-slate-600">
-                      {formatarDataExtensa(sessao.dataHora)} às {formatarHora(sessao.dataHora)}
+                    <p className="text-sm text-slate-600 first-letter:uppercase">
+                      {formatarDataExtensa(sessao.dataHora)}, das {formatarHora(sessao.dataHora)} às {formatarHora(sessao.dataHoraFim)}
                     </p>
 
                     {sessao.nomeVeterinario && (

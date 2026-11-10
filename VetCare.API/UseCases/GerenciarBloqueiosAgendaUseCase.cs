@@ -32,8 +32,8 @@ namespace VetCare.API.UseCases
         public async Task<Resultado<List<BloqueioAgendaDTO>>> Listar(Guid? veterinarioId, DateTime inicio, DateTime fim)
         {
             // Datas vindas da URL chegam sem fuso; o banco compara em UTC.
-            inicio = AgendarSessaoUseCase.NormalizarParaUtc(inicio);
-            fim = AgendarSessaoUseCase.NormalizarParaUtc(fim);
+            inicio = CadastrarSessoesUseCase.NormalizarParaUtc(inicio);
+            fim = CadastrarSessoesUseCase.NormalizarParaUtc(fim);
 
             var id = veterinarioId ?? _usuarioAtual.VeterinarioId;
 
@@ -75,8 +75,8 @@ namespace VetCare.API.UseCases
                 return Resultado<BloqueioAgendaDTO>.NaoAutorizado("Você só pode bloquear a sua própria agenda.");
             }
 
-            var inicio = AgendarSessaoUseCase.NormalizarParaUtc(dto.Inicio);
-            var fim = AgendarSessaoUseCase.NormalizarParaUtc(dto.Fim);
+            var inicio = CadastrarSessoesUseCase.NormalizarParaUtc(dto.Inicio);
+            var fim = CadastrarSessoesUseCase.NormalizarParaUtc(dto.Fim);
 
             if (fim <= inicio)
             {

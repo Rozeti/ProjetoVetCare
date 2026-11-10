@@ -38,12 +38,15 @@ src/
 │                   (long polling de GET /api/atualizacoes que acorda as telas)
 ├── hooks/          useCarregamento (estado de carga e erro) e useConfirmacao
 ├── pages/          uma tela por História de Usuário
-│   └── componentes/ abas do prontuário (linha do tempo com data e filtro por
-│                   período, avaliações, tratamentos, sessões, medicação, pedidos
-│                   de exame editáveis, carteira de vacinação) e os modais de cadastro
-│                   do paciente, avaliação, tratamento, registro da sessão (com fotos
-│                   escolhidas antes de salvar), receita, pedido de exame, alerta
-│                   clínico, agendamento e bloqueios
+│   └── componentes/ abas do prontuário (linha do tempo neutra com data e filtro
+│                   por período, avaliações e tratamentos em linhas que expandem,
+│                   sessões, medicação, pedidos de exame editáveis, carteira de
+│                   vacinação) e os modais de cadastro do paciente, avaliação,
+│                   tratamento, cadastro de sessões pelo plano (quantidade, dias da
+│                   semana e horário, com a prévia das datas calculada pela API),
+│                   registro do atendimento, receita, pedido de exame, receita
+│                   ou pedido de exame da sessão (escolha do tipo e formulário
+│                   único), alerta clínico e bloqueios
 ├── services/       cliente HTTP e tratamento de erros da API
 ├── types/          contratos compartilhados com a API
 └── utils/          formatação, validações compartilhadas, paginação e impressão

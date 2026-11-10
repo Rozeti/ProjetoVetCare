@@ -51,7 +51,7 @@ repetir_se_limitado() {
 }
 
 # Garante que o tutor de demonstração tenha uma sessão aguardando confirmação e imprime o
-# id dela. Os roteiros confirmam e cancelam sessões, então repeti-los no mesmo banco
+# id dela. A sessão é cadastrada no tratamento, com o horário de início e o de término. Os roteiros confirmam e cancelam sessões, então repeti-los no mesmo banco
 # esgotaria as duas que os dados de demonstração criam. Tenta vários dias porque a agenda
 # pode ter conflitos, bloqueios ou dias fora do expediente.
 # Uso: SESSAO=$(garantir_sessao_em_aberto "$TOKEN_ADMIN")
@@ -64,8 +64,9 @@ garantir_sessao_em_aberto() {
   corpo=$(mktemp)
 
   for dia in $(seq 20 40); do
-    printf '{"tratamentoId":"%s","veterinarioId":"%s","dataHora":"%s"}' \
-      "$trat" "$vet" "$(date -u -d "+$dia days 15:00" +%Y-%m-%dT%H:%M:%S)" > "$corpo"
+    printf '{"tratamentoId":"%s","veterinarioId":"%s","sessoes":[{"inicio":"%s","fim":"%s"}]}' \
+      "$trat" "$vet" "$(date -u -d "+$dia days 15:00" +%Y-%m-%dT%H:%M:%S)" \
+      "$(date -u -d "+$dia days 16:00" +%Y-%m-%dT%H:%M:%S)" > "$corpo"
     resposta=$(curl -s -X POST "$API/api/sessoes" -H 'Content-Type: application/json' \
       -H "Authorization: Bearer $admin" --data-binary @"$corpo")
     id=$(extrair "$resposta" id)

@@ -622,6 +622,9 @@ namespace VetCare.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AtendimentoId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("AvaliacaoId")
                         .HasColumnType("uuid");
 
@@ -654,14 +657,21 @@ namespace VetCare.API.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<Guid?>("TratamentoId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("VeterinarioId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AtendimentoId");
+
                     b.HasIndex("AvaliacaoId");
 
                     b.HasIndex("PacienteId");
+
+                    b.HasIndex("TratamentoId");
 
                     b.HasIndex("VeterinarioId");
 
@@ -775,6 +785,9 @@ namespace VetCare.API.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<Guid?>("TratamentoId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("ValidaAte")
                         .HasColumnType("timestamp with time zone");
 
@@ -788,6 +801,8 @@ namespace VetCare.API.Migrations
                     b.HasIndex("AvaliacaoId");
 
                     b.HasIndex("PacienteId");
+
+                    b.HasIndex("TratamentoId");
 
                     b.HasIndex("VeterinarioId");
 
@@ -889,6 +904,12 @@ namespace VetCare.API.Migrations
 
                     b.Property<DateTime>("DataHora")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataHoraFim")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Inativa")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("LembreteEnviado")
                         .HasColumnType("boolean");
@@ -1498,6 +1519,10 @@ namespace VetCare.API.Migrations
 
             modelBuilder.Entity("VetCare.API.Models.PedidoExame", b =>
                 {
+                    b.HasOne("VetCare.API.Models.AtendimentoFisioterapeutico", "Atendimento")
+                        .WithMany()
+                        .HasForeignKey("AtendimentoId");
+
                     b.HasOne("VetCare.API.Models.AvaliacaoClinica", "Avaliacao")
                         .WithMany()
                         .HasForeignKey("AvaliacaoId")
@@ -1516,17 +1541,25 @@ namespace VetCare.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("VetCare.API.Models.Tratamento", "Tratamento")
+                        .WithMany()
+                        .HasForeignKey("TratamentoId");
+
                     b.HasOne("VetCare.API.Models.Veterinario", "Veterinario")
                         .WithMany()
                         .HasForeignKey("VeterinarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("Atendimento");
+
                     b.Navigation("Avaliacao");
 
                     b.Navigation("Paciente");
 
                     b.Navigation("Prontuario");
+
+                    b.Navigation("Tratamento");
 
                     b.Navigation("Veterinario");
                 });
@@ -1579,6 +1612,10 @@ namespace VetCare.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("VetCare.API.Models.Tratamento", "Tratamento")
+                        .WithMany()
+                        .HasForeignKey("TratamentoId");
+
                     b.HasOne("VetCare.API.Models.Veterinario", "Veterinario")
                         .WithMany()
                         .HasForeignKey("VeterinarioId")
@@ -1592,6 +1629,8 @@ namespace VetCare.API.Migrations
                     b.Navigation("Paciente");
 
                     b.Navigation("Prontuario");
+
+                    b.Navigation("Tratamento");
 
                     b.Navigation("Veterinario");
                 });

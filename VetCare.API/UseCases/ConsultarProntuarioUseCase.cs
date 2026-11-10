@@ -22,6 +22,7 @@ namespace VetCare.API.UseCases
         private readonly IPetRepository _pets;
         private readonly ITratamentoRepository _tratamentos;
         private readonly ISessaoRepository _sessoes;
+        private readonly IClinicaRepository _clinicas;
         private readonly IVacinaRepository _vacinas;
         private readonly IPrescricaoRepository _prescricoes;
         private readonly IPedidoExameRepository _pedidosExame;
@@ -35,6 +36,7 @@ namespace VetCare.API.UseCases
             IPetRepository pets,
             ITratamentoRepository tratamentos,
             ISessaoRepository sessoes,
+            IClinicaRepository clinicas,
             IVacinaRepository vacinas,
             IPrescricaoRepository prescricoes,
             IPedidoExameRepository pedidosExame,
@@ -47,6 +49,7 @@ namespace VetCare.API.UseCases
             _pets = pets;
             _tratamentos = tratamentos;
             _sessoes = sessoes;
+            _clinicas = clinicas;
             _vacinas = vacinas;
             _prescricoes = prescricoes;
             _pedidosExame = pedidosExame;
@@ -84,6 +87,10 @@ namespace VetCare.API.UseCases
             var pedidosExame = await _pedidosExame.ObterPorProntuario(prontuario.Id);
             var registrosClinicos = await _alergias.ObterPorPaciente(pacienteId, apenasAtivas: false);
 
+            // As sessões cadastradas nos tratamentos; as inativadas só para a equipe.
+            var sessoes = await _sessoes.ObterPorPaciente(pacienteId, incluirInativas: !_usuarioAtual.EhTutor);
+            var horasMinimas = (await _clinicas.ObterPorId(_usuarioAtual.ClinicaId))?.HorasMinimasCancelamento ?? 12;
+
             var exibeObservacoes = _usuarioAtual.PodeVerObservacoesInternas;
 
             // A consulta só acontece para quem tem direito de ver (RN-003).
@@ -119,7 +126,8 @@ namespace VetCare.API.UseCases
                         a,
                         tratamentos,
                         prescricoes.Count(p => p.AvaliacaoId == a.Id),
-                        pedidosExame.Count(p => p.AvaliacaoId == a.Id)))
+                        // O pedido feito em uma sessão conta na sessão, não na avaliação do tratamento.
+                        pedidosExame.Count(p => p.AvaliacaoId == a.Id && p.AtendimentoId == null)))
                     .ToList(),
                 Historico = new LinhaDoTempo(_assinador, midias, observacoes).Montar(
                     avaliacoes, tratamentos, atendimentos, registrosClinicos, vacinas, prescricoes, pedidosExame),
@@ -129,7 +137,8 @@ namespace VetCare.API.UseCases
                 Prescricoes = prescricoes.Select(p => GerenciarPrescricoesUseCase.MapearParaDTO(p, pet)).ToList(),
                 PedidosExame = pedidosExame.Select(p => GerenciarPedidosExameUseCase.MapearParaDTO(p, pet)).ToList(),
                 Documentos = documentos.Select(d => GerenciarDocumentosUseCase.MapearParaDTO(d, _assinador)).ToList(),
-                Tratamentos = await MapearTratamentos(tratamentos, atendimentos)
+                Tratamentos = await MapearTratamentos(tratamentos, atendimentos),
+                Sessoes = MapearSessoes(sessoes, atendimentos, pet, horasMinimas)
             };
 
             await _auditoria.RegistrarDoUsuarioAtual(
@@ -161,6 +170,27 @@ namespace VetCare.API.UseCases
             return atendimentos
                 .OrderBy(a => a.DataRegistro)
                 .Select(a => new PontoEvolucaoDTO { Data = a.DataRegistro, Valor = a.EscalaDor })
+                .ToList();
+        }
+
+        /// <summary>Cada sessão com o registro do atendimento, quando já houver; o paciente já está em mãos.</summary>
+        private static List<SessaoDTO> MapearSessoes(
+            List<Sessao> sessoes,
+            List<AtendimentoFisioterapeutico> atendimentos,
+            Pet pet,
+            int horasMinimas)
+        {
+            var registros = atendimentos
+                .GroupBy(a => a.SessaoId)
+                .ToDictionary(grupo => grupo.Key, grupo => grupo.First());
+
+            foreach (var sessao in sessoes.Where(s => s.Tratamento != null))
+            {
+                sessao.Tratamento!.Paciente = pet;
+            }
+
+            return sessoes
+                .Select(s => CadastrarSessoesUseCase.MapearParaDTO(s, horasMinimas, registros.GetValueOrDefault(s.Id)))
                 .ToList();
         }
 

@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardPlus,
-  Plus,
   Stethoscope,
   X,
 } from 'lucide-react';
@@ -16,10 +15,9 @@ import { useAuth } from '../contexts/auth';
 import { useConfirmacao } from '../hooks/useConfirmacao';
 import type { ItemAgenda, VisaoAgenda } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
-import { estiloStatusSessao, formatarData, formatarHora, paraValorInputData } from '../utils/formato';
+import { estiloStatusSessao, formatarData, formatarIntervalo, paraValorInputData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
-import { ModalAgendarSessao } from './componentes/ModalAgendarSessao';
 import { ModalRegistrarAtendimento } from './componentes/ModalRegistrarAtendimento';
 import { ModalBloqueiosAgenda } from './componentes/ModalBloqueiosAgenda';
 
@@ -36,7 +34,6 @@ export function Agenda() {
   const [visao, setVisao] = useState<VisaoAgenda>('dia');
   const [data, setData] = useState(new Date());
   const [aviso, setAviso] = useState('');
-  const [modalAgendar, setModalAgendar] = useState(false);
   const [modalBloqueios, setModalBloqueios] = useState(false);
   const [sessaoParaAtender, setSessaoParaAtender] = useState<ItemAgenda | null>(null);
 
@@ -150,18 +147,12 @@ export function Agenda() {
     <>
       <CabecalhoPagina
         titulo="Agenda"
-        descricao="Organize as suas sessões de fisioterapia, inclusive as de pacientes de colegas que você atende."
+        descricao="As suas sessões de fisioterapia, inclusive as de pacientes de colegas que você atende. As sessões são cadastradas no tratamento, no prontuário de cada paciente."
         acoes={
-          <>
-            <button type="button" className="vc-botao-secundario" onClick={() => setModalBloqueios(true)}>
-              <CalendarOff size={16} />
-              Bloqueios
-            </button>
-            <button type="button" className="vc-botao-primario" onClick={() => setModalAgendar(true)}>
-              <Plus size={16} />
-              Agendar sessão
-            </button>
-          </>
+          <button type="button" className="vc-botao-secundario" onClick={() => setModalBloqueios(true)}>
+            <CalendarOff size={16} />
+            Bloqueios
+          </button>
         }
       />
 
@@ -249,13 +240,7 @@ export function Agenda() {
           <SemDados
             icone={<CalendarDays size={40} />}
             titulo="Nenhuma sessão neste período"
-            descricao="Não há sessões agendadas para a data selecionada."
-            acao={
-              <button type="button" className="vc-botao-sutil" onClick={() => setModalAgendar(true)}>
-                <Plus size={16} />
-                Agendar uma sessão
-              </button>
-            }
+            descricao="Não há sessões para a data selecionada. As sessões são cadastradas no tratamento, no prontuário do paciente."
           />
         </Card>
       ) : (
@@ -277,8 +262,10 @@ export function Agenda() {
               <ul className="divide-y divide-slate-100">
                 {itens.map((sessao) => (
                   <li key={sessao.sessaoId} className="flex flex-wrap items-center gap-4 px-5 py-4">
-                    <div className="w-16 shrink-0 rounded-xl bg-brand-50 py-2 text-center">
-                      <p className="text-sm font-bold text-brand-dark">{formatarHora(sessao.dataHora)}</p>
+                    <div className="w-24 shrink-0 rounded-xl bg-brand-50 py-2 text-center">
+                      <p className="text-sm font-bold tabular-nums text-brand-dark">
+                        {formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}
+                      </p>
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -313,16 +300,16 @@ export function Agenda() {
 
                       {sessao.status !== 'Cancelada' && sessao.status !== 'Concluída' && (
                         <>
-                          {/* HU-008: a evolução é registrada a partir da sessão realizada. */}
+                          {/* HU-008: o atendimento é registrado na própria sessão realizada. */}
                           <button
                             type="button"
                             onClick={() => setSessaoParaAtender(sessao)}
                             className="inline-flex items-center gap-1.5 rounded-lg p-2 text-sm font-medium text-brand hover:bg-brand-100"
-                            title="Registrar sessão"
-                            aria-label={`Registrar a sessão de ${sessao.nomePaciente}`}
+                            title="Registrar atendimento"
+                            aria-label={`Registrar o atendimento da sessão de ${sessao.nomePaciente}`}
                           >
                             <ClipboardPlus size={16} />
-                            <span className="hidden sm:inline">Registrar sessão</span>
+                            <span className="hidden sm:inline">Registrar atendimento</span>
                           </button>
 
                           <button
@@ -344,7 +331,7 @@ export function Agenda() {
                           type="button"
                           onClick={() => setSessaoParaAtender(sessao)}
                           className="ml-1 rounded-lg p-2 text-sucesso hover:bg-sucesso-claro"
-                          title="Sessão registrada — abrir"
+                          title="Atendimento registrado — abrir"
                           aria-label={`Abrir o registro da sessão de ${sessao.nomePaciente}`}
                         >
                           <Stethoscope size={16} />
@@ -359,17 +346,6 @@ export function Agenda() {
         </div>
       )}
 
-      <ModalAgendarSessao
-        aberto={modalAgendar}
-        veterinarioId={veterinarioId}
-        aoFechar={() => setModalAgendar(false)}
-        aoSalvar={() => {
-          setModalAgendar(false);
-          setAviso('Sessão agendada com sucesso.');
-          recarregar();
-        }}
-      />
-
       <ModalBloqueiosAgenda
         aberto={modalBloqueios}
         veterinarioId={veterinarioId}
@@ -382,7 +358,7 @@ export function Agenda() {
         aoFechar={() => setSessaoParaAtender(null)}
         aoSalvar={() => {
           setSessaoParaAtender(null);
-          setAviso('Sessão registrada com sucesso.');
+          setAviso('Atendimento registrado.');
           recarregar();
         }}
       />

@@ -1,34 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { FileText, Loader2, Lock, Paperclip, Pencil, Pill, Trash2, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ClipboardPlus, FileText, Loader2, Lock, Paperclip, Pencil, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro, urlDoArquivo } from '../../services/api';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import { useAuth } from '../../contexts/auth';
-import type { Atendimento, ItemAgenda, Midia, Sessao, Tratamento } from '../../types';
+import type { Atendimento, Midia, SessaoParaRegistro, Tratamento } from '../../types';
 import { Alerta, Campo, Etiqueta, Modal } from '../../components/ui';
-import { estiloEscalaDor, formatarDataHora, paraValorInputData } from '../../utils/formato';
+import { estiloEscalaDor, formatarData, formatarDataHora, formatarIntervalo } from '../../utils/formato';
+import { ModalReceitaOuExame } from './ModalReceitaOuExame';
+import { ABA_DA_EMISSAO, type TipoDeEmissao } from '../../utils/vinculoClinico';
 
 interface Props {
-  /** Sessão da agenda: registra uma evolução nova (ou abre a existente para anexos). */
-  sessao?: ItemAgenda | null;
-  /** Evolução já registrada, aberta a partir do prontuário ou da tela de evoluções. */
+  /** Sessão cadastrada: registra o atendimento dela (ou abre o registro existente, para anexos). */
+  sessao?: SessaoParaRegistro | null;
+  /** Registro já feito, aberto a partir do prontuário ou da tela de sessões. */
   atendimento?: Atendimento | null;
-  /**
-   * Tratamento: registra a sessão realizada sem passar pela agenda. Quem registra escolhe uma
-   * sessão agendada ainda sem evolução ou registra a sessão de agora, sem agendamento.
-   */
-  tratamento?: Tratamento | null;
-  /** Abre a evolução direto no formulário de correção (RN-004), em vez do resumo. */
+  /** Abre o registro direto no formulário de correção (RN-004), em vez do resumo. */
   corrigir?: boolean;
-  /** Descrição exibida no cabeçalho quando não há sessão da agenda em mãos. */
-  descricao?: string;
   /**
-   * Emissão de receita a partir desta evolução. Sem o callback, o botão leva ao receituário
-   * do prontuário do animal com a evolução já escolhida como origem.
+   * Receita ou pedido de exame emitido a partir desta sessão. Sem o callback, o modal leva ao
+   * prontuário do animal, na aba do documento emitido.
    */
-  aoEmitirReceita?: (atendimento: Atendimento) => void;
-  /** Falso quando o prontuário está encerrado (óbito) e não aceita receitas novas. */
-  permiteReceita?: boolean;
+  aoEmitirDocumento?: (tipo: TipoDeEmissao, mensagem: string) => void;
+  /** Falso quando o prontuário está encerrado (óbito) e não aceita documentos novos. */
+  permiteEmissao?: boolean;
   /** Atalho para o prontuário do animal, útil fora dele (tela de evoluções). */
   exibirLinkDoProntuario?: boolean;
   aoFechar: () => void;
@@ -63,35 +58,8 @@ const LIMITES = {
   observacaoInterna: 2000,
 } as const;
 
-/** Mesmos formatos e limite de AnexarMidiaUseCase (RN-011). */
+/** Mesmos formatos de AnexarMidiaUseCase (RN-011). */
 const FORMATOS_DE_MIDIA = ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov'];
-const TAMANHO_MAXIMO_MIDIA = 25 * 1024 * 1024;
-
-/** Arquivo escolhido antes de a sessão existir: vai para a API junto com o registro. */
-interface MidiaPendente {
-  chave: string;
-  arquivo: File;
-  url: string;
-  video: boolean;
-}
-
-function extensaoDe(nome: string): string {
-  const ponto = nome.lastIndexOf('.');
-  return ponto >= 0 ? nome.slice(ponto).toLowerCase() : '';
-}
-
-/** Recusa na hora o que a API recusaria no envio. */
-function problemaDoArquivo(arquivo: File): string | null {
-  if (!FORMATOS_DE_MIDIA.includes(extensaoDe(arquivo.name))) {
-    return `"${arquivo.name}" não é um formato aceito. Use JPG, PNG, WEBP, MP4 ou MOV.`;
-  }
-
-  if (arquivo.size > TAMANHO_MAXIMO_MIDIA) {
-    return `"${arquivo.name}" passa de 25 MB.`;
-  }
-
-  return null;
-}
 
 /** Faixas clínicas aceitas pela API (CriarAtendimentoDTO), usadas nos campos e na validação. */
 const FAIXAS_DE_SINAIS = {
@@ -120,42 +88,21 @@ function validarSinaisVitais(form: Pick<Estado, keyof typeof FAIXAS_DE_SINAIS>):
 }
 
 /**
- * HU-008: a evolução registra uma sessão realizada dentro de um tratamento — data, número da
- * sessão, o que foi feito, a reação do animal, observações, relatório, procedimentos e
- * fotografias. A correção posterior preserva a versão anterior (RN-004).
+ * HU-008: registro do atendimento de uma sessão cadastrada — o número da sessão no tratamento,
+ * o que foi feito, a reação do animal, observações, relatório, procedimentos e fotografias. A
+ * correção posterior preserva a versão anterior (RN-004). O registro nunca cria sessões: elas
+ * são cadastradas antes, no tratamento.
  * HU-009: permite anexar uma observação interna, restrita à equipe clínica.
  * HU-010: anexa fotos e vídeos à sessão.
  */
-export function ModalRegistrarAtendimento({ sessao, atendimento, tratamento, ...props }: Props) {
+export function ModalRegistrarAtendimento({ sessao, atendimento, ...props }: Props) {
   // O modal só existe quando há algo a mostrar: cada abertura monta um formulário
   // novo, o que dispensa um efeito para limpá-lo.
-  if (!sessao && !atendimento && !tratamento) {
+  if (!sessao && !atendimento) {
     return null;
   }
 
-  return (
-    <Formulario
-      sessao={sessao ?? null}
-      atendimento={atendimento ?? null}
-      tratamentoDoProntuario={tratamento ?? null}
-      {...props}
-    />
-  );
-}
-
-/** Sessões agendadas até hoje, ainda sem evolução: as que podem ter sido realizadas. */
-function sessoesARegistrar(sessoes: Sessao[]): Sessao[] {
-  const hoje = paraValorInputData(new Date());
-
-  return sessoes
-    .filter(
-      (s) =>
-        s.status !== 'Cancelada' &&
-        s.status !== 'Concluída' &&
-        !s.possuiAtendimento &&
-        paraValorInputData(s.dataHora) <= hoje,
-    )
-    .sort((a, b) => b.dataHora.localeCompare(a.dataHora));
+  return <Formulario sessao={sessao ?? null} atendimento={atendimento ?? null} {...props} />;
 }
 
 function estadoAPartirDe(atendimento: Atendimento): Estado {
@@ -178,52 +125,40 @@ function estadoAPartirDe(atendimento: Atendimento): Estado {
 function Formulario({
   sessao,
   atendimento,
-  tratamentoDoProntuario,
   corrigir = false,
-  descricao,
-  aoEmitirReceita,
-  permiteReceita = true,
+  aoEmitirDocumento,
+  permiteEmissao = true,
   exibirLinkDoProntuario = false,
   aoFechar,
   aoSalvar,
-}: Omit<Props, 'sessao' | 'atendimento' | 'tratamento'> & {
-  sessao: ItemAgenda | null;
+}: Omit<Props, 'sessao' | 'atendimento'> & {
+  sessao: SessaoParaRegistro | null;
   atendimento: Atendimento | null;
-  tratamentoDoProntuario: Tratamento | null;
 }) {
   const { podeVerObservacoesInternas, temPerfil } = useAuth();
-  const podeEmitirReceita = permiteReceita && temPerfil('Administrador', 'Veterinario');
+  const podeEmitir = permiteEmissao && temPerfil('Administrador', 'Veterinario');
+  const navigate = useNavigate();
 
   const [form, setForm] = useState<Estado>(atendimento ? estadoAPartirDe(atendimento) : ESTADO_INICIAL);
   const [atendimentoSalvo, setAtendimentoSalvo] = useState<Atendimento | null>(atendimento);
 
-  // Registrada a partir do tratamento, a sessão só existe depois de salva a evolução.
+  // A sessão sempre existe antes do registro: as fotos e os vídeos vão direto para ela.
   const sessaoId = atendimentoSalvo?.sessaoId ?? sessao?.sessaoId ?? atendimento?.sessaoId ?? '';
-  const [sessoesPendentes, setSessoesPendentes] = useState<Sessao[] | null>(null);
-  // Vazio: sessão de agora, sem agendamento.
-  const [sessaoEscolhida, setSessaoEscolhida] = useState('');
   const [editando, setEditando] = useState(!!atendimento && corrigir);
   const [midias, setMidias] = useState<Midia[]>(atendimento?.midias ?? []);
-  // Tratamento da sessão: dá o nome e o número que a nova evolução vai receber.
-  const [tratamento, setTratamento] = useState<Tratamento | null>(tratamentoDoProntuario);
+  // Tratamento da sessão: dá o nome e o número que o novo registro vai receber.
+  const [tratamento, setTratamento] = useState<Tratamento | null>(null);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [enviandoMidia, setEnviandoMidia] = useState(false);
   const [houveAlteracao, setHouveAlteracao] = useState(false);
-  // Fotos e vídeos escolhidos antes de salvar, quando a sessão ainda não existe.
-  const [midiasPendentes, setMidiasPendentes] = useState<MidiaPendente[]>([]);
+  // Receita ou pedido de exame desta sessão: o registro dá lugar ao formulário de emissão.
+  const [emitindo, setEmitindo] = useState(false);
 
   const campoArquivo = useRef<HTMLInputElement>(null);
-  const urlsCriadas = useRef<string[]>([]);
 
-  // As pré-visualizações locais são liberadas quando o modal fecha.
-  useEffect(() => {
-    const urls = urlsCriadas.current;
-    return () => urls.forEach((url) => URL.revokeObjectURL(url));
-  }, []);
-
-  // Aberto pela agenda, a sessão pode já ter evolução: nesse caso o modal abre em modo resumo.
+  // A sessão pode já ter o atendimento registrado: nesse caso o modal abre em modo resumo.
   useEffect(() => {
     if (!sessao) {
       return;
@@ -231,7 +166,7 @@ function Formulario({
 
     let ativo = true;
 
-    async function carregarExistente(item: ItemAgenda) {
+    async function carregarExistente(item: SessaoParaRegistro) {
       try {
         const [{ data }, { data: doTratamento }] = await Promise.all([
           api.get<Atendimento | null>(`/api/atendimentos/sessao/${item.sessaoId}`),
@@ -260,33 +195,6 @@ function Formulario({
       ativo = false;
     };
   }, [sessao]);
-
-  // Aberto pelo tratamento: as sessões agendadas e ainda sem evolução podem ser escolhidas.
-  useEffect(() => {
-    if (!tratamentoDoProntuario) {
-      return;
-    }
-
-    let ativo = true;
-
-    api
-      .get<Sessao[]>(`/api/sessoes/tratamento/${tratamentoDoProntuario.id}`)
-      .then(({ data }) => {
-        if (!ativo) return;
-
-        const pendentes = sessoesARegistrar(data);
-        setSessoesPendentes(pendentes);
-        setSessaoEscolhida(pendentes[0]?.id ?? '');
-      })
-      .catch(() => {
-        // Sem a lista, ainda dá para registrar a sessão de agora.
-        if (ativo) setSessoesPendentes([]);
-      });
-
-    return () => {
-      ativo = false;
-    };
-  }, [tratamentoDoProntuario]);
 
   function atualizar<T extends keyof Estado>(campo: T, valor: Estado[T]) {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -367,100 +275,24 @@ function Formulario({
         setHouveAlteracao(true);
         setAviso('Registro da sessão corrigido. A versão anterior foi preservada no histórico.');
       } else {
-        // Pela agenda, a sessão já vem escolhida; pelo tratamento, é a sessão agendada
-        // escolhida ou, sem ela, a sessão de agora, que a API cria já concluída.
-        const origem = sessaoId
-          ? { sessaoId }
-          : sessaoEscolhida
-            ? { sessaoId: sessaoEscolhida }
-            : { tratamentoId: tratamentoDoProntuario?.id };
-
         const { data } = await api.post<Atendimento>('/api/atendimentos', {
-          ...origem,
+          sessaoId,
           ...campos,
           observacaoInterna: form.observacaoInterna.trim() || null,
           concluirSessao: true,
         });
 
+        // As fotos anexadas antes de salvar já estão na sessão e vêm junto com o registro.
         setAtendimentoSalvo(data);
+        setMidias(data.midias);
         setHouveAlteracao(true);
-
-        // Os arquivos escolhidos antes de salvar seguem agora para a sessão registrada.
-        const { enviadas, falharam } = await enviarPendentes(data);
-        setMidias([...enviadas, ...data.midias]);
-
-        setAviso(
-          enviadas.length > 0
-            ? `Sessão nº ${data.numeroSessao} registrada e concluída, com ${enviadas.length} ${enviadas.length === 1 ? 'arquivo anexado' : 'arquivos anexados'}.`
-            : `Sessão nº ${data.numeroSessao} registrada e concluída. Você ainda pode anexar fotos e vídeos desta sessão.`,
-        );
-
-        if (falharam.length > 0) {
-          setErro(`A sessão foi salva, mas não foi possível anexar: ${falharam.join(', ')}. Tente anexar de novo.`);
-        }
+        setAviso(`Atendimento registrado: sessão nº ${data.numeroSessao}, concluída.`);
       }
     } catch (falha) {
       setErro(mensagemDeErro(falha, 'Não foi possível salvar a sessão.'));
     } finally {
       setSalvando(false);
     }
-  }
-
-  /** Envia, depois do registro, os arquivos escolhidos enquanto a sessão ainda não existia. */
-  async function enviarPendentes(registro: Atendimento): Promise<{ enviadas: Midia[]; falharam: string[] }> {
-    const enviadas: Midia[] = [];
-    const falharam: string[] = [];
-
-    for (const pendente of midiasPendentes) {
-      const corpo = new FormData();
-      corpo.append('sessaoId', registro.sessaoId);
-      corpo.append('atendimentoId', registro.id);
-      corpo.append('arquivo', pendente.arquivo);
-
-      try {
-        const { data } = await api.post<Midia>('/api/midias', corpo);
-        enviadas.unshift(data);
-      } catch {
-        falharam.push(pendente.arquivo.name);
-      }
-    }
-
-    setMidiasPendentes([]);
-    return { enviadas, falharam };
-  }
-
-  /** Com a sessão registrada, o arquivo vai direto; antes disso, espera o salvamento. */
-  function escolherArquivo(arquivo: File) {
-    if (campoArquivo.current) campoArquivo.current.value = '';
-
-    if (sessaoId) {
-      enviarMidia(arquivo);
-      return;
-    }
-
-    const problema = problemaDoArquivo(arquivo);
-
-    if (problema) {
-      setErro(problema);
-      return;
-    }
-
-    const url = URL.createObjectURL(arquivo);
-    urlsCriadas.current.push(url);
-
-    setMidiasPendentes((atual) => [
-      ...atual,
-      {
-        chave: `${arquivo.name}-${arquivo.lastModified}-${atual.length}`,
-        arquivo,
-        url,
-        video: ['.mp4', '.mov'].includes(extensaoDe(arquivo.name)),
-      },
-    ]);
-  }
-
-  function retirarPendente(chave: string) {
-    setMidiasPendentes((atual) => atual.filter((p) => p.chave !== chave));
   }
 
   /** HU-010: upload de mídia vinculada à sessão. */
@@ -488,6 +320,20 @@ function Formulario({
     }
   }
 
+  /** Depois da emissão, o usuário vai para a aba do documento: no prontuário aberto ou abrindo-o. */
+  function concluirEmissao(tipo: TipoDeEmissao, mensagem: string) {
+    setEmitindo(false);
+
+    if (aoEmitirDocumento) {
+      aoEmitirDocumento(tipo, mensagem);
+      return;
+    }
+
+    if (atendimentoSalvo) {
+      navigate(`/prontuario/${atendimentoSalvo.pacienteId}?aba=${ABA_DA_EMISSAO[tipo]}`, { state: { aviso: mensagem } });
+    }
+  }
+
   async function removerMidia(id: string) {
     if (!(await confirmarExclusao('Remover este arquivo da sessão? Ele deixa de aparecer no prontuário.', 'Remover'))) {
       return;
@@ -504,10 +350,12 @@ function Formulario({
 
   const cabecalho = sessao
     ? `${sessao.nomePaciente} · ${sessao.nomeTutor}`
-    : descricao ?? (atendimentoSalvo ? atendimentoSalvo.nomePaciente : '');
+    : atendimentoSalvo
+      ? atendimentoSalvo.nomePaciente
+      : '';
   const mostrarFormulario = !atendimentoSalvo || editando;
 
-  // Número e tratamento da evolução: o registrado, ou o que a próxima vai receber.
+  // Número e tratamento do registro: o registrado, ou o que o próximo vai receber.
   const nomeTratamento = atendimentoSalvo?.nomeTratamento || tratamento?.nome || '';
   const numeroSessao = atendimentoSalvo?.numeroSessao ?? (tratamento ? tratamento.evolucoesRegistradas + 1 : null);
 
@@ -516,7 +364,26 @@ function Formulario({
       ? 'Corrigir registro da sessão'
       : atendimentoSalvo
         ? `Sessão nº ${atendimentoSalvo.numeroSessao}`
-        : 'Registrar sessão realizada';
+        : 'Registrar atendimento';
+
+  if (emitindo && atendimentoSalvo) {
+    return (
+      <ModalReceitaOuExame
+        sessao={{
+          id: atendimentoSalvo.id,
+          data: atendimentoSalvo.dataRegistro,
+          numeroSessao: atendimentoSalvo.numeroSessao,
+          tratamentoId: atendimentoSalvo.tratamentoId,
+          nomeTratamento: nomeTratamento,
+          nomeVeterinario: atendimentoSalvo.nomeVeterinario,
+          pacienteId: atendimentoSalvo.pacienteId,
+          nomePaciente: atendimentoSalvo.nomePaciente || sessao?.nomePaciente || '',
+        }}
+        aoFechar={() => setEmitindo(false)}
+        aoSalvar={concluirEmissao}
+      />
+    );
+  }
 
   return (
     <Modal
@@ -530,8 +397,14 @@ function Formulario({
       }}
       largura="max-w-3xl"
     >
-      {(nomeTratamento || numeroSessao) && (
+      {(nomeTratamento || numeroSessao || sessao) && (
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          {sessao && !atendimentoSalvo && (
+            <span>
+              Sessão de <strong className="text-slate-800">{formatarData(sessao.dataHora)}</strong>,{' '}
+              {formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}
+            </span>
+          )}
           {nomeTratamento && (
             <span>
               Tratamento: <strong className="text-slate-800">{nomeTratamento}</strong>
@@ -580,21 +453,19 @@ function Formulario({
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">
-            {podeEmitirReceita &&
-              (aoEmitirReceita ? (
-                <button type="button" className="vc-botao-secundario" onClick={() => aoEmitirReceita(atendimentoSalvo)}>
-                  <Pill size={15} />
-                  Emitir receita desta sessão
-                </button>
-              ) : (
-                <Link
-                  to={`/prontuario/${atendimentoSalvo.pacienteId}?aba=medicacao&evolucao=${atendimentoSalvo.id}`}
-                  className="vc-botao-secundario"
-                >
-                  <Pill size={15} />
-                  Emitir receita desta sessão
-                </Link>
-              ))}
+            {podeEmitir && (
+              <button
+                type="button"
+                className="vc-botao-secundario"
+                onClick={() => {
+                  setAviso('');
+                  setEmitindo(true);
+                }}
+              >
+                <ClipboardPlus size={15} />
+                Receita ou pedido de exame
+              </button>
+            )}
 
             {exibirLinkDoProntuario && (
               <Link to={`/prontuario/${atendimentoSalvo.pacienteId}`} className="vc-botao-secundario">
@@ -619,34 +490,6 @@ function Formulario({
         </div>
       ) : (
         <form onSubmit={aoEnviar} className="space-y-4" noValidate>
-          {tratamentoDoProntuario && !atendimentoSalvo && (
-            <Campo
-              rotulo="Sessão"
-              obrigatorio
-              dica={
-                sessoesPendentes === null
-                  ? 'Buscando as sessões agendadas deste tratamento...'
-                  : sessoesPendentes.length > 0
-                    ? 'Sessões agendadas até hoje e ainda não registradas. Se a sessão não estava agendada, escolha a de agora.'
-                    : 'Nenhuma sessão agendada pendente: a sessão de agora entra na agenda já concluída.'
-              }
-            >
-              <select
-                className="vc-campo"
-                value={sessaoEscolhida}
-                onChange={(e) => setSessaoEscolhida(e.target.value)}
-                disabled={sessoesPendentes === null}
-              >
-                {sessoesPendentes?.map((pendente) => (
-                  <option key={pendente.id} value={pendente.id}>
-                    Agendada para {formatarDataHora(pendente.dataHora)} · {pendente.nomeVeterinario}
-                  </option>
-                ))}
-                <option value="">Sessão de agora, sem agendamento</option>
-              </select>
-            </Campo>
-          )}
-
           <Campo rotulo="Procedimentos realizados" obrigatorio dica="Separe os procedimentos por vírgula.">
             <input
               className="vc-campo"
@@ -835,7 +678,7 @@ function Formulario({
             </button>
             <button type="submit" className="vc-botao-primario" disabled={salvando}>
               {salvando && <Loader2 className="animate-spin" size={16} />}
-              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar sessão'}
+              {editando && atendimentoSalvo ? 'Salvar correção' : 'Salvar atendimento'}
             </button>
           </div>
         </form>
@@ -855,7 +698,7 @@ function Formulario({
               className="sr-only"
               accept={FORMATOS_DE_MIDIA.join(',')}
               disabled={enviandoMidia || salvando}
-              onChange={(e) => e.target.files?.[0] && escolherArquivo(e.target.files[0])}
+              onChange={(e) => e.target.files?.[0] && enviarMidia(e.target.files[0])}
             />
           </label>
         </div>
@@ -868,46 +711,7 @@ function Formulario({
           </div>
         )}
 
-        {/* Antes de a sessão existir, os arquivos ficam aqui e seguem junto com o registro. */}
-        {midiasPendentes.length > 0 && (
-          <ul className="mb-3 grid gap-3 sm:grid-cols-3">
-            {midiasPendentes.map((pendente) => (
-              <li key={pendente.chave} className="relative overflow-hidden rounded-xl border border-dashed border-brand-300">
-                {pendente.video ? (
-                  <video src={pendente.url} controls className="h-32 w-full bg-slate-900 object-cover" />
-                ) : (
-                  <img src={pendente.url} alt={pendente.arquivo.name} className="h-32 w-full object-cover" />
-                )}
-
-                <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs text-slate-600" title={pendente.arquivo.name}>
-                      {pendente.arquivo.name}
-                    </span>
-                    <span className="block text-[11px] font-medium text-brand">Enviado ao salvar a sessão</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => retirarPendente(pendente.chave)}
-                    className="shrink-0 rounded p-1 text-slate-400 hover:bg-perigo-claro hover:text-perigo"
-                    aria-label={`Retirar ${pendente.arquivo.name}`}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {!sessaoId ? (
-          midiasPendentes.length === 0 && (
-            <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-              Anexe fotos e vídeos da sessão: eles são enviados junto com o registro, ao salvar. Formatos aceitos:
-              JPG, PNG, WEBP, MP4 e MOV (até 25 MB).
-            </p>
-          )
-        ) : midias.length === 0 ? (
+        {midias.length === 0 ? (
           <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
             Nenhum arquivo anexado a esta sessão. Formatos aceitos: JPG, PNG, WEBP, MP4 e MOV (até 25 MB).
           </p>

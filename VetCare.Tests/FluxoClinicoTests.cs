@@ -12,8 +12,8 @@ namespace VetCare.Tests
 {
     /// <summary>
     /// Fluxo clínico do animal: Animal → Avaliações → Tratamentos vinculados às avaliações →
-    /// Evoluções vinculadas aos tratamentos. Receitas e pedidos de exame nascem de uma avaliação;
-    /// receitas também de uma evolução.
+    /// Evoluções vinculadas aos tratamentos. Receitas e pedidos de exame nascem de uma avaliação ou
+    /// de uma sessão registrada e ficam ligados ao tratamento para o qual foram feitos.
     /// </summary>
     public class FluxoClinicoTests : BaseDeTeste
     {
@@ -98,6 +98,7 @@ namespace VetCare.Tests
             new PrescricaoRepository(Contexto),
             new AvaliacaoRepository(Contexto),
             new AtendimentoRepository(Contexto),
+            new TratamentoRepository(Contexto),
             new PetRepository(Contexto),
             new ProntuarioRepository(Contexto),
             new VeterinarioRepository(Contexto),
@@ -108,6 +109,8 @@ namespace VetCare.Tests
         private GerenciarPedidosExameUseCase CasoDeExames(UsuarioAtual usuarioAtual) => new(
             new PedidoExameRepository(Contexto),
             new AvaliacaoRepository(Contexto),
+            new AtendimentoRepository(Contexto),
+            new TratamentoRepository(Contexto),
             new PetRepository(Contexto),
             new ProntuarioRepository(Contexto),
             new VeterinarioRepository(Contexto),
@@ -121,6 +124,7 @@ namespace VetCare.Tests
             new PetRepository(Contexto),
             new TratamentoRepository(Contexto),
             new SessaoRepository(Contexto),
+            new ClinicaRepository(Contexto),
             new VacinaRepository(Contexto),
             new PrescricaoRepository(Contexto),
             new PedidoExameRepository(Contexto),
@@ -154,13 +158,14 @@ namespace VetCare.Tests
             SessoesPrevistas = 12
         };
 
-        private async Task<Sessao> SessaoDe(Guid tratamentoId, int diasAtras)
+        private async Task<Sessao> SessaoDe(Guid tratamentoId, int diasAtras, Guid? veterinarioId = null)
         {
             var sessao = new Sessao
             {
                 TratamentoId = tratamentoId,
-                VeterinarioId = Veterinario.Id,
+                VeterinarioId = veterinarioId ?? Veterinario.Id,
                 DataHora = DateTime.UtcNow.AddDays(-diasAtras),
+                DataHoraFim = DateTime.UtcNow.AddDays(-diasAtras).AddHours(1),
                 Status = StatusSessao.Confirmada
             };
 
@@ -360,7 +365,9 @@ namespace VetCare.Tests
             var segunda = await CasoDeReceitas(ComoVeterinario()).Emitir(daEvolucao);
 
             segunda.Sucesso.Should().BeTrue(segunda.Mensagem);
-            segunda.Dados!.Origem.Should().Be("Sessão nº 1 — Reabilitação de teste");
+            segunda.Dados!.Origem.Should().StartWith("Sessão nº 1 de ");
+            segunda.Dados.TratamentoId.Should().Be(Tratamento.Id, "a receita da sessão é do tratamento da sessão");
+            segunda.Dados.NomeTratamento.Should().Be("Reabilitação de teste");
         }
 
         [Fact]
@@ -521,6 +528,238 @@ namespace VetCare.Tests
                 "o pedido é assinado por quem o emite");
         }
 
+        // ------------------------------------------------------------------ vínculo com o tratamento
+
+        private async Task<Tratamento> OutroTratamento(Guid pacienteId, Guid avaliacaoId, string status = StatusTratamento.EmAndamento)
+        {
+            var tratamento = new Tratamento
+            {
+                PacienteId = pacienteId,
+                AvaliacaoId = avaliacaoId,
+                VeterinarioId = Veterinario.Id,
+                DataInicio = DateTime.UtcNow.AddDays(-5),
+                Nome = "Hidroterapia",
+                Tipo = "Hidroterapia",
+                Descricao = "Esteira aquática",
+                SessoesPrevistas = 8,
+                Status = status
+            };
+
+            Contexto.Tratamentos.Add(tratamento);
+            await Contexto.SaveChangesAsync();
+            return tratamento;
+        }
+
+        [Fact]
+        public async Task Pedido_de_exame_nasce_da_sessao_ligado_ao_tratamento_dela()
+        {
+            var evolucao = await EvolucaoEm(Tratamento.Id, diasAtras: 1);
+
+            var resultado = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                AtendimentoId = evolucao.Id,
+                Exames = "Radiografia do joelho direito",
+                Justificativa = "Dor após a sessão"
+            });
+
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            var pedido = resultado.Dados!;
+            pedido.AtendimentoId.Should().Be(evolucao.Id);
+            pedido.NumeroSessao.Should().Be(1);
+            pedido.Origem.Should().StartWith("Sessão nº 1 de ");
+            pedido.TratamentoId.Should().Be(Tratamento.Id);
+            pedido.NomeTratamento.Should().Be("Reabilitação de teste");
+            pedido.AvaliacaoId.Should().Be(Avaliacao.Id, "a avaliação é a que originou o tratamento da sessão");
+
+            var prontuario = await CasoDeProntuario(ComoVeterinario()).Executar(Paciente.Id);
+            prontuario.Dados!.Avaliacoes.Single().QuantidadePedidosExame.Should().Be(0,
+                "o pedido feito na sessão não conta como pedido da avaliação");
+            prontuario.Dados.Historico.Single(e => e.Categoria == LinhaDoTempo.Categorias.Exame)
+                .TratamentoId.Should().Be(Tratamento.Id);
+        }
+
+        [Fact]
+        public async Task Pedido_de_exame_exige_uma_unica_origem()
+        {
+            var evolucao = await EvolucaoEm(Tratamento.Id, diasAtras: 1);
+
+            var semOrigem = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO { Exames = "Hemograma" });
+            var duasOrigens = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                AvaliacaoId = Avaliacao.Id,
+                AtendimentoId = evolucao.Id,
+                Exames = "Hemograma"
+            });
+
+            semOrigem.Falha.Should().Be(TipoFalha.Validacao);
+            duasOrigens.Falha.Should().Be(TipoFalha.Validacao);
+            semOrigem.Mensagem.Should().Contain("origem do pedido");
+            Contexto.PedidosExame.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Receita_e_pedido_da_sessao_ficam_no_tratamento_da_sessao()
+        {
+            var evolucao = await EvolucaoEm(Tratamento.Id, diasAtras: 1);
+            var outro = await OutroTratamento(Paciente.Id, Avaliacao.Id);
+
+            var receita = ReceitaDe(Paciente.Id);
+            receita.AtendimentoId = evolucao.Id;
+            receita.TratamentoId = outro.Id;
+
+            var daReceita = await CasoDeReceitas(ComoVeterinario()).Emitir(receita);
+            var doPedido = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                AtendimentoId = evolucao.Id,
+                TratamentoId = outro.Id,
+                Exames = "Hemograma"
+            });
+
+            daReceita.Falha.Should().Be(TipoFalha.Validacao);
+            daReceita.Mensagem.Should().Be(VinculoComTratamento.MensagemDaSessao);
+            doPedido.Falha.Should().Be(TipoFalha.Validacao);
+            Contexto.Prescricoes.Should().BeEmpty();
+            Contexto.PedidosExame.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Receita_da_avaliacao_pode_ser_ligada_a_um_tratamento_ativo_do_animal()
+        {
+            var comTratamento = ReceitaDe(Paciente.Id);
+            comTratamento.AvaliacaoId = Avaliacao.Id;
+            comTratamento.TratamentoId = Tratamento.Id;
+
+            var ligada = await CasoDeReceitas(ComoVeterinario()).Emitir(comTratamento);
+
+            ligada.Sucesso.Should().BeTrue(ligada.Mensagem);
+            ligada.Dados!.TratamentoId.Should().Be(Tratamento.Id);
+            ligada.Dados.NomeTratamento.Should().Be("Reabilitação de teste");
+            Contexto.RegistrosAuditoria.Should().Contain(r =>
+                r.EntidadeId == ligada.Dados.Id && r.Detalhe.Contains("para o tratamento Reabilitação de teste"));
+
+            var semTratamento = ReceitaDe(Paciente.Id);
+            semTratamento.AvaliacaoId = Avaliacao.Id;
+
+            var avulsa = await CasoDeReceitas(ComoVeterinario()).Emitir(semTratamento);
+
+            avulsa.Sucesso.Should().BeTrue(avulsa.Mensagem);
+            avulsa.Dados!.TratamentoId.Should().BeNull("na avaliação, o vínculo com um tratamento é opcional");
+            avulsa.Dados.NomeTratamento.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Receita_nao_se_liga_a_tratamento_de_outro_animal_nem_a_tratamento_encerrado()
+        {
+            var avaliacaoDoOutro = new AvaliacaoClinica
+            {
+                PacienteId = _pacienteDoOutro.Id,
+                ProntuarioId = Contexto.Prontuarios.Single(p => p.PacienteId == _pacienteDoOutro.Id).Id,
+                VeterinarioId = _outroVeterinario.Id,
+                MotivoConsulta = "Vômitos",
+                Observacoes = "Há dois dias",
+                DiagnosticoPossivel = "Gastrite"
+            };
+            Contexto.AvaliacoesClinicas.Add(avaliacaoDoOutro);
+            await Contexto.SaveChangesAsync();
+
+            var deOutroAnimal = await OutroTratamento(_pacienteDoOutro.Id, avaliacaoDoOutro.Id);
+            var concluido = await OutroTratamento(Paciente.Id, Avaliacao.Id, StatusTratamento.Concluido);
+
+            var receitaDoOutro = ReceitaDe(Paciente.Id);
+            receitaDoOutro.AvaliacaoId = Avaliacao.Id;
+            receitaDoOutro.TratamentoId = deOutroAnimal.Id;
+
+            var receitaEncerrada = ReceitaDe(Paciente.Id);
+            receitaEncerrada.AvaliacaoId = Avaliacao.Id;
+            receitaEncerrada.TratamentoId = concluido.Id;
+
+            var primeira = await CasoDeReceitas(ComoVeterinario()).Emitir(receitaDoOutro);
+            var segunda = await CasoDeReceitas(ComoVeterinario()).Emitir(receitaEncerrada);
+
+            primeira.Falha.Should().Be(TipoFalha.Validacao);
+            primeira.Mensagem.Should().Contain("não pertence a este paciente");
+            segunda.Falha.Should().Be(TipoFalha.Validacao);
+            segunda.Mensagem.Should().Contain("planejado ou em andamento");
+            Contexto.Prescricoes.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Pedido_da_avaliacao_corrigido_troca_ou_tira_o_tratamento()
+        {
+            var pedido = await PedidoEmitido();
+            pedido.TratamentoId.Should().BeNull();
+
+            var ligado = await CasoDeExames(ComoVeterinario()).Atualizar(pedido.Id, new AtualizarPedidoExameDTO
+            {
+                Exames = pedido.Exames,
+                TratamentoId = Tratamento.Id
+            });
+
+            ligado.Sucesso.Should().BeTrue(ligado.Mensagem);
+            ligado.Dados!.NomeTratamento.Should().Be("Reabilitação de teste");
+
+            // Concluído depois, o tratamento já ligado continua aceito numa nova correção.
+            Tratamento.Status = StatusTratamento.Concluido;
+            await Contexto.SaveChangesAsync();
+
+            var mantido = await CasoDeExames(ComoVeterinario()).Atualizar(pedido.Id, new AtualizarPedidoExameDTO
+            {
+                Exames = "Hemograma completo",
+                TratamentoId = Tratamento.Id
+            });
+
+            mantido.Sucesso.Should().BeTrue(mantido.Mensagem);
+            mantido.Dados!.TratamentoId.Should().Be(Tratamento.Id);
+
+            var desligado = await CasoDeExames(ComoVeterinario()).Atualizar(pedido.Id, new AtualizarPedidoExameDTO
+            {
+                Exames = "Hemograma completo"
+            });
+
+            desligado.Sucesso.Should().BeTrue(desligado.Mensagem);
+            desligado.Dados!.TratamentoId.Should().BeNull();
+            Contexto.VersoesRegistrosClinicos.Count(v => v.RegistroId == pedido.Id).Should().Be(3);
+        }
+
+        [Fact]
+        public async Task Pedido_da_sessao_nao_troca_de_origem_nem_de_tratamento()
+        {
+            var evolucao = await EvolucaoEm(Tratamento.Id, diasAtras: 1);
+
+            var emitido = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                AtendimentoId = evolucao.Id,
+                Exames = "Hemograma"
+            });
+
+            var retorno = await CasoDeAvaliacao(ComoVeterinario()).Executar(new CriarAvaliacaoDTO
+            {
+                PacienteId = Paciente.Id,
+                MotivoConsulta = "Retorno",
+                Observacoes = "Sem dor",
+                DiagnosticoPossivel = "Evolução favorável"
+            });
+
+            var outraOrigem = await CasoDeExames(ComoVeterinario()).Atualizar(emitido.Dados!.Id, new AtualizarPedidoExameDTO
+            {
+                AvaliacaoId = retorno.Dados!.Id,
+                Exames = "Hemograma"
+            });
+
+            outraOrigem.Falha.Should().Be(TipoFalha.Validacao);
+            outraOrigem.Mensagem.Should().Contain("feito em uma sessão");
+
+            var corrigido = await CasoDeExames(ComoVeterinario()).Atualizar(emitido.Dados.Id, new AtualizarPedidoExameDTO
+            {
+                Exames = "Hemograma completo"
+            });
+
+            corrigido.Sucesso.Should().BeTrue(corrigido.Mensagem);
+            corrigido.Dados!.Exames.Should().Be("Hemograma completo");
+            corrigido.Dados.AtendimentoId.Should().Be(evolucao.Id);
+            corrigido.Dados.TratamentoId.Should().Be(Tratamento.Id, "o pedido da sessão fica com o tratamento da sessão");
+        }
+
         // ------------------------------------------------------------------ linha do tempo
 
         [Fact]
@@ -649,11 +888,11 @@ namespace VetCare.Tests
             doOutro.Dados!.Total.Should().Be(1);
         }
 
-        // ------------------------------------------------------------------ sessão sem agendamento
+        // ------------------------------------------------------------------ registro do atendimento
 
-        private static CriarAtendimentoDTO EvolucaoDoTratamento(Guid tratamentoId) => new()
+        private static CriarAtendimentoDTO AtendimentoDa(Guid? sessaoId) => new()
         {
-            TratamentoId = tratamentoId,
+            SessaoId = sessaoId,
             TecnicasAplicadas = "Hidroterapia",
             EscalaDor = 3,
             EvolucaoClinica = "Esteira aquática por 15 minutos",
@@ -661,63 +900,42 @@ namespace VetCare.Tests
         };
 
         [Fact]
-        public async Task Sessao_sem_agendamento_e_registrada_direto_no_tratamento()
+        public async Task Registro_do_atendimento_exige_uma_sessao_cadastrada()
         {
-            var planejado = await CasoDeTratamentos(ComoVeterinario()).Cadastrar(TratamentoDe(Avaliacao.Id, "Hidroterapia"));
+            var sessoesAntes = Contexto.Sessoes.Count();
 
-            var resultado = await CasoDeEvolucoes(ComoVeterinario()).Executar(EvolucaoDoTratamento(planejado.Dados!.Id));
+            var semSessao = await CasoDeEvolucoes(ComoVeterinario()).Executar(AtendimentoDa(null));
 
-            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
-            resultado.Dados!.NumeroSessao.Should().Be(1);
-            resultado.Dados.TratamentoId.Should().Be(planejado.Dados.Id);
-
-            // A sessão nasce concluída, na agenda de quem atendeu e no momento do registro.
-            var sessao = await Contexto.Sessoes.FindAsync(resultado.Dados.SessaoId);
-            sessao!.Status.Should().Be(StatusSessao.Concluida);
-            sessao.VeterinarioId.Should().Be(Veterinario.Id);
-            sessao.DataHora.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1));
-
-            // A primeira evolução tira o tratamento do planejamento.
-            (await Contexto.Tratamentos.FindAsync(planejado.Dados.Id))!.Status.Should().Be(StatusTratamento.EmAndamento);
-
-            var segunda = await CasoDeEvolucoes(ComoVeterinario()).Executar(EvolucaoDoTratamento(planejado.Dados.Id));
-
-            segunda.Dados!.NumeroSessao.Should().Be(2);
+            semSessao.Sucesso.Should().BeFalse();
+            semSessao.Falha.Should().Be(TipoFalha.Validacao);
+            semSessao.Mensagem.Should().Contain("cadastradas no tratamento");
+            Contexto.Sessoes.Count().Should().Be(sessoesAntes, "o registro nunca cria sessão: elas nascem só do cadastro");
         }
 
         [Fact]
-        public async Task Colega_registra_sessao_sem_agendamento_em_nome_proprio()
+        public async Task Colega_registra_o_atendimento_da_sessao_da_propria_agenda_em_nome_proprio()
         {
-            var resultado = await CasoDeEvolucoes(ComoOutroVeterinario()).Executar(EvolucaoDoTratamento(Tratamento.Id));
+            // A sessão do paciente da colega está na agenda de quem cobre a ausência.
+            var sessao = await SessaoDe(Tratamento.Id, diasAtras: 0, veterinarioId: _outroVeterinario.Id);
+
+            var resultado = await CasoDeEvolucoes(ComoOutroVeterinario()).Executar(AtendimentoDa(sessao.Id));
 
             resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
             resultado.Dados!.VeterinarioId.Should().Be(_outroVeterinario.Id);
-            (await Contexto.Sessoes.FindAsync(resultado.Dados.SessaoId))!.VeterinarioId.Should().Be(_outroVeterinario.Id);
+            resultado.Dados.SessaoId.Should().Be(sessao.Id);
         }
 
         [Fact]
-        public async Task Evolucao_exige_a_sessao_ou_o_tratamento()
+        public async Task Tratamento_concluido_nao_recebe_registro_de_atendimento()
         {
-            var dto = EvolucaoDoTratamento(Tratamento.Id);
-            dto.TratamentoId = null;
-
-            var resultado = await CasoDeEvolucoes(ComoVeterinario()).Executar(dto);
-
-            resultado.Sucesso.Should().BeFalse();
-            resultado.Falha.Should().Be(TipoFalha.Validacao);
-        }
-
-        [Fact]
-        public async Task Tratamento_concluido_nao_recebe_sessao_sem_agendamento()
-        {
+            var sessao = await SessaoDe(Tratamento.Id, diasAtras: 1);
             await CasoDeTratamentos(ComoVeterinario()).Atualizar(Tratamento.Id, new AtualizarTratamentoDTO { Status = StatusTratamento.Concluido });
-            var sessoesAntes = Contexto.Sessoes.Count();
 
-            var resultado = await CasoDeEvolucoes(ComoVeterinario()).Executar(EvolucaoDoTratamento(Tratamento.Id));
+            var resultado = await CasoDeEvolucoes(ComoVeterinario()).Executar(AtendimentoDa(sessao.Id));
 
             resultado.Sucesso.Should().BeFalse();
             resultado.Falha.Should().Be(TipoFalha.Conflito);
-            Contexto.Sessoes.Count().Should().Be(sessoesAntes, "o registro recusado não deixa sessão na agenda");
+            Contexto.Atendimentos.Count().Should().Be(0);
         }
 
         // ------------------------------------------------------------------ telas de cadastro

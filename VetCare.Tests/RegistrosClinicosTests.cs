@@ -63,6 +63,7 @@ namespace VetCare.Tests
                 TratamentoId = tratamentoId ?? Tratamento.Id,
                 VeterinarioId = Veterinario.Id,
                 DataHora = DateTime.UtcNow.AddDays(diasAFrente),
+                DataHoraFim = DateTime.UtcNow.AddDays(diasAFrente).AddHours(1),
                 Status = StatusSessao.Confirmada
             };
 

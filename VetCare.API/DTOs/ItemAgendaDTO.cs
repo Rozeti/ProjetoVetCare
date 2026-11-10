@@ -7,6 +7,7 @@ namespace VetCare.API.DTOs
         public Guid TratamentoId { get; set; }
         public Guid VeterinarioId { get; set; }
         public DateTime DataHora { get; set; }
+        public DateTime DataHoraFim { get; set; }
         public string NomePaciente { get; set; } = string.Empty;
         public string NomeTutor { get; set; } = string.Empty;
         public string NomeVeterinario { get; set; } = string.Empty;

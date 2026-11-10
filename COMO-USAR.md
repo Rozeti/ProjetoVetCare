@@ -617,19 +617,32 @@ Faça nesta ordem, porque cada passo depende do anterior:
    *Não existe "Novo tratamento" solto: todo tratamento nasce de uma avaliação. Na aba
    Tratamentos ele mostra a avaliação de origem, e os botões editar, concluir e inativar —
    inativar não apaga nada e pode ser desfeito; concluir é definitivo.*
-6. **Prontuário → Tratamentos → Registrar sessão** (no cartão do tratamento). É assim que a
-   sessão de fisioterapia realizada é registrada: preencha procedimentos, o que foi feito,
-   reação do animal, observações, relatório e sinais vitais, anexe fotos e vídeos (já dá para
-   escolher antes de salvar: eles seguem junto com o registro) e salve.
-   *O sistema numera as sessões sozinho (1, 2, 3...), a barra do tratamento avança e a primeira
-   sessão registrada põe um tratamento planejado em andamento. No campo "Sessão" aparecem as
-   sessões agendadas até hoje e ainda não registradas; se a sessão não estava agendada,
-   escolha "Sessão de agora, sem agendamento", que entra na agenda já concluída. Todas as
-   sessões do animal ficam na aba **Sessões** do prontuário, que também tem o botão
-   **Registrar sessão**, e no menu **Sessões**, onde você escolhe o animal e o tratamento.*
-   Para marcar as próximas sessões, use **Agenda geral → Nova sessão**.
-   *Tente marcar outra sessão no mesmo horário do mesmo veterinário: o sistema recusa — é a
-   RN-002. Na agenda, cada sessão também tem o botão **Registrar sessão**.*
+6. **Prontuário → Tratamentos → clique no tratamento → Cadastrar sessões.** Cada tratamento
+   aparece numa linha resumida; clicar nela mostra os detalhes, as ações e as sessões dele.
+   Informe **quantas sessões** (já vem a quantidade prevista no tratamento), **a partir de**
+   quando, os **dias da semana** e o **horário** de início e de término. À direita aparecem as
+   datas exatas das sessões; confira e clique em **Cadastrar N sessões**.
+   *O horário de término é obrigatório: o sistema sugere o término pela duração padrão da
+   clínica, mas você pode mudar. Se um dia do plano estiver ocupado ou bloqueado (marque um
+   bloqueio na agenda do veterinário para ver), a prévia avisa e leva a sessão para o próximo
+   dia escolhido, sem perder a quantidade. Precisou de mais sessões no meio do tratamento?
+   Abra o tratamento e use **Adicionar sessões**: o formulário já vem com o mesmo horário e os
+   mesmos dias, a partir do dia seguinte à última sessão. Se passar do previsto, a prévia avisa
+   que o tratamento vai prever mais sessões. Quando todas as sessões cadastradas forem
+   realizadas, o tratamento oferece **Adicionar sessões** ou **Concluir tratamento**. Esse é
+   o único lugar onde se cadastram sessões: as agendas e o menu Sessões não têm esse botão.
+   Na lista, a sessão de hoje fica no topo, depois as próximas e, por último, as anteriores,
+   da mais recente para a mais antiga.*
+   Quando a sessão acontecer, clique em **Registrar atendimento** nela (na lista de sessões do
+   tratamento, na aba Sessões do prontuário ou na agenda): preencha procedimentos, o que foi
+   feito, reação do animal, observações, relatório e sinais vitais, anexe fotos e vídeos e
+   salve.
+   *O sistema numera as sessões realizadas sozinho (1, 2, 3...), a barra do tratamento avança
+   e o primeiro atendimento põe um tratamento planejado em andamento. Para um atendimento que
+   não estava previsto, cadastre a sessão no tratamento e registre o atendimento nela. Uma
+   sessão cadastrada por engano pode ser **inativada** (ícone de desligar, com motivo
+   opcional): ela sai da agenda e das contagens e libera o horário; o botão **Reativar** a
+   traz de volta. Sessão com atendimento registrado não é inativada.*
 7. **Prontuário → Vacinação → Registrar.** Lance uma vacina com data da próxima dose.
    *Marque "Faz parte de um esquema com várias doses" e informe "dose 1 de 3": o sistema exige que a
    dose 2 venha depois da 1 e recusa uma dose 2 sem a 1 lançada. Escolha a recorrência
@@ -642,24 +655,38 @@ Faça nesta ordem, porque cada passo depende do anterior:
    *Os alertas aparecem lado a lado no topo do prontuário e, resumidos, na lista de pacientes
    e em "Meus pets" do tutor. Um alerta inativado some da tela mas fica na auditoria.*
 9. **Entre como o veterinário → Agenda → Bloqueios.** Marque férias ou um congresso.
-   *Volte ao administrador e tente agendar uma sessão dentro do período: o sistema recusa.*
+   *Volte ao administrador e tente cadastrar uma sessão dentro do período: o sistema recusa.*
 10. **Entre como Apoio administrativo** (crie um usuário com esse perfil) e vá em **Agenda
     geral**: a recepção confirma e cancela sessões, mas não as conclui, que é tarefa do
     veterinário.
 11. **Prontuário → Avaliações → Emitir receita** (ou **Medicação → Nova receita**, escolhendo
-    a origem). Adicione dois medicamentos, escolha o **veterinário responsável** e emita.
-    Depois clique em imprimir.
-    *Toda receita vem de uma avaliação ou de uma sessão — a sessão registrada também tem o
-    botão "Emitir receita desta sessão". A validade vai de 1 a 365 dias; cancelar uma receita
-    pede o motivo. No mesmo cartão da avaliação, **Pedir exames** gera o pedido de exames, que
-    fica na aba Exames e também pode ser impresso. Lá, o lápis edita o pedido e a lixeira o
+    a origem). Adicione dois medicamentos, escolha o **veterinário responsável** e o
+    **tratamento** e emita. Depois clique em imprimir.
+    *Toda receita vem de uma avaliação ou de uma sessão. Na avaliação, o tratamento é
+    opcional e já vem escolhido quando ela originou um único tratamento ativo. Na aba
+    Medicação, cada receita mostra o tratamento para o qual foi prescrita (clique no nome para
+    abrir o tratamento) e a origem; com receitas de mais de um tratamento, aparece um filtro
+    no topo da lista. A validade vai de 1 a 365 dias; cancelar uma receita pede o motivo. No
+    mesmo cartão da avaliação, **Pedir exames** gera o pedido de exames, que fica na aba Exames,
+    também com o tratamento, e pode ser impresso. Lá, o lápis edita o pedido e a lixeira o
     exclui de vez, depois de confirmar; a exclusão aparece na Auditoria.*
+    *Na sessão registrada, **Ver registro → Receita ou pedido de exame** abre um formulário
+    só: escolha **Receita de medicamento** ou **Pedido de exame**, preencha e emita. Você vai
+    direto para a aba Medicação ou Exames do prontuário, com o documento novo no topo, ligado
+    à sessão e ao tratamento dela.*
 12. **Prontuário → Linha do tempo.** Clique num evento para abrir o registro completo.
     *Cada evento mostra à esquerda a data (e a hora) em que foi feito. Os campos **De** e
     **Até** filtram por período, e os botões de categoria filtram por tipo — por exemplo,
-    desligue "Sessão" para ver só avaliações, tratamentos, vacinas, receitas e exames.*
-13. **Menu Sessões** (administrador e veterinário). Filtre por animal, tratamento, período,
-    veterinário e número da sessão; clique numa linha para abrir a sessão.
+    desligue "Sessão" para ver só avaliações, tratamentos, vacinas, receitas e exames. A
+    linha do tempo não usa uma cor para cada tipo: quem diz o que é cada evento são o ícone e
+    o nome.*
+13. **Menu Sessões** (administrador e veterinário). As abas separam as sessões pela situação:
+    **Agendadas**, **Aguardando registro** (já passaram e o atendimento não foi registrado),
+    **Realizadas**, **Canceladas** e **Inativadas**, cada uma com a contagem. Filtre por
+    animal, tratamento, veterinário e período.
+    *Daqui você abre o registro do atendimento, inativa ou reativa uma sessão e vai ao
+    tratamento no prontuário (ícone de link). A tela não cadastra sessões: isso é feito no
+    tratamento.*
 
 > Sobre o campo "Veterinário responsável": ele aparece para você porque está logado como
 > administrador, que não é um profissional habilitado a prescrever. A receita é um documento

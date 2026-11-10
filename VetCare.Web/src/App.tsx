@@ -14,7 +14,7 @@ import { Agenda } from './pages/Agenda';
 import { AgendaGeral } from './pages/AgendaGeral';
 import { Pacientes } from './pages/Pacientes';
 import { Prontuario } from './pages/Prontuario';
-import { Evolucoes } from './pages/Evolucoes';
+import { Sessoes } from './pages/Sessoes';
 import { Tutores } from './pages/Tutores';
 import { Usuarios } from './pages/Usuarios';
 import { Mensagens } from './pages/Mensagens';
@@ -140,7 +140,7 @@ export default function App() {
               path="/sessoes"
               element={
                 <Protegida perfis={['Administrador', 'Veterinario']}>
-                  <Evolucoes />
+                  <Sessoes />
                 </Protegida>
               }
             />

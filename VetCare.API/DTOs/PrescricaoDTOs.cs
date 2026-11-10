@@ -17,6 +17,13 @@ namespace VetCare.API.DTOs
         public Guid? AvaliacaoId { get; set; }
 
         public Guid? AtendimentoId { get; set; }
+
+        /// <summary>
+        /// Tratamento para o qual a receita é prescrita. Na receita de uma sessão é sempre o da
+        /// própria sessão (pode ser omitido); na de uma avaliação é opcional.
+        /// </summary>
+        public Guid? TratamentoId { get; set; }
+
         public DateTime? ValidaAte { get; set; }
 
         [StringLength(2000, ErrorMessage = "As orientações devem ter no máximo 2000 caracteres.")]
@@ -70,8 +77,12 @@ namespace VetCare.API.DTOs
         public Guid? AvaliacaoId { get; set; }
         public Guid? AtendimentoId { get; set; }
 
-        /// <summary>Descrição da origem, por exemplo "Avaliação de 12/04/2026" ou "Evolução nº 3 — RPG".</summary>
+        /// <summary>Descrição da origem, por exemplo "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026".</summary>
         public string Origem { get; set; } = string.Empty;
+
+        /// <summary>Tratamento para o qual a receita foi prescrita; vazio quando não há vínculo.</summary>
+        public Guid? TratamentoId { get; set; }
+        public string NomeTratamento { get; set; } = string.Empty;
 
         public List<ItemPrescricaoDTO> Itens { get; set; } = new();
     }

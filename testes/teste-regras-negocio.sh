@@ -108,17 +108,110 @@ TRATID=$(jsonval "$r" id)
 checa "tratamento criado a partir da avaliação (planejado)" "Planejado" "$r"
 checa "tratamento guarda a avaliação de origem" "\"avaliacaoId\":\"$AVALID\"" "$r"
 
-FUTURO=$(date -u -d "+3 days 13:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v+3d +%Y-%m-%dT13:00:00)
-r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$FUTURO\"}")
+# Cadastro de sessões: no tratamento, uma ou várias de uma vez, sempre com início e término.
+# sessao INICIO FIM -> o item da lista "sessoes" do cadastro
+sessao() { printf '{"inicio":"%s","fim":"%s"}' "$1" "$2"; }
+cadastrar_sessoes() { post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"sessoes\":[$1]}"; }
+em() { date -u -d "$1" +%Y-%m-%dT%H:%M:%S; }
+
+FUTURO=$(em "+3 days 13:00")
+FUTURO_FIM=$(em "+3 days 14:00")
+r=$(cadastrar_sessoes "{\"inicio\":\"$FUTURO\"}")
+checa "o horário de término da sessão é obrigatório" "rmino de cada sess" "$r"
+
+r=$(cadastrar_sessoes "$(sessao "$FUTURO_FIM" "$FUTURO")")
+checa "término antes do início é recusado" "depois do in" "$r"
+
+r=$(cadastrar_sessoes "$(sessao "$FUTURO" "$FUTURO_FIM")")
 SESSAOID=$(jsonval "$r" id)
 checa "HU-004 CA-1 reserva aguardando confirmação" "Aguardando confirma" "$r"
+checa "a sessão guarda o horário de término" "\"dataHoraFim\":\"" "$r"
 
-r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$FUTURO\"}")
-checa "HU-004 CA-2 / RN-002 conflito de horário" "indispon" "$r"
+r=$(cadastrar_sessoes "$(sessao "$(em "+3 days 13:30")" "$(em "+3 days 14:30")")")
+checa "HU-004 CA-2 / RN-002 conflito de horário (intervalos sobrepostos)" "indispon" "$r"
 
-PASSADO=$(date -u -d "-2 days 10:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v-2d +%Y-%m-%dT10:00:00)
-r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$PASSADO\"}")
-checa "HU-004 CA-5 agendamento retroativo bloqueado" "passad" "$r"
+PASSADO=$(em "-2 days 10:00")
+r=$(cadastrar_sessoes "$(sessao "$PASSADO" "$(em "-2 days 11:00")")")
+checa "HU-004 CA-5 cadastro retroativo bloqueado" "passad" "$r"
+
+# Várias sessões num cadastro só: ou entram todas, ou nenhuma.
+LOTE1=$(em "+8 days 09:00"); LOTE1_FIM=$(em "+8 days 10:00")
+LOTE2=$(em "+9 days 09:00"); LOTE2_FIM=$(em "+9 days 10:00")
+r=$(cadastrar_sessoes "$(sessao "$LOTE1" "$LOTE1_FIM"),$(sessao "$LOTE2" "$LOTE2_FIM")")
+checa "várias sessões cadastradas de uma vez" "2" "$(grep -o '"situacao":"Agendada"' <<<"$r" | wc -l | tr -d ' ')"
+SESSAOLOTE=$(jsonval "$r" id)
+
+r=$(cadastrar_sessoes "$(sessao "$(em "+11 days 09:00")" "$(em "+11 days 10:00")"),$(sessao "$LOTE2" "$LOTE2_FIM")")
+checa "cadastro com uma sessão em conflito não grava nenhuma" "indispon" "$r"
+r=$(get "/api/sessoes/tratamento/$TRATID" "$ADMIN")
+if grep -q "$(em "+11 days 09:00" | cut -c1-16)" <<<"$r"; then
+  echo "  FALHA o cadastro recusado não deixou sessão gravada"; falhou=$((falhou+1))
+else
+  echo "  OK   o cadastro recusado não deixou sessão gravada"; ok=$((ok+1))
+fi
+
+r=$(cadastrar_sessoes "$(sessao "$(em "+12 days 09:00")" "$(em "+12 days 10:00")"),$(sessao "$(em "+12 days 09:30")" "$(em "+12 days 10:30")")")
+checa "sessões do mesmo cadastro não se sobrepõem" "sobrep" "$r"
+
+# O plano de sessões: quantidade, dias da semana e horário viram datas na prévia (nada é
+# gravado); as datas da prévia são cadastradas de uma vez e, além do previsto, ampliam o plano.
+numero() { grep -o "\"$2\":[0-9]*" <<<"$1" | head -1 | sed 's/.*://'; }
+previa() { get "/api/sessoes/previa?tratamentoId=$TRATID&veterinarioId=$VETID&$1" "$ADMIN"; }
+
+A_PARTIR=$(date -u -d "+60 days" +%Y-%m-%d)
+r=$(previa "quantidade=4&aPartirDe=$A_PARTIR&horaInicio=11:00&horaFim=12:00&diasDaSemana=1&diasDaSemana=3")
+checa "prévia do plano monta as datas pelos dias da semana" "4" "$(grep -o '"inicio"' <<<"$r" | wc -l | tr -d ' ')"
+checa "prévia mostra o efeito no total previsto" '"novoTotalPrevisto"' "$r"
+
+r=$(previa "quantidade=2&aPartirDe=$A_PARTIR&horaInicio=06:00&horaFim=07:00&diasDaSemana=2")
+checa "prévia recusa horário fora do expediente" "A clínica atende" "$r"
+
+r=$(previa "quantidade=2&aPartirDe=$A_PARTIR&horaInicio=11:00&horaFim=12:00")
+checa "prévia exige ao menos um dia da semana" "dia da semana" "$r"
+
+TRAT_ANTES=$(get "/api/tratamentos/$TRATID" "$ADMIN")
+PREVISTAS=$(numero "$TRAT_ANTES" sessoesPrevistas)
+CADASTRADAS=$(numero "$TRAT_ANTES" totalSessoes)
+EXTRAS=$(( PREVISTAS - CADASTRADAS + 2 ))
+r=$(previa "quantidade=$EXTRAS&aPartirDe=$A_PARTIR&horaInicio=16:00&horaFim=17:00&diasDaSemana=1&diasDaSemana=2&diasDaSemana=3&diasDaSemana=4&diasDaSemana=5")
+checa "prévia avisa que o plano vai crescer" "\"novoTotalPrevisto\":$(( CADASTRADAS + EXTRAS ))" "$r"
+DATAS=$(grep -o '"sessoes":\[[^]]*\]' <<<"$r")
+r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",$DATAS}")
+checa "as datas da prévia são cadastradas de uma vez" "$EXTRAS" "$(grep -o '"situacao":"Agendada"' <<<"$r" | wc -l | tr -d ' ')"
+r=$(get "/api/tratamentos/$TRATID" "$ADMIN")
+checa "sessões além do previsto ampliam o plano do tratamento" "\"sessoesPrevistas\":$(( CADASTRADAS + EXTRAS ))" "$r"
+
+echo "== Gestão de sessões: situação e inativação =="
+r=$(get "/api/sessoes?tratamentoId=$TRATID&situacao=Agendada" "$ADMIN")
+checa "gestão de sessões filtra pela situação" "\"id\":\"$SESSAOLOTE\"" "$r"
+checa "gestão de sessões traz as contagens por situação" "\"contagens\"" "$r"
+
+r=$(get "/api/sessoes?situacao=Qualquer" "$ADMIN")
+checa "situação inválida é recusada" "inválida" "$r"
+
+r=$(patch "/api/sessoes/$SESSAOLOTE/inativar" "$ADMIN" '{"motivo":"Cadastrada em dobro"}')
+checa "sessão sem atendimento é inativada" "Sessão inativada" "$r"
+
+r=$(get "/api/sessoes?tratamentoId=$TRATID&situacao=Inativada" "$ADMIN")
+checa "a sessão inativada aparece entre as inativadas" "\"id\":\"$SESSAOLOTE\"" "$r"
+
+r=$(get "/api/sessoes/agenda/$VETID?visao=dia&data=${LOTE1%%T*}" "$ADMIN")
+if grep -q "$SESSAOLOTE" <<<"$r"; then
+  echo "  FALHA a sessão inativada sai da agenda"; falhou=$((falhou+1))
+else
+  echo "  OK   a sessão inativada sai da agenda"; ok=$((ok+1))
+fi
+
+r=$(cadastrar_sessoes "$(sessao "$LOTE1" "$LOTE1_FIM")")
+OCUPANTE=$(jsonval "$r" id)
+checa "o horário da sessão inativada fica livre" "\"situacao\":\"Agendada\"" "$r"
+
+r=$(patch "/api/sessoes/$SESSAOLOTE/reativar" "$ADMIN" '{}')
+checa "reativar exige o horário ainda livre" "já está ocupado" "$r"
+
+patch "/api/sessoes/$OCUPANTE/inativar" "$ADMIN" '{}' > /dev/null
+r=$(patch "/api/sessoes/$SESSAOLOTE/reativar" "$ADMIN" '{}')
+checa "sessão inativada é reativada" "Sessão reativada" "$r"
 
 # A semana consultada é a da sessão recém-criada: em quinta, sexta ou sábado ela cai na
 # semana seguinte, e a visão da semana corrente viria vazia sem que nada estivesse errado.
@@ -143,18 +236,19 @@ r=$(get "/api/tratamentos/$TRATID" "$ADMIN")
 checa "a primeira evolução põe o tratamento em andamento" "Em Andamento" "$r"
 
 r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\",\"reacaoAnimal\":\"z\"}")
-checa "uma sessão é registrada uma única vez" "já foi registrada" "$r"
+checa "uma sessão é registrada uma única vez" "já foi registrado" "$r"
 
-# Sessão realizada sem agendamento: a evolução nasce do tratamento, e a sessão entra na
-# agenda já concluída.
+# O atendimento é registrado sempre numa sessão cadastrada no tratamento: não existe mais
+# registro "sem agendamento", que criava a sessão por fora do cadastro.
 r=$(post /api/atendimentos "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"Cinesioterapia\",\"escalaDor\":3,\"evolucaoClinica\":\"Exercícios de propriocepção\",\"reacaoAnimal\":\"Colaborativo\"}")
-checa "sessão sem agendamento registrada direto no tratamento" "\"numeroSessao\":2" "$r"
-SESSAOLIVRE=$(jsonval "$r" sessaoId)
-r=$(get "/api/sessoes/tratamento/$TRATID" "$ADMIN")
-checa "a sessão sem agendamento entra na agenda já concluída" "Conclu" "$(grep -o "\"id\":\"$SESSAOLIVRE\"[^}]*" <<<"$r")"
+checa "registro do atendimento exige uma sessão cadastrada" "Informe a sess" "$r"
 
-r=$(post /api/atendimentos "$ADMIN" "{\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\",\"reacaoAnimal\":\"z\"}")
-checa "evolução exige a sessão ou o tratamento" "sessão agendada" "$r"
+r=$(patch "/api/sessoes/$SESSAOID/inativar" "$ADMIN" '{}')
+checa "sessão com atendimento registrado não é inativada" "prontuário" "$r"
+
+r=$(patch "/api/sessoes/$SESSAOLOTE/inativar" "$ADMIN" '{}')
+r=$(post /api/atendimentos "$ADMIN" "{\"sessaoId\":\"$SESSAOLOTE\",\"veterinarioId\":\"$VETID\",\"tecnicasAplicadas\":\"x\",\"escalaDor\":3,\"evolucaoClinica\":\"y\",\"reacaoAnimal\":\"z\"}")
+checa "sessão inativada não recebe registro de atendimento" "inativada" "$r"
 
 r=$(get "/api/atendimentos?tratamentoId=$TRATID" "$ADMIN")
 checa "evoluções filtradas pelo tratamento" "\"nomeTratamento\":\"Reabilitação" "$r"
@@ -165,10 +259,21 @@ checa "receita sem origem é recusada" "origem da receita" "$r"
 
 r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"atendimentoId\":\"$ATENDID\",\"itens\":[{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
 checa "receita emitida a partir da sessão registrada" "Sessão nº 1" "$r"
+checa "receita da sessão fica no tratamento da sessão" "\"tratamentoId\":\"$TRATID\"" "$r"
+
+r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"avaliacaoId\":\"$AVALID\",\"tratamentoId\":\"$TRATID\",\"itens\":[{\"medicamento\":\"Condroitina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
+checa "receita da avaliação ligada ao tratamento escolhido" "\"nomeTratamento\":\"Reabilita" "$r"
 
 r=$(post /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"exames\":\"Raio-X do joelho\",\"justificativa\":\"Controle pós-operatório\"}")
 checa "pedido de exame emitido a partir da avaliação" "\"avaliacaoId\":\"$AVALID\"" "$r"
 PEDIDOID=$(jsonval "$r" id)
+
+r=$(post /api/pedidos-exame "$ADMIN" "{\"atendimentoId\":\"$ATENDID\",\"exames\":\"Raio-X de controle\",\"justificativa\":\"Dor após a sessão\"}")
+checa "pedido de exame feito na sessão registrada" "Sessão nº 1" "$r"
+checa "pedido da sessão fica no tratamento da sessão" "\"tratamentoId\":\"$TRATID\"" "$r"
+
+r=$(post /api/pedidos-exame "$ADMIN" '{"exames":"Hemograma"}')
+checa "pedido de exame sem origem é recusado" "origem do pedido" "$r"
 
 r=$(put "/api/pedidos-exame/$PEDIDOID" "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"exames\":\"Ultrassonografia do joelho\",\"justificativa\":\"Avaliar o menisco\"}")
 checa "pedido de exame editado" "Ultrassonografia do joelho" "$r"
@@ -216,8 +321,7 @@ r=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/observacoes-internas/pacien
 checa "RN-003 rota de observações fechada ao tutor (403)" "403" "$r"
 
 echo "== HU-006 / RN-009 confirmação e cancelamento =="
-FUTURO3=$(date -u -d "+5 days 14:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v+5d +%Y-%m-%dT14:00:00)
-r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$FUTURO3\"}")
+r=$(cadastrar_sessoes "$(sessao "$(em "+5 days 14:00")" "$(em "+5 days 15:00")")")
 SESSAO_CONF=$(jsonval "$r" id)
 r=$(patch "/api/sessoes/$SESSAO_CONF/status" "$TUTORTK" '{"status":"Confirmada"}')
 checa "HU-006 CA-1 tutor confirma presença" "Confirmada" "$r"
@@ -225,14 +329,12 @@ checa "HU-006 CA-1 tutor confirma presença" "Confirmada" "$r"
 r=$(patch "/api/sessoes/$SESSAOID/status" "$TUTORTK" '{"status":"Confirmada"}')
 checa "sessão concluída não aceita novo status" "já foi concluída" "$r"
 
-FUTURO2=$(date -u -d "+10 days 15:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v+10d +%Y-%m-%dT15:00:00)
-r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$FUTURO2\"}")
+r=$(cadastrar_sessoes "$(sessao "$(em "+10 days 15:00")" "$(em "+10 days 16:00")")")
 SESSAO2=$(jsonval "$r" id)
 r=$(patch "/api/sessoes/$SESSAO2/status" "$TUTORTK" '{"status":"Cancelada"}')
 checa "HU-006 CA-2 cancelamento dentro do prazo" "Cancelada" "$r"
 
-PROXIMO=$(date -u -d "+2 hours" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -v+2H +%Y-%m-%dT%H:%M:%S)
-r=$(post /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"veterinarioId\":\"$VETID\",\"dataHora\":\"$PROXIMO\"}")
+r=$(cadastrar_sessoes "$(sessao "$(em "+2 hours")" "$(em "+2 hours 45 minutes")")")
 SESSAO3=$(jsonval "$r" id)
 if [ -n "$SESSAO3" ]; then
   r=$(patch "/api/sessoes/$SESSAO3/status" "$TUTORTK" '{"status":"Cancelada"}')

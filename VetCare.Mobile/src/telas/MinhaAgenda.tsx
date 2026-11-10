@@ -17,7 +17,7 @@ import type { Sessao } from '../tipos';
 import { Alerta, Cartao, Carregando, Etiqueta, SemDados } from '../componentes/ui';
 import { Icone } from '../componentes/Icone';
 import { cores, espacos, estiloStatusSessao, raios } from '../tema';
-import { formatarDataExtensa, formatarHora } from '../utils/formato';
+import { formatarDataExtensa, formatarHora, formatarIntervalo } from '../utils/formato';
 
 /** HU-006 e HU-013, CA-3: agenda dos pets do tutor, com confirmação e cancelamento. */
 export function MinhaAgenda() {
@@ -57,8 +57,9 @@ export function MinhaAgenda() {
   function confirmar(sessao: Sessao) {
     Alert.alert(
       'Confirmar presença',
-      `Confirmar a presença de ${sessao.nomePaciente} em ${formatarDataExtensa(sessao.dataHora)} às ${formatarHora(
+      `Confirmar a presença de ${sessao.nomePaciente} em ${formatarDataExtensa(sessao.dataHora)}, das ${formatarIntervalo(
         sessao.dataHora,
+        sessao.dataHoraFim,
       )}?`,
       [
         { text: 'Voltar', style: 'cancel' },
@@ -172,7 +173,7 @@ export function MinhaAgenda() {
                 </View>
 
                 <Text style={estilos.dataSessao}>
-                  {formatarDataExtensa(sessao.dataHora)} às {formatarHora(sessao.dataHora)}
+                  {formatarDataExtensa(sessao.dataHora)}, das {formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}
                 </Text>
 
                 {sessao.nomeVeterinario ? (

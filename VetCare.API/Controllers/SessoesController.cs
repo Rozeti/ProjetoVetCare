@@ -7,34 +7,86 @@ using VetCare.API.UseCases;
 
 namespace VetCare.API.Controllers
 {
-    /// <summary>HU-004, HU-005 e HU-006: agenda e confirmação de presença em sessão.</summary>
+    /// <summary>
+    /// HU-004, HU-005 e HU-006: cadastro das sessões dos tratamentos, agenda, confirmação de
+    /// presença e a gestão das sessões (situação, inativação e reativação).
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
     public class SessoesController : ControllerBase
     {
-        private readonly AgendarSessaoUseCase _agendar;
+        private readonly CadastrarSessoesUseCase _cadastrar;
+        private readonly GerenciarSessoesUseCase _gerenciar;
         private readonly AtualizarStatusSessaoUseCase _atualizarStatus;
         private readonly ConsultarAgendaUseCase _consultarAgenda;
         private readonly UsuarioAtual _usuarioAtual;
 
         public SessoesController(
-            AgendarSessaoUseCase agendar,
+            CadastrarSessoesUseCase cadastrar,
+            GerenciarSessoesUseCase gerenciar,
             AtualizarStatusSessaoUseCase atualizarStatus,
             ConsultarAgendaUseCase consultarAgenda,
             UsuarioAtual usuarioAtual)
         {
-            _agendar = agendar;
+            _cadastrar = cadastrar;
+            _gerenciar = gerenciar;
             _atualizarStatus = atualizarStatus;
             _consultarAgenda = consultarAgenda;
             _usuarioAtual = usuarioAtual;
         }
 
+        /// <summary>Cadastra uma ou várias sessões de um tratamento, cada uma com início e fim.</summary>
         [HttpPost]
         [Authorize(Roles = Perfis.EquipeClinica)]
-        public async Task<IActionResult> Agendar(AgendarSessaoDTO dto)
+        public async Task<IActionResult> Cadastrar(CadastrarSessoesDTO dto)
         {
-            return this.ResponderCriado(await _agendar.Executar(dto));
+            return this.ResponderCriado(await _cadastrar.Executar(dto));
+        }
+
+        /// <summary>
+        /// Prévia de um plano de sessões: a quantidade, os dias da semana e o horário viram datas,
+        /// pulando as que não cabem na agenda. Nada é gravado, por isso é um GET
+        /// (<c>?diasDaSemana=1&amp;diasDaSemana=3</c>).
+        /// </summary>
+        [HttpGet("previa")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
+        public async Task<IActionResult> Previa([FromQuery] PlanoDeSessoesDTO dto)
+        {
+            return this.Responder(await _cadastrar.Previa(dto));
+        }
+
+        /// <summary>
+        /// Gestão das sessões da clínica, com filtro por animal, tratamento, veterinário, período e
+        /// situação (Agendada, Aguardando registro, Realizada, Cancelada ou Inativada).
+        /// </summary>
+        [HttpGet]
+        [Authorize(Roles = Perfis.AdministradorOuVeterinario)]
+        public async Task<IActionResult> Listar(
+            [FromQuery] Guid? pacienteId,
+            [FromQuery] Guid? tratamentoId,
+            [FromQuery] Guid? veterinarioId,
+            [FromQuery] DateTime? inicio,
+            [FromQuery] DateTime? fim,
+            [FromQuery] string? situacao,
+            [FromQuery] ParametrosPagina paginacao)
+        {
+            return this.Responder(await _gerenciar.Listar(pacienteId, tratamentoId, veterinarioId, inicio, fim, situacao, paginacao));
+        }
+
+        /// <summary>Retira a sessão do plano; ela fica no histórico e pode ser reativada.</summary>
+        [HttpPatch("{id:guid}/inativar")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
+        public async Task<IActionResult> Inativar(Guid id, [FromBody] InativarSessaoDTO? dto)
+        {
+            return this.Responder(await _gerenciar.Inativar(id, dto ?? new InativarSessaoDTO()));
+        }
+
+        [HttpPatch("{id:guid}/reativar")]
+        [Authorize(Roles = Perfis.EquipeClinica)]
+        public async Task<IActionResult> Reativar(Guid id)
+        {
+            return this.Responder(await _gerenciar.Reativar(id));
         }
 
         /// <summary>

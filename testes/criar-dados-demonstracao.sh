@@ -89,9 +89,11 @@ PESOS=(33.4 33.0 32.7)
 DORES=(7 5 3)
 REACOES=("Desconforto no início da esteira; aceitou bem o laser." "Mais tranquilo na água; apoiou o membro em parte do tempo." "Tolerou bem todos os exercícios e apoiou o membro durante a marcha.")
 
+# As sessões são cadastradas no tratamento, com início e término; o atendimento é registrado
+# depois, na sessão cadastrada.
 for i in 0 1 2; do
-  DIA=$(( 3 - i ))
-  r=$(envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"dataHora\":\"$(quando "$DIA" 14:00)\",\"observacoes\":\"Sessão conforme o plano terapêutico.\"}")
+  DIA=$(( i + 1 ))  # em ordem de data: a sessão nº 1 é a primeira da agenda
+  r=$(envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"observacoes\":\"Sessão conforme o plano terapêutico.\",\"sessoes\":[{\"inicio\":\"$(quando "$DIA" 14:00)\",\"fim\":\"$(quando "$DIA" 15:00)\"}]}")
   SESSAO=$(val "$r" id)
 
   if [ -n "$SESSAO" ]; then
@@ -101,23 +103,28 @@ for i in 0 1 2; do
 done
 echo "  3 sessões concluídas e registradas (procedimentos, reação, peso e dor)"
 
-for d in 7 14; do
-  envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"dataHora\":\"$(quando "$d" 13:00)\",\"observacoes\":\"Trazer o pet em jejum de duas horas.\"}" > /dev/null
-done
-echo "  2 sessões futuras aguardando confirmação do tutor"
+# As duas próximas sessões entram num único cadastro, como na tela: um aviso só ao tutor.
+envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"observacoes\":\"Trazer o pet em jejum de duas horas.\",\"sessoes\":[{\"inicio\":\"$(quando 7 13:00)\",\"fim\":\"$(quando 7 14:00)\"},{\"inicio\":\"$(quando 14 13:00)\",\"fim\":\"$(quando 14 14:00)\"}]}" > /dev/null
+echo "  2 sessões futuras cadastradas de uma vez, aguardando confirmação do tutor"
 
 echo "== Receituário e pedidos de exame =="
-# Toda receita tem origem: a avaliação ou a sessão em que foi prescrita.
-envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"avaliacaoId\":\"$AVAL\",\"orientacoes\":\"Suspender exercícios de impacto até a próxima reavaliação. Retornar imediatamente em caso de aumento da claudicação.\",\"itens\":[{\"medicamento\":\"Condroitina + Glucosamina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 60 dias\",\"via\":\"Oral\",\"observacao\":\"Administrar junto com alimento.\"},{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 5 dias\",\"via\":\"Oral\",\"observacao\":\"Não associar a outros anti-inflamatórios.\"}]}" > /dev/null
-echo "  receita com 2 medicamentos emitida a partir da avaliação"
+# Toda receita tem origem (a avaliação ou a sessão em que foi prescrita) e pode ficar ligada ao
+# tratamento para o qual foi feita; a da sessão fica sempre no tratamento da sessão.
+envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"avaliacaoId\":\"$AVAL\",\"tratamentoId\":\"$TRAT\",\"orientacoes\":\"Suspender exercícios de impacto até a próxima reavaliação. Retornar imediatamente em caso de aumento da claudicação.\",\"itens\":[{\"medicamento\":\"Condroitina + Glucosamina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 60 dias\",\"via\":\"Oral\",\"observacao\":\"Administrar junto com alimento.\"},{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 5 dias\",\"via\":\"Oral\",\"observacao\":\"Não associar a outros anti-inflamatórios.\"}]}" > /dev/null
+echo "  receita com 2 medicamentos emitida a partir da avaliação, para o tratamento de reabilitação"
 
 if [ -n "${EVOL:-}" ]; then
   envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"atendimentoId\":\"$EVOL\",\"orientacoes\":\"Usar apenas nos dias de sessão, se houver desconforto após os exercícios.\",\"itens\":[{\"medicamento\":\"Gabapentina 100mg\",\"dosagem\":\"1 cápsula\",\"frequencia\":\"a cada 12 horas\",\"duracao\":\"por 7 dias\",\"via\":\"Oral\"}]}" > /dev/null
   echo "  receita emitida a partir da última sessão registrada"
 fi
 
-envia POST /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVAL\",\"exames\":\"Raio-X do joelho direito em duas incidências\nHemograma completo\",\"justificativa\":\"Controle radiográfico da reconstrução do ligamento e acompanhamento do uso de anti-inflamatório.\"}" > /dev/null
-echo "  pedido de exame emitido a partir da avaliação"
+envia POST /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVAL\",\"tratamentoId\":\"$TRAT\",\"exames\":\"Raio-X do joelho direito em duas incidências\nHemograma completo\",\"justificativa\":\"Controle radiográfico da reconstrução do ligamento e acompanhamento do uso de anti-inflamatório.\"}" > /dev/null
+echo "  pedido de exame emitido a partir da avaliação, para o tratamento de reabilitação"
+
+if [ -n "${EVOL:-}" ]; then
+  envia POST /api/pedidos-exame "$ADMIN" "{\"atendimentoId\":\"$EVOL\",\"exames\":\"Ultrassonografia do joelho direito\",\"justificativa\":\"Desconforto ao apoio no fim da sessão; avaliar menisco e derrame articular.\"}" > /dev/null
+  echo "  pedido de exame feito na última sessão registrada"
+fi
 
 # Uma avaliação também pode não originar tratamento: a de Nina pede só exames.
 r=$(envia POST /api/avaliacoes "$ADMIN" "{\"pacienteId\":\"$PET2\",\"veterinarioId\":\"$VET\",\"motivoConsulta\":\"Check-up anual e perda de apetite há uma semana.\",\"observacoes\":\"Tutor relata que Nina tem comido menos ração seca. Mucosas normocoradas, leve tártaro em pré-molares.\",\"diagnosticoPossivel\":\"Possível doença periodontal; descartar alteração renal.\"}")

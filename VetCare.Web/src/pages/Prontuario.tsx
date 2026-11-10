@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowLeft,
   ClipboardList,
+  ClipboardPlus,
   Download,
   FileText,
   FlaskConical,
@@ -19,6 +20,7 @@ import {
 import { api, mensagemDeErro } from '../services/api';
 import { useAuth } from '../contexts/auth';
 import { useCarregamento } from '../hooks/useCarregamento';
+import { useConfirmacao } from '../hooks/useConfirmacao';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import type {
   Atendimento,
@@ -28,6 +30,8 @@ import type {
   PedidoExame,
   Pet,
   Prontuario as ProntuarioDTO,
+  Sessao,
+  SessaoParaRegistro,
   Tratamento,
 } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, SemDados } from '../components/ui';
@@ -40,12 +44,22 @@ import { ModalTratamento } from './componentes/ModalTratamento';
 import { ModalAlertaClinico } from './componentes/ModalAlertaClinico';
 import { ModalCadastroPaciente } from './componentes/ModalCadastroPaciente';
 import { CarteiraVacinacao } from './componentes/CarteiraVacinacao';
-import { ModalReceita, Receituario, type EvolucaoParaReceita, type OrigemDaReceita } from './componentes/Receituario';
+import { ModalReceita, Receituario } from './componentes/Receituario';
 import { ModalPedidoExame, PedidosExame } from './componentes/PedidosExame';
+import { ModalReceitaOuExame } from './componentes/ModalReceitaOuExame';
+import {
+  ABA_DA_EMISSAO,
+  type OrigemClinica,
+  type SessaoDeOrigem,
+  type SessaoRegistrada,
+  type TipoDeEmissao,
+} from '../utils/vinculoClinico';
 import { LinhaDoTempo, ModalRegistroCompleto } from './componentes/LinhaDoTempoClinica';
 import { AvaliacoesDoPaciente } from './componentes/AvaliacoesDoPaciente';
 import { TratamentosDoPaciente } from './componentes/TratamentosDoPaciente';
 import { SessoesDoPaciente } from './componentes/SessoesDoPaciente';
+import { ModalCadastrarSessoes } from './componentes/ModalCadastrarSessoes';
+import type { AcoesDaSessao } from './componentes/ListaDeSessoes';
 
 type Aba =
   | 'linha-do-tempo'
@@ -83,16 +97,19 @@ const TIPOS_DE_DOCUMENTO = ['Contrato', 'Exame', 'Laudo', 'Outro'];
 
 /**
  * HU-011: prontuário do animal. O fluxo clínico segue animal → avaliações → tratamentos
- * originados das avaliações → evoluções registradas nas sessões de cada tratamento. A linha
- * do tempo reúne os principais eventos; receitas vêm de uma avaliação ou evolução, e pedidos
- * de exame, de uma avaliação.
+ * originados das avaliações → sessões registradas de cada tratamento. A linha do tempo reúne
+ * os principais eventos; receitas e pedidos de exame vêm de uma avaliação ou de uma sessão e
+ * ficam ligados ao tratamento para o qual foram feitos.
  */
 export function Prontuario() {
   const { pacienteId = '' } = useParams();
   const [parametros, setParametros] = useSearchParams();
-  const { podeVerObservacoesInternas, temPerfil, ehTutor } = useAuth();
+  const { podeVerObservacoesInternas, temPerfil, ehTutor, ehVeterinario, usuario } = useAuth();
+  const { confirmar, perguntar } = useConfirmacao();
 
   const podeRegistrar = temPerfil('Administrador', 'Veterinario');
+  // Cadastrar, inativar e reativar sessões é também tarefa da recepção (Apoio).
+  const podeGerirSessoes = temPerfil('Administrador', 'Veterinario', 'Apoio');
   // RN-014: a ficha cadastral do paciente é mantida pela administração; o veterinário
   // registra o conteúdo clínico do prontuário, não o cadastro.
   const podeEditarCadastro = temPerfil('Administrador', 'Apoio');
@@ -112,30 +129,48 @@ export function Prontuario() {
     setParametros(parametros, { replace: true });
   }
 
-  // Atalhos de outras telas ("Emitir receita desta evolução") chegam com a origem na URL.
+  // Endereços antigos do atalho "Emitir receita desta sessão" chegam com a origem na URL.
   const evolucaoDaUrl = parametros.get('evolucao');
   const avaliacaoDaUrl = parametros.get('avaliacao');
-  const origemDaUrl: OrigemDaReceita | null = evolucaoDaUrl
+  const origemDaUrl: OrigemClinica | null = evolucaoDaUrl
     ? { atendimentoId: evolucaoDaUrl }
     : avaliacaoDaUrl
       ? { avaliacaoId: avaliacaoDaUrl }
       : null;
 
-  const [aviso, setAviso] = useState('');
-  const [foco, setFoco] = useState<{ avaliacao?: string; tratamento?: string }>({});
+  // Quem chega de outra tela depois de emitir uma receita ou um pedido de exame traz a confirmação.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [aviso, setAviso] = useState(() => (location.state as { aviso?: string } | null)?.aviso ?? '');
+
+  useEffect(() => {
+    // A confirmação é mostrada uma vez: recarregar a página não a repete.
+    if ((location.state as { aviso?: string } | null)?.aviso) {
+      navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null });
+    }
+  }, [location, navigate]);
+  // "Abrir no prontuário", na tela de Sessões, chega com o tratamento na URL: ele abre expandido e à vista.
+  const tratamentoDaUrl = parametros.get('tratamento');
+  const [foco, setFoco] = useState<{ avaliacao?: string; tratamento?: string }>(() =>
+    tratamentoDaUrl ? { tratamento: tratamentoDaUrl } : {},
+  );
 
   const [modalAvaliacao, setModalAvaliacao] = useState(false);
   const [avaliacaoEmCorrecao, setAvaliacaoEmCorrecao] = useState<Avaliacao | null>(null);
   const [origemDoTratamento, setOrigemDoTratamento] = useState<Avaliacao | null>(null);
   const [tratamentoEmEdicao, setTratamentoEmEdicao] = useState<Tratamento | null>(null);
   const [evolucaoAberta, setEvolucaoAberta] = useState<{ atendimento: Atendimento; corrigir: boolean } | null>(null);
-  // Tratamento cuja sessão realizada está sendo registrada (vira a evolução seguinte dele).
-  const [sessaoDoTratamento, setSessaoDoTratamento] = useState<Tratamento | null>(null);
-  const [receita, setReceita] = useState<{ aberta: boolean; origem: OrigemDaReceita | null }>({ aberta: false, origem: null });
-  // Pedido novo (a partir de uma avaliação) ou em edição.
-  const [pedidoExame, setPedidoExame] = useState<{ aberto: boolean; avaliacaoId?: string; pedido?: PedidoExame }>({
+  // Sessão cadastrada cujo atendimento está sendo registrado.
+  const [sessaoParaRegistro, setSessaoParaRegistro] = useState<SessaoParaRegistro | null>(null);
+  // Tratamento que está recebendo sessões novas.
+  const [cadastroDeSessoes, setCadastroDeSessoes] = useState<Tratamento | null>(null);
+  const [receita, setReceita] = useState<{ aberta: boolean; origem: OrigemClinica | null }>({ aberta: false, origem: null });
+  // Pedido novo (com a origem já escolhida, quando parte de uma avaliação) ou em edição.
+  const [pedidoExame, setPedidoExame] = useState<{ aberto: boolean; origem?: OrigemClinica; pedido?: PedidoExame }>({
     aberto: false,
   });
+  // Receita ou pedido de exame de uma sessão aberta pela linha do tempo.
+  const [emissaoDaSessao, setEmissaoDaSessao] = useState<SessaoDeOrigem | null>(null);
   const [registroAberto, setRegistroAberto] = useState<ItemLinhaTempo | null>(null);
   const [modalAlerta, setModalAlerta] = useState(false);
   const [petEmEdicao, setPetEmEdicao] = useState<Pet | null>(null);
@@ -155,6 +190,17 @@ export function Prontuario() {
     setErro,
     recarregar,
   } = useCarregamento(buscar, 'Não foi possível carregar o prontuário.');
+
+  const prontuarioCarregado = !!prontuario;
+  useEffect(() => {
+    if (!prontuarioCarregado || !tratamentoDaUrl) return;
+
+    const espera = window.setTimeout(
+      () => document.getElementById(`tratamento-${tratamentoDaUrl}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      80,
+    );
+    return () => window.clearTimeout(espera);
+  }, [prontuarioCarregado, tratamentoDaUrl]);
 
   // RN-004: o prontuário é a soma de muitos registros; qualquer um deles que mude na
   // clínica precisa aparecer aqui, inclusive para o tutor que está com a tela aberta.
@@ -305,6 +351,7 @@ export function Prontuario() {
 
   // Registros novos só com o paciente vivo; a correção do que já existe continua possível.
   const podeAgir = podeRegistrar && !prontuario.dataObito;
+  const podeCadastrarSessoes = podeGerirSessoes && !prontuario.dataObito;
 
   const dosesPendentes = prontuario.vacinas.filter(
     (v) => v.situacaoDose === 'Vencida' || v.situacaoDose === 'A vencer',
@@ -313,39 +360,138 @@ export function Prontuario() {
   // Doses vencidas entram nos alertas clínicos, ao lado das alergias e comorbidades.
   const dosesVencidas = prontuario.vacinas.filter((v) => v.situacaoDose === 'Vencida');
 
-  // As sessões registradas (a evolução de cada tratamento), da mais recente à mais antiga.
-  const evolucoes = prontuario.historico.filter((item) => item.categoria === 'Sessão');
-  const evolucoesParaReceita: EvolucaoParaReceita[] = evolucoes.map((item) => ({
-    id: item.id,
-    data: item.data,
-    numeroSessao: item.numeroSessao ?? 0,
-    nomeTratamento: prontuario.tratamentos.find((t) => t.id === item.tratamentoId)?.nome ?? 'Tratamento',
-  }));
+  // As sessões registradas, da mais recente à mais antiga: também originam receitas e pedidos de exame.
+  const sessoesRegistradas: SessaoRegistrada[] = prontuario.historico
+    .filter((item) => item.categoria === 'Sessão')
+    .map((item) => ({
+      id: item.id,
+      data: item.data,
+      numeroSessao: item.numeroSessao ?? 0,
+      tratamentoId: item.tratamentoId ?? '',
+      nomeTratamento: prontuario.tratamentos.find((t) => t.id === item.tratamentoId)?.nome ?? 'Tratamento',
+      nomeVeterinario: item.autor,
+    }));
 
   const abas: { valor: Aba; rotulo: string; contador?: number; alerta?: boolean }[] = [
     { valor: 'linha-do-tempo', rotulo: 'Linha do tempo', contador: prontuario.historico.length },
     { valor: 'avaliacoes', rotulo: 'Avaliações', contador: prontuario.avaliacoes.length },
     { valor: 'tratamentos', rotulo: 'Tratamentos', contador: prontuario.tratamentos.length },
-    { valor: 'sessoes', rotulo: 'Sessões', contador: evolucoes.length },
+    { valor: 'sessoes', rotulo: 'Sessões', contador: prontuario.sessoes.filter((s) => !s.inativa).length },
     { valor: 'vacinas', rotulo: 'Vacinação', contador: dosesPendentes, alerta: dosesPendentes > 0 },
     { valor: 'medicacao', rotulo: 'Medicação', contador: prontuario.prescricoes.length },
     { valor: 'exames', rotulo: 'Exames', contador: prontuario.pedidosExame.length },
     { valor: 'documentos', rotulo: 'Documentos', contador: prontuario.documentos.length },
   ];
 
-  function emitirReceita(origem: OrigemDaReceita) {
+  function emitirReceita(origem: OrigemClinica) {
     setRegistroAberto(null);
     setEvolucaoAberta(null);
-    setSessaoDoTratamento(null);
+    setSessaoParaRegistro(null);
     setReceita({ aberta: true, origem });
+  }
+
+  /** Receita ou pedido de exame a partir de uma sessão registrada, aberta pela linha do tempo. */
+  function emitirDaSessao(atendimentoId: string) {
+    const sessao = sessoesRegistradas.find((s) => s.id === atendimentoId);
+    if (!sessao) return;
+
+    setRegistroAberto(null);
+    setEmissaoDaSessao({ ...sessao, pacienteId, nomePaciente: prontuario!.nomePaciente });
+  }
+
+  /** Depois de emitir pela sessão, o usuário vai para a aba do documento escolhido. */
+  function concluirEmissao(tipo: TipoDeEmissao, mensagem: string) {
+    setEmissaoDaSessao(null);
+    setEvolucaoAberta(null);
+    setSessaoParaRegistro(null);
+    concluido(mensagem);
+    mudarAba(ABA_DA_EMISSAO[tipo]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   /** Fecha o registro da sessão; se algo foi salvo, o prontuário é relido. */
   function fecharEvolucao(salvou: boolean) {
     setEvolucaoAberta(null);
-    setSessaoDoTratamento(null);
+    setSessaoParaRegistro(null);
     if (salvou) recarregar();
   }
+
+  /** Retira a sessão do plano, com um motivo opcional que fica nas observações e na auditoria. */
+  async function inativarSessao(sessao: Sessao) {
+    const resposta = await perguntar({
+      titulo: 'Inativar sessão',
+      mensagem: (
+        <>
+          Inativar a sessão de <strong>{formatarData(sessao.dataHora)}</strong>? Ela sai da agenda e das contagens do
+          tratamento, mas fica no histórico e pode ser reativada. Se ainda ia acontecer, o tutor é avisado.
+        </>
+      ),
+      rotuloConfirmar: 'Inativar',
+      rotuloCancelar: 'Voltar',
+      perigo: true,
+      campoTexto: { rotulo: 'Motivo', placeholder: 'Ex.: cadastrada em dobro' },
+    });
+
+    if (!resposta.confirmado) return;
+
+    try {
+      await api.patch(`/api/sessoes/${sessao.id}/inativar`, { motivo: resposta.texto || null });
+      concluido('Sessão inativada. Ela saiu da agenda e pode ser reativada.');
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível inativar a sessão.'));
+    }
+  }
+
+  async function reativarSessao(sessao: Sessao) {
+    if (
+      !(await confirmar({
+        titulo: 'Reativar sessão',
+        mensagem: `Reativar a sessão de ${formatarData(sessao.dataHora)}? Ela volta ao plano do tratamento, se o horário ainda estiver livre.`,
+        rotuloConfirmar: 'Reativar',
+      }))
+    ) {
+      return;
+    }
+
+    try {
+      await api.patch(`/api/sessoes/${sessao.id}/reativar`);
+      concluido('Sessão reativada.');
+    } catch (falha) {
+      setErro(mensagemDeErro(falha, 'Não foi possível reativar a sessão.'));
+    }
+  }
+
+  /** O registro do atendimento: completo (com fotos e correção) para a equipe clínica; o resumo para os demais. */
+  function abrirRegistroDaSessao(sessao: Sessao) {
+    if (!sessao.atendimentoId) return;
+
+    if (podeRegistrar) {
+      abrirEvolucao(sessao.atendimentoId);
+      return;
+    }
+
+    const item = prontuario!.historico.find((h) => h.categoria === 'Sessão' && h.id === sessao.atendimentoId);
+    if (item) setRegistroAberto(item);
+  }
+
+  const acoesDaSessao: AcoesDaSessao = {
+    aoRegistrar: podeAgir
+      ? (sessao) =>
+          setSessaoParaRegistro({
+            sessaoId: sessao.id,
+            tratamentoId: sessao.tratamentoId,
+            nomePaciente: prontuario.nomePaciente,
+            nomeTutor: prontuario.nomeTutor,
+            dataHora: sessao.dataHora,
+            dataHoraFim: sessao.dataHoraFim,
+          })
+      : undefined,
+    aoAbrirRegistro: abrirRegistroDaSessao,
+    aoInativar: podeCadastrarSessoes ? inativarSessao : undefined,
+    aoReativar: podeCadastrarSessoes ? reativarSessao : undefined,
+    // O veterinário mexe só nas sessões da própria agenda; a API confere de novo.
+    podeAlterar: (sessao) => !ehVeterinario || sessao.veterinarioId === usuario?.veterinarioId,
+  };
 
   function criarTratamento(avaliacao: Avaliacao) {
     setRegistroAberto(null);
@@ -354,7 +500,7 @@ export function Prontuario() {
 
   function pedirExames(avaliacaoId?: string) {
     setRegistroAberto(null);
-    setPedidoExame({ aberto: true, avaliacaoId });
+    setPedidoExame({ aberto: true, origem: avaliacaoId ? { avaliacaoId } : undefined });
   }
 
   function corrigirAvaliacao(avaliacao: Avaliacao) {
@@ -396,13 +542,22 @@ export function Prontuario() {
         return [
           item.tratamentoId &&
             botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
-          podeAgir && botao('Emitir receita', <Pill size={15} />, () => emitirReceita({ atendimentoId: item.id })),
+          podeAgir &&
+            botao('Receita ou pedido de exame', <ClipboardPlus size={15} />, () => emitirDaSessao(item.id)),
           podeRegistrar && botao('Abrir sessão', <Activity size={15} />, () => abrirEvolucao(item.id), true),
         ];
       case 'Receita':
-        return botao('Ver medicação', <Pill size={15} />, () => irPara('medicacao'), true);
+        return [
+          item.tratamentoId &&
+            botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
+          botao('Ver medicação', <Pill size={15} />, () => irPara('medicacao', `receita-${item.id}`), true),
+        ];
       case 'Exame':
-        return botao('Ver pedidos de exame', <FlaskConical size={15} />, () => irPara('exames'), true);
+        return [
+          item.tratamentoId &&
+            botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
+          botao('Ver pedidos de exame', <FlaskConical size={15} />, () => irPara('exames', `pedido-${item.id}`), true),
+        ];
       case 'Vacinação':
         return botao('Abrir carteira de vacinação', <Syringe size={15} />, () => irPara('vacinas'), true);
       default:
@@ -586,15 +741,14 @@ export function Prontuario() {
         <TratamentosDoPaciente
           pacienteId={pacienteId}
           tratamentos={prontuario.tratamentos}
-          evolucoes={evolucoes}
+          sessoes={prontuario.sessoes}
           emFoco={foco.tratamento}
           podeGerenciar={podeAgir}
-          exibeLinkDeEvolucoes={podeRegistrar}
+          exibeLinkDaTelaDeSessoes={podeRegistrar}
           aoEditar={setTratamentoEmEdicao}
-          aoRegistrarSessao={podeAgir ? setSessaoDoTratamento : undefined}
-          aoAbrirEvolucao={setRegistroAberto}
+          aoCadastrarSessoes={podeCadastrarSessoes ? setCadastroDeSessoes : undefined}
+          acoesDaSessao={acoesDaSessao}
           aoVerAvaliacao={verAvaliacao}
-          aoVerHistorico={() => irPara('linha-do-tempo')}
           aoAtualizar={concluido}
           aoFalhar={setErro}
         />
@@ -603,10 +757,9 @@ export function Prontuario() {
       {aba === 'sessoes' && (
         <SessoesDoPaciente
           pacienteId={pacienteId}
-          sessoes={evolucoes}
+          sessoes={prontuario.sessoes}
           tratamentos={prontuario.tratamentos}
-          aoAbrir={setRegistroAberto}
-          aoRegistrar={podeAgir ? setSessaoDoTratamento : undefined}
+          acoesDaSessao={acoesDaSessao}
           exibeLinkDaTela={podeRegistrar}
         />
       )}
@@ -632,6 +785,7 @@ export function Prontuario() {
             if (mensagem) setAviso(mensagem);
             recarregar();
           }}
+          aoVerTratamento={verTratamento}
         />
       )}
 
@@ -639,13 +793,14 @@ export function Prontuario() {
         <PedidosExame
           pedidos={prontuario.pedidosExame}
           nomeClinica={nomeClinica}
-          avaliacoes={prontuario.avaliacoes}
+          temOrigens={prontuario.avaliacoes.length > 0 || sessoesRegistradas.length > 0}
           aoPedir={podeAgir ? () => pedirExames() : undefined}
           aoEditar={podeRegistrar ? (pedido) => setPedidoExame({ aberto: true, pedido }) : undefined}
           aoAtualizar={(mensagem) => {
             if (mensagem) setAviso(mensagem);
             recarregar();
           }}
+          aoVerTratamento={verTratamento}
         />
       )}
 
@@ -770,26 +925,35 @@ export function Prontuario() {
       />
 
       <ModalRegistrarAtendimento
-        key={sessaoDoTratamento?.id ?? evolucaoAberta?.atendimento.id ?? 'nenhuma'}
+        key={sessaoParaRegistro?.sessaoId ?? evolucaoAberta?.atendimento.id ?? 'nenhuma'}
         atendimento={evolucaoAberta?.atendimento}
-        tratamento={sessaoDoTratamento}
+        sessao={sessaoParaRegistro}
         corrigir={evolucaoAberta?.corrigir}
-        descricao={`${prontuario.nomePaciente} · ${prontuario.nomeTutor}`}
-        aoEmitirReceita={(atendimento) => {
-          // A evolução recém-registrada precisa constar entre as origens da receita.
-          recarregar();
-          emitirReceita({ atendimentoId: atendimento.id });
-        }}
-        permiteReceita={podeAgir}
+        aoEmitirDocumento={concluirEmissao}
+        permiteEmissao={podeAgir}
         aoFechar={() => fecharEvolucao(false)}
         aoSalvar={() => fecharEvolucao(true)}
+      />
+
+      <ModalCadastrarSessoes
+        tratamento={cadastroDeSessoes}
+        descricao={`${prontuario.nomePaciente} · ${prontuario.nomeTutor}`}
+        cadastradas={prontuario.sessoes.filter(
+          (s) => s.tratamentoId === cadastroDeSessoes?.id && !s.inativa && s.status !== 'Cancelada',
+        )}
+        aoFechar={() => setCadastroDeSessoes(null)}
+        aoSalvar={(mensagem) => {
+          setCadastroDeSessoes(null);
+          concluido(mensagem);
+        }}
       />
 
       <ModalReceita
         aberto={receita.aberta || (!!origemDaUrl && podeAgir)}
         pacienteId={pacienteId}
         avaliacoes={prontuario.avaliacoes}
-        evolucoes={evolucoesParaReceita}
+        sessoes={sessoesRegistradas}
+        tratamentos={prontuario.tratamentos}
         origem={receita.aberta ? receita.origem : origemDaUrl}
         aoFechar={fecharReceita}
         aoSalvar={(mensagem) => {
@@ -802,7 +966,9 @@ export function Prontuario() {
       <ModalPedidoExame
         aberto={pedidoExame.aberto}
         avaliacoes={prontuario.avaliacoes}
-        avaliacaoId={pedidoExame.avaliacaoId}
+        sessoes={sessoesRegistradas}
+        tratamentos={prontuario.tratamentos}
+        origem={pedidoExame.origem}
         pedido={pedidoExame.pedido}
         aoFechar={() => setPedidoExame({ aberto: false })}
         aoSalvar={(mensagem) => {
@@ -810,6 +976,12 @@ export function Prontuario() {
           concluido(mensagem);
           mudarAba('exames');
         }}
+      />
+
+      <ModalReceitaOuExame
+        sessao={emissaoDaSessao}
+        aoFechar={() => setEmissaoDaSessao(null)}
+        aoSalvar={concluirEmissao}
       />
 
       <ModalAlertaClinico

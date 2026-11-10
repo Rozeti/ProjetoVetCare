@@ -17,7 +17,6 @@ import type { CategoriaLinhaTempo, ItemLinhaTempo } from '../../types';
 import { Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import {
   diaDoEvento,
-  estiloEscalaDor,
   formatarData,
   formatarDataDoEvento,
   formatarDataHora,
@@ -26,25 +25,31 @@ import {
   formatarPeso,
 } from '../../utils/formato';
 
-/** Ícone e cor de cada categoria de evento, os mesmos na lista e no registro completo. */
-const CATEGORIAS: Record<CategoriaLinhaTempo, { Icone: LucideIcon; estilo: string; marcador: string }> = {
-  Avaliação: { Icone: ClipboardList, estilo: 'bg-brand-100 text-brand-dark', marcador: 'bg-brand' },
-  Tratamento: { Icone: Stethoscope, estilo: 'bg-info-claro text-violet-800', marcador: 'bg-info' },
-  Sessão: { Icone: Activity, estilo: 'bg-cyan-100 text-cyan-800', marcador: 'bg-cyan-600' },
-  Cirurgia: { Icone: Scissors, estilo: 'bg-perigo-claro text-red-800', marcador: 'bg-perigo' },
-  Vacinação: { Icone: Syringe, estilo: 'bg-sucesso-claro text-emerald-800', marcador: 'bg-sucesso' },
-  Receita: { Icone: Pill, estilo: 'bg-alerta-claro text-amber-800', marcador: 'bg-alerta' },
-  Exame: { Icone: FlaskConical, estilo: 'bg-indigo-100 text-indigo-800', marcador: 'bg-indigo-600' },
-  Observação: { Icone: Lock, estilo: 'bg-slate-100 text-slate-700', marcador: 'bg-slate-500' },
+/**
+ * Ícone de cada categoria de evento, o mesmo na lista e no registro completo. A linha do tempo
+ * é neutra: as categorias se distinguem pelo ícone e pelo nome, não por cores.
+ */
+const CATEGORIAS: Record<CategoriaLinhaTempo, LucideIcon> = {
+  Avaliação: ClipboardList,
+  Tratamento: Stethoscope,
+  Sessão: Activity,
+  Cirurgia: Scissors,
+  Vacinação: Syringe,
+  Receita: Pill,
+  Exame: FlaskConical,
+  Observação: Lock,
 };
 
 const ORDEM_DAS_CATEGORIAS = Object.keys(CATEGORIAS) as CategoriaLinhaTempo[];
 
+/** Etiqueta neutra para as informações complementares do evento (categoria, dor, peso, edição). */
+const NEUTRA = 'bg-slate-100 text-slate-600';
+
 export function EtiquetaCategoria({ categoria }: { categoria: CategoriaLinhaTempo }) {
-  const { Icone, estilo } = CATEGORIAS[categoria] ?? CATEGORIAS.Observação;
+  const Icone = CATEGORIAS[categoria] ?? CATEGORIAS.Observação;
 
   return (
-    <Etiqueta className={estilo}>
+    <Etiqueta className={NEUTRA}>
       <Icone size={11} />
       {categoria}
     </Etiqueta>
@@ -152,7 +157,7 @@ export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
 
       <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Categorias exibidas na linha do tempo">
         {presentes.map((categoria) => {
-          const { Icone, estilo } = CATEGORIAS[categoria];
+          const Icone = CATEGORIAS[categoria];
           const ativa = !ocultas.has(categoria);
 
           return (
@@ -161,8 +166,10 @@ export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
               type="button"
               aria-pressed={ativa}
               onClick={() => alternar(categoria)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
-                ativa ? estilo : 'bg-white text-slate-400 ring-1 ring-slate-200 hover:text-slate-600'
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${
+                ativa
+                  ? 'bg-white text-slate-700 ring-slate-300 hover:bg-slate-50'
+                  : 'bg-white text-slate-400 line-through ring-slate-200 hover:text-slate-600'
               }`}
             >
               <Icone size={13} />
@@ -200,7 +207,7 @@ export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
         <Card className="overflow-hidden">
           <ol className="divide-y divide-slate-100">
             {visiveis.map((item) => {
-              const { Icone, marcador } = CATEGORIAS[item.categoria] ?? CATEGORIAS.Observação;
+              const Icone = CATEGORIAS[item.categoria] ?? CATEGORIAS.Observação;
               // A vacinação é um dia de calendário: aparece sem hora e sem deslocamento de fuso.
               const vacinacao = item.categoria === 'Vacinação';
 
@@ -220,7 +227,7 @@ export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
                     </time>
 
                     <span
-                      className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${marcador}`}
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
                       aria-hidden="true"
                     >
                       <Icone size={14} />
@@ -229,16 +236,13 @@ export function LinhaDoTempo({ itens, aoSelecionar }: LinhaProps) {
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-semibold text-slate-900">{item.tipo}</span>
-                        <EtiquetaCategoria categoria={item.categoria} />
-                        {item.escalaDor != null && (
-                          <Etiqueta className={estiloEscalaDor(item.escalaDor)}>Dor {item.escalaDor}/10</Etiqueta>
-                        )}
+                        <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{item.categoria}</span>
+                        {item.escalaDor != null && <span className="text-xs text-slate-500">· dor {item.escalaDor}/10</span>}
                         {/* RN-004: a edição é sinalizada, preservando a rastreabilidade. */}
                         {item.editado && (
-                          <Etiqueta className="bg-alerta-claro text-amber-800">
-                            <Pencil size={11} />
-                            Editado
-                          </Etiqueta>
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                            · <Pencil size={11} /> editado
+                          </span>
                         )}
                       </span>
                       <span className="mt-0.5 block truncate text-sm text-slate-700">{item.descricao}</span>
@@ -282,12 +286,10 @@ export function ModalRegistroCompleto({ item, exibeObservacoes, acoes, aoFechar 
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <EtiquetaCategoria categoria={item.categoria} />
-          {item.escalaDor != null && (
-            <Etiqueta className={estiloEscalaDor(item.escalaDor)}>Dor {item.escalaDor}/10</Etiqueta>
-          )}
-          {item.pesoKg != null && <Etiqueta className="bg-slate-100 text-slate-600">{formatarPeso(item.pesoKg)}</Etiqueta>}
+          {item.escalaDor != null && <Etiqueta className={NEUTRA}>Dor {item.escalaDor}/10</Etiqueta>}
+          {item.pesoKg != null && <Etiqueta className={NEUTRA}>{formatarPeso(item.pesoKg)}</Etiqueta>}
           {item.editado && (
-            <Etiqueta className="bg-alerta-claro text-amber-800">
+            <Etiqueta className={NEUTRA}>
               <Pencil size={11} />
               Editado — a versão anterior está no histórico
             </Etiqueta>

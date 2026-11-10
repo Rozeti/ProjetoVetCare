@@ -8,8 +8,9 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// Receituário do paciente. Toda receita nasce de uma avaliação ou de uma evolução, o que
-    /// mantém o histórico clínico rastreável. Assim como os demais registros clínicos, uma
+    /// Receituário do paciente. Toda receita nasce de uma avaliação ou de uma sessão registrada,
+    /// o que mantém o histórico clínico rastreável, e pode ficar ligada ao tratamento para o qual
+    /// foi prescrita (na receita de uma sessão, é sempre o tratamento da sessão). Assim como os demais registros clínicos, uma
     /// receita não é excluída: ela é cancelada, preservando o histórico (RN-004). Emissão e
     /// cancelamento ficam na auditoria: é o documento assinado com CRMV que sai da clínica.
     /// </summary>
@@ -27,6 +28,7 @@ namespace VetCare.API.UseCases
         private readonly IPrescricaoRepository _prescricoes;
         private readonly IAvaliacaoRepository _avaliacoes;
         private readonly IAtendimentoRepository _atendimentos;
+        private readonly ITratamentoRepository _tratamentos;
         private readonly IPetRepository _pets;
         private readonly IProntuarioRepository _prontuarios;
         private readonly IVeterinarioRepository _veterinarios;
@@ -38,6 +40,7 @@ namespace VetCare.API.UseCases
             IPrescricaoRepository prescricoes,
             IAvaliacaoRepository avaliacoes,
             IAtendimentoRepository atendimentos,
+            ITratamentoRepository tratamentos,
             IPetRepository pets,
             IProntuarioRepository prontuarios,
             IVeterinarioRepository veterinarios,
@@ -48,6 +51,7 @@ namespace VetCare.API.UseCases
             _prescricoes = prescricoes;
             _avaliacoes = avaliacoes;
             _atendimentos = atendimentos;
+            _tratamentos = tratamentos;
             _pets = pets;
             _prontuarios = prontuarios;
             _veterinarios = veterinarios;
@@ -189,6 +193,15 @@ namespace VetCare.API.UseCases
                 }
             }
 
+            // O tratamento para o qual a receita é prescrita: o da sessão, ou o escolhido na avaliação.
+            var (tratamento, erroDoTratamento) =
+                await VinculoComTratamento.Resolver(_tratamentos, pet.Id, atendimento, dto.TratamentoId);
+
+            if (erroDoTratamento != null)
+            {
+                return Resultado<PrescricaoDTO>.Invalido(erroDoTratamento);
+            }
+
             var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(dto.PacienteId);
 
             var prescricao = new Prescricao
@@ -198,6 +211,7 @@ namespace VetCare.API.UseCases
                 VeterinarioId = veterinarioId,
                 AvaliacaoId = avaliacao?.Id,
                 AtendimentoId = atendimento?.Id,
+                TratamentoId = tratamento?.Id,
                 ValidaAte = validaAte,
                 Orientacoes = dto.Orientacoes.Trim()
             };
@@ -223,11 +237,13 @@ namespace VetCare.API.UseCases
             prescricao.Veterinario = veterinario;
             prescricao.Avaliacao = avaliacao;
             prescricao.Atendimento = atendimento;
+            prescricao.Tratamento = tratamento;
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Criacao, "Prescricao", prescricao.Id,
                 $"Receita de {pet.Nome} com {prescricao.Itens.Count} item(ns), assinada por {veterinario.Usuario?.Nome} " +
-                $"({DescreverOrigem(prescricao).ToLowerInvariant()})");
+                $"({DescreverOrigem(prescricao).ToLowerInvariant()})" +
+                (tratamento != null ? $", para o tratamento {tratamento.Nome}" : string.Empty));
 
             var usuarioTutor = pet.Tutor?.UsuarioId;
 
@@ -294,7 +310,7 @@ namespace VetCare.API.UseCases
         private static string Limitar(string valor, int tamanho) =>
             valor.Length <= tamanho ? valor : valor[..tamanho];
 
-        /// <summary>"Avaliação de 12/04/2026" ou "Evolução nº 3 — RPG"; vazio nas receitas antigas sem origem.</summary>
+        /// <summary>"Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026"; vazio nas receitas antigas sem origem.</summary>
         public static string DescreverOrigem(Prescricao prescricao)
         {
             if (prescricao.Avaliacao != null)
@@ -304,14 +320,15 @@ namespace VetCare.API.UseCases
 
             if (prescricao.Atendimento != null)
             {
-                var tratamento = prescricao.Atendimento.Tratamento?.Nome;
-                return string.IsNullOrWhiteSpace(tratamento)
-                    ? $"Sessão nº {prescricao.Atendimento.NumeroSessao}"
-                    : $"Sessão nº {prescricao.Atendimento.NumeroSessao} — {tratamento}";
+                return DescreverSessao(prescricao.Atendimento);
             }
 
             return string.Empty;
         }
+
+        /// <summary>"Sessão nº 3 de 20/04/2026": o tratamento aparece à parte, no vínculo do registro.</summary>
+        public static string DescreverSessao(AtendimentoFisioterapeutico atendimento) =>
+            $"Sessão nº {atendimento.NumeroSessao} de {RelogioDaClinica.Padrao.Formatar(atendimento.DataRegistro, "dd/MM/yyyy")}";
 
         public static PrescricaoDTO MapearParaDTO(Prescricao prescricao, Pet? pet)
         {
@@ -332,6 +349,9 @@ namespace VetCare.API.UseCases
                 AvaliacaoId = prescricao.AvaliacaoId,
                 AtendimentoId = prescricao.AtendimentoId,
                 Origem = DescreverOrigem(prescricao),
+                // As receitas de sessão anteriores ao vínculo explícito herdam o tratamento da sessão.
+                TratamentoId = prescricao.TratamentoId ?? prescricao.Atendimento?.TratamentoId,
+                NomeTratamento = (prescricao.Tratamento ?? prescricao.Atendimento?.Tratamento)?.Nome ?? string.Empty,
                 Itens = prescricao.Itens.Select(i => new ItemPrescricaoDTO
                 {
                     Id = i.Id,

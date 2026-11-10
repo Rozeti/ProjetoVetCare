@@ -187,11 +187,12 @@ export function Modal({
     const focoAnterior = document.activeElement as HTMLElement | null;
 
     function focaveis(): HTMLElement[] {
+      // Partes escondidas do diálogo (um formulário alternativo, por exemplo) ficam de fora.
       return Array.from(
         dialogo.current?.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ) ?? [],
-      );
+      ).filter((elemento) => elemento.getClientRects().length > 0);
     }
 
     function aoTeclar(evento: KeyboardEvent) {

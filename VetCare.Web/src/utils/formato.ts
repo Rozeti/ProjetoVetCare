@@ -1,4 +1,4 @@
-import type { Gravidade, ItemLinhaTempo, SituacaoDose, StatusSessao, TipoVacina } from '../types';
+import type { Gravidade, ItemLinhaTempo, SituacaoDose, SituacaoSessao, StatusSessao, TipoVacina } from '../types';
 
 /** A API grava tudo em UTC; a interface sempre apresenta no fuso local do usuário. */
 export function paraData(valor: string | Date): Date {
@@ -81,6 +81,11 @@ export function paraIsoLocal(data: string, hora: string): string {
   return new Date(`${data}T${hora}:00`).toISOString();
 }
 
+/** Horário de início e fim de uma sessão: "09:00–10:00". */
+export function formatarIntervalo(inicio: string | Date, fim?: string | Date | null): string {
+  return fim ? `${formatarHora(inicio)}–${formatarHora(fim)}` : formatarHora(inicio);
+}
+
 /** Corta um texto longo para caber numa linha de lista ou num item de seleção. */
 export function resumirTexto(texto: string, limite: number): string {
   return texto.length > limite ? `${texto.slice(0, limite).trimEnd()}…` : texto;
@@ -118,6 +123,15 @@ export const estiloStatusSessao: Record<StatusSessao, string> = {
   Confirmada: 'bg-sucesso-claro text-emerald-800',
   Cancelada: 'bg-perigo-claro text-red-800',
   Concluída: 'bg-brand-100 text-brand-dark',
+};
+
+/** Só o que pede ação (aguardando registro) e o que já aconteceu (realizada) ganham cor; o resto fica neutro. */
+export const estiloSituacaoSessao: Record<SituacaoSessao, string> = {
+  Agendada: 'bg-slate-100 text-slate-700',
+  'Aguardando registro': 'bg-alerta-claro text-amber-800',
+  Realizada: 'bg-sucesso-claro text-emerald-800',
+  Cancelada: 'bg-slate-100 text-slate-500',
+  Inativada: 'bg-slate-100 text-slate-500',
 };
 
 export const estiloStatusTratamento: Record<string, string> = {

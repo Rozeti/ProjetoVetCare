@@ -59,6 +59,11 @@ namespace VetCare.API.UseCases
                 return Resultado.Conflito("Esta sessão já foi concluída e não pode mais ser alterada.");
             }
 
+            if (sessao.Inativa)
+            {
+                return Resultado.Conflito("Esta sessão está inativada. Reative-a antes de alterar a situação dela.");
+            }
+
             if (sessao.Status == novoStatus)
             {
                 return Resultado.Conflito($"A sessão já está {novoStatus.ToLowerInvariant()}.");

@@ -3,20 +3,14 @@ using System.ComponentModel.DataAnnotations;
 namespace VetCare.API.DTOs
 {
     /// <summary>
-    /// HU-008: a evolução registra uma sessão realizada. Ela vem de uma sessão da agenda
-    /// (<see cref="SessaoId"/>) ou, quando a sessão aconteceu sem agendamento, direto do
-    /// tratamento (<see cref="TratamentoId"/>); o prontuário é deduzido do tratamento.
+    /// HU-008: o registro do atendimento de uma sessão cadastrada no tratamento; o tratamento e o
+    /// prontuário são deduzidos da sessão.
     /// </summary>
     public class CriarAtendimentoDTO
     {
-        /// <summary>Sessão agendada que foi realizada.</summary>
+        /// <summary>Sessão cadastrada que foi realizada.</summary>
+        [Required(ErrorMessage = "Informe a sessão realizada.")]
         public Guid? SessaoId { get; set; }
-
-        /// <summary>
-        /// Sessão realizada sem agendamento: a sessão é criada no momento do registro, já
-        /// concluída, na agenda de quem atendeu. Ignorado quando a sessão é informada.
-        /// </summary>
-        public Guid? TratamentoId { get; set; }
 
         /// <summary>Opcional: o veterinário autenticado, ou o da sessão, quando não informado.</summary>
         public Guid? VeterinarioId { get; set; }

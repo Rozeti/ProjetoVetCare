@@ -15,6 +15,9 @@ export interface PaginaDe<T> {
 
 export type StatusSessao = 'Aguardando confirmação' | 'Confirmada' | 'Cancelada' | 'Concluída';
 
+/** Leitura da sessão nas listas: muda com o relógio (a agendada passa a aguardar registro quando começa). */
+export type SituacaoSessao = 'Agendada' | 'Aguardando registro' | 'Realizada' | 'Cancelada' | 'Inativada';
+
 export type VisaoAgenda = 'dia' | 'semana' | 'mes';
 
 export interface Usuario {
@@ -189,15 +192,18 @@ export interface Prescricao {
   validaAte?: string | null;
   orientacoes: string;
   status: 'Ativa' | 'Cancelada';
-  /** Origem da receita: a avaliação ou a evolução em que foi prescrita. */
+  /** Origem da receita: a avaliação ou a sessão registrada em que foi prescrita. */
   avaliacaoId?: string | null;
   atendimentoId?: string | null;
-  /** "Avaliação de 12/04/2026" ou "Evolução nº 3 — RPG"; vazio nas receitas antigas sem origem. */
+  /** "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026"; vazio nas receitas antigas sem origem. */
   origem: string;
+  /** Tratamento para o qual a receita foi prescrita; vazio quando não há vínculo. */
+  tratamentoId?: string | null;
+  nomeTratamento: string;
   itens: ItemPrescricao[];
 }
 
-/** Pedido de exames gerado a partir de uma avaliação. */
+/** Pedido de exames gerado a partir de uma avaliação ou de uma sessão registrada. */
 export interface PedidoExame {
   id: string;
   pacienteId: string;
@@ -205,9 +211,18 @@ export interface PedidoExame {
   especie: string;
   raca: string;
   nomeTutor: string;
+  /** Avaliação de origem; no pedido de uma sessão, a que originou o tratamento da sessão. */
   avaliacaoId: string;
   dataAvaliacao?: string | null;
   motivoAvaliacao: string;
+  /** Sessão registrada em que o pedido foi feito; vazio no pedido da avaliação. */
+  atendimentoId?: string | null;
+  numeroSessao?: number | null;
+  /** "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026". */
+  origem: string;
+  /** Tratamento para o qual os exames foram pedidos; vazio quando não há vínculo. */
+  tratamentoId?: string | null;
+  nomeTratamento: string;
   /** Quem assinou: o veterinário só edita e exclui os próprios pedidos. */
   veterinarioId: string;
   nomeVeterinario: string;
@@ -267,7 +282,7 @@ export interface Tratamento {
   dataFim?: string | null;
   status: StatusTratamento;
   observacoesGerais: string;
-  /** Sessões agendadas para o tratamento. */
+  /** Sessões cadastradas para o tratamento, sem as canceladas e as inativadas. */
   totalSessoes: number;
   sessoesConcluidas: number;
   /** Evoluções (sessões realizadas) registradas. */
@@ -286,6 +301,7 @@ export interface ItemAgenda {
   tratamentoId: string;
   veterinarioId: string;
   dataHora: string;
+  dataHoraFim: string;
   nomePaciente: string;
   nomeTutor: string;
   nomeVeterinario: string;
@@ -305,17 +321,58 @@ export interface AgendaGeral {
 export interface Sessao {
   id: string;
   tratamentoId: string;
+  nomeTratamento: string;
   veterinarioId: string;
   nomeVeterinario: string;
   pacienteId: string;
   nomePaciente: string;
   nomeTutor: string;
+  /** Início da sessão. */
   dataHora: string;
+  dataHoraFim: string;
   status: StatusSessao;
   observacoes: string;
+  /** Retirada do plano: continua no histórico e pode ser reativada. */
+  inativa: boolean;
+  situacao: SituacaoSessao;
   possuiAtendimento: boolean;
+  /** Registro do atendimento, quando já existe. */
+  atendimentoId?: string | null;
+  numeroSessao?: number | null;
+  escalaDor?: number | null;
+  tecnicasAplicadas: string;
   /** RN-009: já considera a antecedência mínima exigida pela clínica. */
   podeCancelar: boolean;
+}
+
+/** Tela de gestão das sessões: a página filtrada e a contagem de cada situação. */
+export interface GestaoDeSessoes {
+  pagina: PaginaDe<Sessao>;
+  contagens: Partial<Record<SituacaoSessao, number>>;
+}
+
+/**
+ * Prévia de um plano de sessões (GET /api/sessoes/previa): as datas montadas pela quantidade,
+ * pelos dias da semana e pelo horário, os dias pulados por falta de agenda e o efeito no total
+ * de sessões previstas do tratamento.
+ */
+export interface PreviaDeSessoes {
+  sessoes: { inicio: string; fim: string }[];
+  /** "data" é o dia da clínica (AAAA-MM-DDT00:00:00, sem fuso). */
+  puladas: { data: string; motivo: string }[];
+  sessoesPrevistas: number;
+  sessoesCadastradas: number;
+  novoTotalPrevisto: number;
+}
+
+/** O que o registro do atendimento precisa saber da sessão realizada. */
+export interface SessaoParaRegistro {
+  sessaoId: string;
+  tratamentoId: string;
+  nomePaciente: string;
+  nomeTutor: string;
+  dataHora: string;
+  dataHoraFim?: string;
 }
 
 export interface Midia {
@@ -423,6 +480,8 @@ export interface Prontuario {
   pedidosExame: PedidoExame[];
   documentos: Documento[];
   tratamentos: Tratamento[];
+  /** Sessões cadastradas nos tratamentos; as inativadas só chegam para a equipe. */
+  sessoes: Sessao[];
 }
 
 /** Primeiro contato clínico de uma consulta; pode originar tratamentos, receitas e pedidos de exame. */

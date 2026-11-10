@@ -3,11 +3,22 @@ import { Ban, Loader2, Pill, Plus, Printer, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
-import type { Avaliacao, Prescricao } from '../../types';
+import type { Avaliacao, Prescricao, Tratamento } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
-import { formatarData, formatarDia, paraValorInputData, resumirTexto } from '../../utils/formato';
+import { formatarData, formatarDia, paraValorInputData } from '../../utils/formato';
 import { imprimirReceita } from '../../utils/impressao';
+import { CampoOrigem, CampoTratamento, FiltroPorTratamento, ReferenciaAoTratamento, ResumoDaOrigem } from './VinculoClinico';
+import {
+  descreverOrigem,
+  filtrarPorTratamento,
+  lerOrigem,
+  tratamentoSugerido,
+  tratamentosParaVinculo,
+  valorDaOrigem,
+  type OrigemClinica,
+  type SessaoRegistrada,
+} from '../../utils/vinculoClinico';
 
 const VIAS = ['Oral', 'Tópica', 'Intramuscular', 'Subcutânea', 'Intravenosa', 'Oftálmica', 'Otológica'];
 
@@ -53,17 +64,6 @@ const ITEM_VAZIO: ItemFormulario = {
   observacao: '',
 };
 
-/** Evolução que pode originar uma receita, montada a partir da linha do tempo do prontuário. */
-export interface EvolucaoParaReceita {
-  id: string;
-  data: string;
-  numeroSessao: number;
-  nomeTratamento: string;
-}
-
-/** Origem já escolhida quando a receita é emitida do cartão de uma avaliação ou de uma evolução. */
-export type OrigemDaReceita = { avaliacaoId: string } | { atendimentoId: string };
-
 interface Props {
   prescricoes: Prescricao[];
   nomeClinica: string;
@@ -71,16 +71,25 @@ interface Props {
   aoEmitir?: () => void;
   /** Recarrega o prontuário; a mensagem, quando vem, é exibida pela tela que o contém. */
   aoAtualizar: (mensagem?: string) => void;
+  /** Leva ao tratamento da receita, na aba Tratamentos. */
+  aoVerTratamento?: (tratamentoId: string) => void;
 }
 
-/** Medicação do paciente: as receitas, com cancelamento e impressão; cada uma mostra de onde veio. */
-export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }: Props) {
+/**
+ * Medicação do paciente: as receitas, com cancelamento e impressão. Cada uma mostra o
+ * tratamento para o qual foi prescrita e de onde veio (avaliação ou sessão); a lista pode ser
+ * filtrada por tratamento.
+ */
+export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar, aoVerTratamento }: Props) {
   const { temPerfil } = useAuth();
   const podeCancelar = temPerfil('Administrador', 'Veterinario');
   const { perguntar } = useConfirmacao();
 
   const [erro, setErro] = useState('');
   const [cancelando, setCancelando] = useState('');
+  const [filtro, setFiltro] = useState('');
+
+  const visiveis = filtrarPorTratamento(prescricoes, filtro);
 
   async function cancelar(prescricao: Prescricao) {
     const { confirmado, texto: motivo } = await perguntar({
@@ -127,12 +136,16 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }:
           <p className="text-xs text-slate-500">Receitas com os medicamentos prescritos, para consulta e impressão.</p>
         </div>
 
-        {aoEmitir && (
-          <button type="button" className="vc-botao-primario" onClick={aoEmitir}>
-            <Plus size={16} />
-            Nova receita
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <FiltroPorTratamento itens={prescricoes} valor={filtro} aoMudar={setFiltro} />
+
+          {aoEmitir && (
+            <button type="button" className="vc-botao-primario" onClick={aoEmitir}>
+              <Plus size={16} />
+              Nova receita
+            </button>
+          )}
+        </div>
       </div>
 
       {erro && (
@@ -149,8 +162,8 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }:
         />
       ) : (
         <ul className="divide-y divide-slate-100">
-          {prescricoes.map((prescricao) => (
-            <li key={prescricao.id} className="px-5 py-4">
+          {visiveis.map((prescricao) => (
+            <li key={prescricao.id} id={`receita-${prescricao.id}`} className="scroll-mt-4 px-5 py-4">
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -172,9 +185,10 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }:
                     {prescricao.crmv && ` · ${prescricao.crmv}`}
                     {prescricao.validaAte && ` · Válida até ${formatarDia(prescricao.validaAte)}`}
                   </p>
-                  {prescricao.origem && (
-                    <p className="mt-0.5 text-xs text-slate-500">Origem: {prescricao.origem}</p>
-                  )}
+                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                    <ReferenciaAoTratamento item={prescricao} aoVerTratamento={aoVerTratamento} />
+                    {prescricao.origem && <span>Origem: {prescricao.origem}</span>}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -228,37 +242,61 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar }:
   );
 }
 
-interface ModalProps {
-  aberto: boolean;
+export interface PropsDoFormularioDeReceita {
   pacienteId: string;
   avaliacoes: Avaliacao[];
-  evolucoes: EvolucaoParaReceita[];
+  /** Sessões registradas do animal, que também originam receitas. */
+  sessoes: SessaoRegistrada[];
+  tratamentos: Tratamento[];
   /** Origem já definida pelo botão que abriu o formulário; sem ela, o usuário escolhe. */
-  origem?: OrigemDaReceita | null;
-  aoFechar: () => void;
+  origem?: OrigemClinica | null;
+  aoCancelar: () => void;
   aoSalvar: (mensagem: string) => void;
 }
 
+interface ModalProps extends Omit<PropsDoFormularioDeReceita, 'aoCancelar'> {
+  aberto: boolean;
+  aoFechar: () => void;
+}
+
 /**
- * Emissão de receita. Toda receita vem de uma avaliação ou de uma evolução: a origem é
+ * Emissão de receita. Toda receita vem de uma avaliação ou de uma sessão registrada: a origem é
  * escolhida no formulário, ou já vem marcada quando a emissão parte do próprio registro.
  */
-export function ModalReceita({ aberto, ...props }: ModalProps) {
+export function ModalReceita({ aberto, aoFechar, ...props }: ModalProps) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos novos.
   if (!aberto) return null;
 
-  return <FormularioReceita {...props} />;
+  return (
+    <Modal
+      aberto
+      titulo="Nova receita"
+      descricao="A receita fica no prontuário, ligada à origem e ao tratamento, e pode ser impressa para o tutor."
+      aoFechar={aoFechar}
+      largura="max-w-3xl"
+    >
+      <FormularioDeReceita {...props} aoCancelar={aoFechar} />
+    </Modal>
+  );
 }
 
-function valorDaOrigem(origem?: OrigemDaReceita | null): string {
-  if (!origem) return '';
-  return 'avaliacaoId' in origem ? `avaliacao:${origem.avaliacaoId}` : `evolucao:${origem.atendimentoId}`;
-}
-
-function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemInicial, aoFechar, aoSalvar }: Omit<ModalProps, 'aberto'>) {
+/** Campos da receita, usados no modal de receita e no de receita ou pedido de exame da sessão. */
+export function FormularioDeReceita({
+  pacienteId,
+  avaliacoes,
+  sessoes,
+  tratamentos,
+  origem: origemInicial,
+  aoCancelar,
+  aoSalvar,
+}: PropsDoFormularioDeReceita) {
   const { ehVeterinario } = useAuth();
 
   const [origem, setOrigem] = useState(valorDaOrigem(origemInicial));
+  // Na origem avaliação, o tratamento é escolhido (com sugestão); na sessão, é o da própria sessão.
+  const [tratamentoEscolhido, setTratamentoEscolhido] = useState(() =>
+    tratamentoSugerido(tratamentos, valorDaOrigem(origemInicial)),
+  );
   const [itens, setItens] = useState<ItemFormulario[]>([{ ...ITEM_VAZIO }]);
   // O veterinário logado assina a própria receita; o administrador precisa escolher quem assina.
   const [veterinarioId, setVeterinarioId] = useState('');
@@ -269,6 +307,14 @@ function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemIn
 
   // Limite inferior do campo de validade, calculado uma vez: o lint pede funções puras na renderização.
   const [amanha] = useState(() => paraValorInputData(new Date(Date.now() + 86_400_000)));
+
+  const { avaliacaoId, atendimentoId } = lerOrigem(origem);
+  const sessaoDaOrigem = atendimentoId ? sessoes.find((s) => s.id === atendimentoId) : undefined;
+
+  function mudarOrigem(valor: string) {
+    setOrigem(valor);
+    setTratamentoEscolhido(tratamentoSugerido(tratamentos, valor));
+  }
 
   function atualizarItem(indice: number, campo: keyof ItemFormulario, valor: string) {
     setItens((atual) => atual.map((item, i) => (i === indice ? { ...item, [campo]: valor } : item)));
@@ -338,16 +384,16 @@ function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemIn
       return;
     }
 
-    const [tipoDaOrigem, idDaOrigem] = origem.split(':');
-
     setSalvando(true);
 
     try {
       await api.post('/api/prescricoes', {
         pacienteId,
         veterinarioId: veterinarioId || null,
-        avaliacaoId: tipoDaOrigem === 'avaliacao' ? idDaOrigem : null,
-        atendimentoId: tipoDaOrigem === 'evolucao' ? idDaOrigem : null,
+        avaliacaoId,
+        atendimentoId,
+        // Na receita de uma sessão, a API liga o tratamento da própria sessão.
+        tratamentoId: atendimentoId ? null : tratamentoEscolhido || null,
         validaAte: validaAte || null,
         orientacoes: orientacoes.trim(),
         itens: preenchidos.map((i) => ({
@@ -368,180 +414,174 @@ function FormularioReceita({ pacienteId, avaliacoes, evolucoes, origem: origemIn
     }
   }
 
-  const semOrigens = avaliacoes.length === 0 && evolucoes.length === 0;
+  if (!origemInicial && avaliacoes.length === 0 && sessoes.length === 0) {
+    return (
+      <Alerta tipo="aviso">
+        A receita é emitida a partir de uma avaliação ou de uma sessão. Registre a avaliação do animal antes de
+        prescrever.
+      </Alerta>
+    );
+  }
 
   return (
-    <Modal
-      aberto
-      titulo="Nova receita"
-      descricao="A receita fica registrada no prontuário, ligada à avaliação ou à sessão de origem, e pode ser impressa para o tutor."
-      aoFechar={aoFechar}
-      largura="max-w-3xl"
-    >
-      {semOrigens ? (
-        <Alerta tipo="aviso">
-          A receita é emitida a partir de uma avaliação ou de uma sessão. Registre a avaliação do animal antes de
-          prescrever.
-        </Alerta>
+    <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+      {origemInicial ? (
+        <ResumoDaOrigem
+          origem={descreverOrigem(origem, avaliacoes, sessoes)}
+          tratamento={sessaoDaOrigem?.nomeTratamento}
+        />
       ) : (
-        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
-          <Campo rotulo="Origem da receita" obrigatorio dica="A avaliação ou a sessão em que o medicamento foi prescrito.">
-            <select
-              className="vc-campo"
-              value={origem}
-              onChange={(e) => setOrigem(e.target.value)}
-              disabled={!!origemInicial}
-            >
-              <option value="">Selecione a origem</option>
-              {avaliacoes.length > 0 && (
-                <optgroup label="Avaliações">
-                  {avaliacoes.map((avaliacao) => (
-                    <option key={avaliacao.id} value={`avaliacao:${avaliacao.id}`}>
-                      Avaliação de {formatarData(avaliacao.dataRegistro)} — {resumirTexto(avaliacao.motivoConsulta, 60)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {evolucoes.length > 0 && (
-                <optgroup label="Sessões">
-                  {evolucoes.map((evolucao) => (
-                    <option key={evolucao.id} value={`evolucao:${evolucao.id}`}>
-                      Sessão nº {evolucao.numeroSessao} — {evolucao.nomeTratamento} ({formatarData(evolucao.data)})
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </Campo>
+        <CampoOrigem
+          valor={origem}
+          aoMudar={mudarOrigem}
+          avaliacoes={avaliacoes}
+          sessoes={sessoes}
+          dica="A avaliação ou a sessão em que o medicamento foi prescrito."
+        />
+      )}
 
-          {itens.map((item, indice) => (
-            <fieldset key={indice} className="rounded-xl border border-slate-200 p-4">
-              <legend className="flex items-center gap-2 px-2 text-sm font-semibold text-slate-700">
-                Medicamento {indice + 1}
-                {itens.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setItens((atual) => atual.filter((_, i) => i !== indice))}
-                    className="text-slate-400 transition hover:text-perigo"
-                    aria-label={`Remover medicamento ${indice + 1}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </legend>
+      {atendimentoId
+        ? sessaoDaOrigem &&
+          !origemInicial && (
+            <Campo rotulo="Tratamento" dica="A receita de uma sessão fica no tratamento da própria sessão.">
+              <input className="vc-campo bg-slate-50" value={sessaoDaOrigem.nomeTratamento} readOnly />
+            </Campo>
+          )
+        : (
+            <CampoTratamento
+              tratamentos={tratamentosParaVinculo(tratamentos)}
+              valor={tratamentoEscolhido}
+              aoMudar={setTratamentoEscolhido}
+              tipoDoRegistro="a receita"
+            />
+          )}
 
-              <div className="space-y-3">
-                <Campo rotulo="Medicamento" obrigatorio>
-                  <input
-                    className="vc-campo"
-                    value={item.medicamento}
-                    onChange={(e) => atualizarItem(indice, 'medicamento', e.target.value)}
-                    placeholder="Nome e concentração"
-                    maxLength={LIMITES.medicamento}
-                  />
-                </Campo>
+      {itens.map((item, indice) => (
+        <fieldset key={indice} className="rounded-xl border border-slate-200 p-4">
+          <legend className="flex items-center gap-2 px-2 text-sm font-semibold text-slate-700">
+            Medicamento {indice + 1}
+            {itens.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setItens((atual) => atual.filter((_, i) => i !== indice))}
+                className="text-slate-400 transition hover:text-perigo"
+                aria-label={`Remover medicamento ${indice + 1}`}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </legend>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Campo rotulo="Dosagem" obrigatorio>
-                    <input
-                      className="vc-campo"
-                      value={item.dosagem}
-                      onChange={(e) => atualizarItem(indice, 'dosagem', e.target.value)}
-                      placeholder="Ex.: 1 comprimido"
-                      maxLength={LIMITES.dosagem}
-                    />
-                  </Campo>
-
-                  <Campo rotulo="Frequência" obrigatorio>
-                    <input
-                      className="vc-campo"
-                      value={item.frequencia}
-                      onChange={(e) => atualizarItem(indice, 'frequencia', e.target.value)}
-                      placeholder="Ex.: a cada 12 horas"
-                      maxLength={LIMITES.frequencia}
-                    />
-                  </Campo>
-
-                  <Campo rotulo="Duração">
-                    <input
-                      className="vc-campo"
-                      value={item.duracao}
-                      onChange={(e) => atualizarItem(indice, 'duracao', e.target.value)}
-                      placeholder="Ex.: por 7 dias"
-                      maxLength={LIMITES.duracao}
-                    />
-                  </Campo>
-
-                  <Campo rotulo="Via">
-                    <select className="vc-campo" value={item.via} onChange={(e) => atualizarItem(indice, 'via', e.target.value)}>
-                      {VIAS.map((via) => (
-                        <option key={via}>{via}</option>
-                      ))}
-                    </select>
-                  </Campo>
-                </div>
-
-                <Campo rotulo="Observação">
-                  <input
-                    className="vc-campo"
-                    value={item.observacao}
-                    onChange={(e) => atualizarItem(indice, 'observacao', e.target.value)}
-                    placeholder="Ex.: administrar junto com alimento"
-                    maxLength={LIMITES.observacao}
-                  />
-                </Campo>
-              </div>
-            </fieldset>
-          ))}
-
-          <button
-            type="button"
-            className="vc-botao-secundario w-full"
-            onClick={() => setItens((atual) => [...atual, { ...ITEM_VAZIO }])}
-          >
-            <Plus size={16} />
-            Adicionar medicamento
-          </button>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SeletorVeterinario valor={veterinarioId} aoMudar={setVeterinarioId} obrigatorio />
-
-            <Campo rotulo="Válida até" dica={`Data futura, até ${VALIDADE_MAXIMA_EM_DIAS} dias. Em branco, 30 dias.`}>
+          <div className="space-y-3">
+            <Campo rotulo="Medicamento" obrigatorio>
               <input
-                type="date"
                 className="vc-campo"
-                min={amanha}
-                max={paraValorInputData(validadeMaxima())}
-                value={validaAte}
-                onChange={(e) => setValidaAte(e.target.value)}
+                value={item.medicamento}
+                onChange={(e) => atualizarItem(indice, 'medicamento', e.target.value)}
+                placeholder="Nome e concentração"
+                maxLength={LIMITES.medicamento}
+              />
+            </Campo>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Campo rotulo="Dosagem" obrigatorio>
+                <input
+                  className="vc-campo"
+                  value={item.dosagem}
+                  onChange={(e) => atualizarItem(indice, 'dosagem', e.target.value)}
+                  placeholder="Ex.: 1 comprimido"
+                  maxLength={LIMITES.dosagem}
+                />
+              </Campo>
+
+              <Campo rotulo="Frequência" obrigatorio>
+                <input
+                  className="vc-campo"
+                  value={item.frequencia}
+                  onChange={(e) => atualizarItem(indice, 'frequencia', e.target.value)}
+                  placeholder="Ex.: a cada 12 horas"
+                  maxLength={LIMITES.frequencia}
+                />
+              </Campo>
+
+              <Campo rotulo="Duração">
+                <input
+                  className="vc-campo"
+                  value={item.duracao}
+                  onChange={(e) => atualizarItem(indice, 'duracao', e.target.value)}
+                  placeholder="Ex.: por 7 dias"
+                  maxLength={LIMITES.duracao}
+                />
+              </Campo>
+
+              <Campo rotulo="Via">
+                <select className="vc-campo" value={item.via} onChange={(e) => atualizarItem(indice, 'via', e.target.value)}>
+                  {VIAS.map((via) => (
+                    <option key={via}>{via}</option>
+                  ))}
+                </select>
+              </Campo>
+            </div>
+
+            <Campo rotulo="Observação">
+              <input
+                className="vc-campo"
+                value={item.observacao}
+                onChange={(e) => atualizarItem(indice, 'observacao', e.target.value)}
+                placeholder="Ex.: administrar junto com alimento"
+                maxLength={LIMITES.observacao}
               />
             </Campo>
           </div>
+        </fieldset>
+      ))}
 
-          <Campo rotulo="Orientações gerais" dica={`${orientacoes.length}/${LIMITES.orientacoes} caracteres`}>
-            <textarea
-              className="vc-campo"
-              rows={3}
-              value={orientacoes}
-              onChange={(e) => setOrientacoes(e.target.value)}
-              placeholder="Cuidados, sinais de alerta e quando retornar à clínica."
-              maxLength={LIMITES.orientacoes}
-            />
-          </Campo>
+      <button
+        type="button"
+        className="vc-botao-secundario w-full"
+        onClick={() => setItens((atual) => [...atual, { ...ITEM_VAZIO }])}
+      >
+        <Plus size={16} />
+        Adicionar medicamento
+      </button>
 
-          {erro && <Alerta tipo="erro">{erro}</Alerta>}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <SeletorVeterinario valor={veterinarioId} aoMudar={setVeterinarioId} obrigatorio />
 
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="vc-botao-secundario" onClick={aoFechar} disabled={salvando}>
-              Cancelar
-            </button>
-            <button type="submit" className="vc-botao-primario" disabled={salvando}>
-              {salvando && <Loader2 className="animate-spin" size={16} />}
-              Emitir receita
-            </button>
-          </div>
-        </form>
-      )}
-    </Modal>
+        <Campo rotulo="Válida até" dica={`Data futura, até ${VALIDADE_MAXIMA_EM_DIAS} dias. Em branco, 30 dias.`}>
+          <input
+            type="date"
+            className="vc-campo"
+            min={amanha}
+            max={paraValorInputData(validadeMaxima())}
+            value={validaAte}
+            onChange={(e) => setValidaAte(e.target.value)}
+          />
+        </Campo>
+      </div>
+
+      <Campo rotulo="Orientações gerais" dica={`${orientacoes.length}/${LIMITES.orientacoes} caracteres`}>
+        <textarea
+          className="vc-campo"
+          rows={3}
+          value={orientacoes}
+          onChange={(e) => setOrientacoes(e.target.value)}
+          placeholder="Cuidados, sinais de alerta e quando retornar à clínica."
+          maxLength={LIMITES.orientacoes}
+        />
+      </Campo>
+
+      {erro && <Alerta tipo="erro">{erro}</Alerta>}
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" className="vc-botao-secundario" onClick={aoCancelar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button type="submit" className="vc-botao-primario" disabled={salvando}>
+          {salvando && <Loader2 className="animate-spin" size={16} />}
+          Emitir receita
+        </button>
+      </div>
+    </form>
   );
 }

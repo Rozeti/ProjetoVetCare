@@ -44,6 +44,9 @@ namespace VetCare.API.Data
         /// <summary>Quais das sessões informadas já têm atendimento, numa só consulta.</summary>
         Task<HashSet<Guid>> ObterSessoesComAtendimento(IEnumerable<Guid> sessoesIds);
 
+        /// <summary>Os registros das sessões informadas, sem relacionamentos, indexados pela sessão.</summary>
+        Task<Dictionary<Guid, AtendimentoFisioterapeutico>> ObterPorSessoes(IEnumerable<Guid> sessoesIds);
+
         void Atualizar(AtendimentoFisioterapeutico atendimento);
         Task<int> ContarPorPeriodo(Guid clinicaId, Guid? veterinarioId, DateTime inicio, DateTime fim);
 

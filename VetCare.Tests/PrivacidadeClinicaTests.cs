@@ -24,6 +24,7 @@ namespace VetCare.Tests
             new PetRepository(Contexto),
             new TratamentoRepository(Contexto),
             new SessaoRepository(Contexto),
+            new ClinicaRepository(Contexto),
             new VacinaRepository(Contexto),
             new PrescricaoRepository(Contexto),
             new PedidoExameRepository(Contexto),

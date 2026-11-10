@@ -318,6 +318,7 @@ namespace VetCare.API.UseCases
             var medicamentos = string.Join(", ", receita.Itens.Select(i => i.Medicamento));
             var origem = GerenciarPrescricoesUseCase.DescreverOrigem(receita);
             var cancelada = receita.Status == StatusPrescricao.Cancelada;
+            var tratamento = receita.Tratamento ?? receita.Atendimento?.Tratamento;
 
             var campos = new Dictionary<string, string>
             {
@@ -330,6 +331,11 @@ namespace VetCare.API.UseCases
                 campos["Origem"] = origem;
             }
 
+            if (tratamento != null)
+            {
+                campos["Tratamento"] = tratamento.Nome;
+            }
+
             return new ItemLinhaTempoDTO
             {
                 Id = receita.Id,
@@ -340,7 +346,7 @@ namespace VetCare.API.UseCases
                 Autor = receita.Veterinario?.Usuario?.Nome ?? string.Empty,
                 Descricao = medicamentos,
                 Detalhes = origem,
-                TratamentoId = receita.Atendimento?.TratamentoId,
+                TratamentoId = tratamento?.Id,
                 Campos = campos
             };
         }
@@ -361,6 +367,18 @@ namespace VetCare.API.UseCases
                 campos["Justificativa"] = pedido.Justificativa;
             }
 
+            var origem = GerenciarPedidosExameUseCase.DescreverOrigem(pedido);
+
+            if (origem.Length > 0)
+            {
+                campos["Origem"] = origem;
+            }
+
+            if (pedido.Tratamento != null)
+            {
+                campos["Tratamento"] = pedido.Tratamento.Nome;
+            }
+
             return new ItemLinhaTempoDTO
             {
                 Id = pedido.Id,
@@ -370,9 +388,8 @@ namespace VetCare.API.UseCases
                 Tipo = cancelado ? "Pedido de exame cancelado" : "Pedido de exame",
                 Autor = pedido.Veterinario?.Usuario?.Nome ?? string.Empty,
                 Descricao = string.Join(", ", exames.Select(e => e.Trim())),
-                Detalhes = pedido.Avaliacao != null
-                    ? $"A partir da avaliação de {RelogioDaClinica.Padrao.Formatar(pedido.Avaliacao.DataRegistro, "dd/MM/yyyy")}"
-                    : string.Empty,
+                Detalhes = origem.Length > 0 ? $"A partir da {origem.ToLowerInvariant()}" : string.Empty,
+                TratamentoId = pedido.TratamentoId,
                 Campos = campos
             };
         }

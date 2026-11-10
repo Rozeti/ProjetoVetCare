@@ -129,16 +129,22 @@ export interface Prescricao {
   validaAte?: string | null;
   orientacoes: string;
   status: 'Ativa' | 'Cancelada';
-  /** Avaliação ou evolução em que a receita foi prescrita ("Avaliação de 12/04/2026"). */
+  /** Avaliação ou sessão em que a receita foi prescrita ("Avaliação de 12/04/2026"). */
   origem: string;
+  /** Tratamento para o qual a receita foi prescrita; vazio quando não há vínculo. */
+  nomeTratamento: string;
   itens: ItemPrescricao[];
 }
 
-/** Pedido de exames emitido a partir de uma avaliação. */
+/** Pedido de exames emitido a partir de uma avaliação ou de uma sessão. */
 export interface PedidoExame {
   id: string;
   avaliacaoId: string;
   dataAvaliacao?: string | null;
+  /** "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026". */
+  origem: string;
+  /** Tratamento para o qual os exames foram pedidos; vazio quando não há vínculo. */
+  nomeTratamento: string;
   nomeVeterinario: string;
   crmv: string;
   dataEmissao: string;
@@ -157,6 +163,8 @@ export interface Sessao {
   nomePaciente: string;
   nomeTutor: string;
   dataHora: string;
+  /** Horário de término, informado no cadastro da sessão. */
+  dataHoraFim: string;
   status: StatusSessao;
   observacoes: string;
   possuiAtendimento: boolean;

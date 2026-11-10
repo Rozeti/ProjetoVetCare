@@ -26,6 +26,7 @@ namespace VetCare.Tests
                 TratamentoId = Tratamento.Id,
                 VeterinarioId = Veterinario.Id,
                 DataHora = quando,
+                DataHoraFim = quando.AddHours(1),
                 Status = status
             };
 

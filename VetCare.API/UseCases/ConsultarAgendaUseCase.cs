@@ -108,7 +108,8 @@ namespace VetCare.API.UseCases
                 return Resultado<List<SessaoDTO>>.NaoAutorizado("Você não tem acesso a este tratamento.");
             }
 
-            var sessoes = await _sessoes.ObterPorTratamento(tratamentoId);
+            // A equipe vê também as sessões inativadas (com a marcação); o tutor, só as do plano.
+            var sessoes = await _sessoes.ObterPorTratamento(tratamentoId, incluirInativas: !_usuarioAtual.EhTutor);
 
             // A consulta por tratamento não carrega o paciente; ele já está em mãos.
             foreach (var sessao in sessoes)
@@ -159,10 +160,10 @@ namespace VetCare.API.UseCases
             var clinica = await _clinicas.ObterPorId(_usuarioAtual.ClinicaId);
             var horasMinimas = clinica?.HorasMinimasCancelamento ?? 12;
 
-            var comAtendimento = await _atendimentos.ObterSessoesComAtendimento(sessoes.Select(s => s.Id));
+            var registros = await _atendimentos.ObterPorSessoes(sessoes.Select(s => s.Id));
 
             return sessoes
-                .Select(sessao => AgendarSessaoUseCase.MapearParaDTO(sessao, horasMinimas, comAtendimento.Contains(sessao.Id)))
+                .Select(sessao => CadastrarSessoesUseCase.MapearParaDTO(sessao, horasMinimas, registros.GetValueOrDefault(sessao.Id)))
                 .ToList();
         }
 
@@ -178,6 +179,7 @@ namespace VetCare.API.UseCases
                 TratamentoId = sessao.TratamentoId,
                 VeterinarioId = sessao.VeterinarioId,
                 DataHora = sessao.DataHora,
+                DataHoraFim = sessao.DataHoraFim,
                 NomePaciente = sessao.Tratamento?.Paciente?.Nome ?? "Paciente não informado",
                 NomeTutor = sessao.Tratamento?.Paciente?.Tutor?.Usuario?.Nome ?? string.Empty,
                 NomeVeterinario = sessao.Veterinario?.Usuario?.Nome ?? string.Empty,

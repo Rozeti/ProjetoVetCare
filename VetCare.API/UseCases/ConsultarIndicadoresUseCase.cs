@@ -83,6 +83,7 @@ namespace VetCare.API.UseCases
                     TratamentoId = s.TratamentoId,
                     VeterinarioId = s.VeterinarioId,
                     DataHora = s.DataHora,
+                    DataHoraFim = s.DataHoraFim,
                     NomePaciente = s.Tratamento?.Paciente?.Nome ?? string.Empty,
                     NomeTutor = s.Tratamento?.Paciente?.Tutor?.Usuario?.Nome ?? string.Empty,
                     NomeVeterinario = s.Veterinario?.Usuario?.Nome ?? string.Empty,

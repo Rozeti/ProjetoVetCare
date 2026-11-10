@@ -297,7 +297,8 @@ Authorization: Bearer {{token}}
 
 @tratamentoId = {{novoTratamento.response.body.id}}
 
-### HU-004, CA-1 — Agendar sessão (nasce Aguardando confirmação)
+### HU-004, CA-1 — Cadastrar sessões no tratamento: uma ou várias de uma vez, com início e término
+### (nascem Aguardando confirmação; o tutor recebe um aviso só pelo cadastro)
 # @name novaSessao
 POST {{host}}/api/sessoes
 Content-Type: application/json
@@ -306,13 +307,22 @@ Authorization: Bearer {{token}}
 {
   "tratamentoId": "{{tratamentoId}}",
   "veterinarioId": "{{veterinarioId}}",
-  "dataHora": "{{diaDaSessao}}T14:00:00",
-  "observacoes": "Trazer o pet em jejum de duas horas."
+  "observacoes": "Trazer o pet em jejum de duas horas.",
+  "sessoes": [
+    { "inicio": "{{diaDaSessao}}T14:00:00", "fim": "{{diaDaSessao}}T15:00:00" },
+    { "inicio": "{{diaDaSessao}}T16:00:00", "fim": "{{diaDaSessao}}T16:45:00" }
+  ]
 }
 
-@sessaoId = {{novaSessao.response.body.id}}
+@sessaoId = {{novaSessao.response.body.$[0].id}}
+@segundaSessaoId = {{novaSessao.response.body.$[1].id}}
 
-### RN-002 — Conflito de horário no mesmo veterinário (409)
+### Prévia do plano de sessões: quantidade, dias da semana (0 = domingo ... 6 = sábado) e horário viram datas.
+### Dias sem agenda são pulados com o motivo; "novoTotalPrevisto" mostra se o plano do tratamento cresce. Nada é gravado.
+GET {{host}}/api/sessoes/previa?tratamentoId={{tratamentoId}}&veterinarioId={{veterinarioId}}&quantidade=8&aPartirDe={{diaDaSessao}}&horaInicio=09:00&horaFim=10:00&diasDaSemana=1&diasDaSemana=3
+Authorization: Bearer {{token}}
+
+### O horário de término é obrigatório (400)
 POST {{host}}/api/sessoes
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -320,10 +330,10 @@ Authorization: Bearer {{token}}
 {
   "tratamentoId": "{{tratamentoId}}",
   "veterinarioId": "{{veterinarioId}}",
-  "dataHora": "{{diaDaSessao}}T14:00:00"
+  "sessoes": [{ "inicio": "{{diaDaSessao}}T09:00:00" }]
 }
 
-### HU-004, CA-5 — Agendamento retroativo é bloqueado (400)
+### RN-002 — Conflito de horário no mesmo veterinário (409): o intervalo se sobrepõe ao das 14h às 15h
 POST {{host}}/api/sessoes
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -331,8 +341,34 @@ Authorization: Bearer {{token}}
 {
   "tratamentoId": "{{tratamentoId}}",
   "veterinarioId": "{{veterinarioId}}",
-  "dataHora": "2020-01-10T09:00:00"
+  "sessoes": [{ "inicio": "{{diaDaSessao}}T14:30:00", "fim": "{{diaDaSessao}}T15:30:00" }]
 }
+
+### HU-004, CA-5 — Cadastro retroativo é bloqueado (400)
+POST {{host}}/api/sessoes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "tratamentoId": "{{tratamentoId}}",
+  "veterinarioId": "{{veterinarioId}}",
+  "sessoes": [{ "inicio": "2020-01-10T09:00:00", "fim": "2020-01-10T10:00:00" }]
+}
+
+### Gestão de sessões: lista por situação (Agendada, Aguardando registro, Realizada, Cancelada, Inativada), com as contagens
+GET {{host}}/api/sessoes?tratamentoId={{tratamentoId}}&situacao=Agendada&pagina=1&tamanho=20
+Authorization: Bearer {{token}}
+
+### Inativar uma sessão sem atendimento (sai da agenda e das contagens; o horário fica livre)
+PATCH {{host}}/api/sessoes/{{segundaSessaoId}}/inativar
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "motivo": "Cadastrada em dobro" }
+
+### Reativar a sessão (confere de novo conflito de horário e bloqueios)
+PATCH {{host}}/api/sessoes/{{segundaSessaoId}}/reativar
+Authorization: Bearer {{token}}
 
 ### HU-004, CA-3 — Agenda do veterinário (visao = dia | semana | mes)
 GET {{host}}/api/sessoes/agenda/{{veterinarioId}}?data={{diaDaSessao}}&visao=semana
@@ -391,13 +427,12 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/atendimentos?pacienteId={{pacienteId}}&tratamentoId={{tratamentoId}}&pagina=1&tamanho=20
 Authorization: Bearer {{token}}
 
-### Sessão realizada sem agendamento: o registro nasce do tratamento, e a API cria a sessão já concluída
+### O atendimento é registrado sempre numa sessão cadastrada: sem a sessão, é recusado (400)
 POST {{host}}/api/atendimentos
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "tratamentoId": "{{tratamentoId}}",
   "veterinarioId": "{{veterinarioId}}",
   "tecnicasAplicadas": "Cinesioterapia",
   "escalaDor": 3,
@@ -405,7 +440,8 @@ Authorization: Bearer {{token}}
   "reacaoAnimal": "Colaborativo durante toda a sessão."
 }
 
-### Receita emitida a partir da sessão registrada (a origem é obrigatória: avaliacaoId ou atendimentoId)
+### Receita emitida a partir da sessão registrada (a origem é obrigatória: avaliacaoId ou atendimentoId).
+### Ela fica no tratamento da própria sessão: a resposta traz tratamentoId e nomeTratamento.
 POST {{host}}/api/prescricoes
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -419,7 +455,7 @@ Authorization: Bearer {{token}}
   ]
 }
 
-### Pedido de exames a partir da avaliação (um exame por linha)
+### Pedido de exames a partir da avaliação (um exame por linha), para um tratamento ativo do animal (opcional)
 # @name novoPedidoExame
 POST {{host}}/api/pedidos-exame
 Content-Type: application/json
@@ -427,8 +463,29 @@ Authorization: Bearer {{token}}
 
 {
   "avaliacaoId": "{{avaliacaoId}}",
+  "tratamentoId": "{{tratamentoId}}",
   "exames": "Raio-X do quadril em duas incidências\nHemograma completo",
   "justificativa": "Confirmar a displasia antes de ampliar o protocolo."
+}
+
+### Pedido de exames feito na sessão registrada: fica ligado à sessão e ao tratamento dela
+POST {{host}}/api/pedidos-exame
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "atendimentoId": "{{evolucaoId}}",
+  "exames": "Ultrassonografia do joelho direito",
+  "justificativa": "Desconforto ao apoio no fim da sessão."
+}
+
+### Pedido sem origem, ou com as duas, é recusado (400)
+POST {{host}}/api/pedidos-exame
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "exames": "Hemograma completo"
 }
 
 @pedidoExameId = {{novoPedidoExame.response.body.id}}
@@ -437,13 +494,15 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/pedidos-exame/paciente/{{pacienteId}}
 Authorization: Bearer {{token}}
 
-### Editar o pedido de exame (a versão anterior fica guardada; a avaliação de origem pode mudar, desde que do mesmo animal)
+### Editar o pedido de exame (a versão anterior fica guardada; a avaliação de origem pode mudar, desde que do mesmo animal).
+### tratamentoId é o tratamento depois da correção: omitido, o pedido fica sem tratamento.
 PUT {{host}}/api/pedidos-exame/{{pedidoExameId}}
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
   "avaliacaoId": "{{avaliacaoId}}",
+  "tratamentoId": "{{tratamentoId}}",
   "exames": "Raio-X do quadril em duas incidências\nHemograma completo\nPerfil bioquímico",
   "justificativa": "Confirmar a displasia antes de ampliar o protocolo."
 }
@@ -608,7 +667,8 @@ Authorization: Bearer {{token}}
   "justificativa": "Lançada na carteira do paciente errado."
 }
 
-### Receita com dois medicamentos, a partir da avaliação (o veterinário logado assina; o administrador informa veterinarioId)
+### Receita com dois medicamentos, a partir da avaliação (o veterinário logado assina; o administrador informa veterinarioId).
+### tratamentoId é opcional na avaliação e precisa ser um tratamento planejado ou em andamento do animal.
 # @name novaReceita
 POST {{host}}/api/prescricoes
 Content-Type: application/json
@@ -618,6 +678,7 @@ Authorization: Bearer {{token}}
   "pacienteId": "{{pacienteId}}",
   "veterinarioId": "{{veterinarioId}}",
   "avaliacaoId": "{{avaliacaoId}}",
+  "tratamentoId": "{{tratamentoId}}",
   "orientacoes": "Administrar junto com alimento.",
   "itens": [
     { "medicamento": "Meloxicam 2 mg", "dosagem": "1 comprimido", "frequencia": "a cada 24 horas", "duracao": "por 5 dias", "via": "Oral" },

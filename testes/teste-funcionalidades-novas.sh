@@ -158,8 +158,8 @@ BLOQ=$(val "$r" id)
 checa "bloqueio criado" "Congresso" "$r"
 
 TRAT=$(val "$(get "/api/tratamentos/paciente/$PET" "$ADMIN")" id)
-r=$(envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"dataHora\":\"$(date -u -d '+47 days 14:00' +%Y-%m-%dT%H:%M:%S)\"}")
-checa "agendamento em período bloqueado é recusado" "bloqueada" "$r"
+r=$(envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":\"$VET\",\"sessoes\":[{\"inicio\":\"$(date -u -d '+47 days 14:00' +%Y-%m-%dT%H:%M:%S)\",\"fim\":\"$(date -u -d '+47 days 15:00' +%Y-%m-%dT%H:%M:%S)\"}]}")
+checa "cadastro de sessão em período bloqueado é recusado" "bloqueada" "$r"
 
 r=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/bloqueios-agenda/$BLOQ" -H "Authorization: Bearer $ADMIN")
 checa "bloqueio removido" "200" "$r"

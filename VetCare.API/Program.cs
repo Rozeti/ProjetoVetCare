@@ -379,7 +379,8 @@ static void AdicionarCasosDeUso(IServiceCollection servicos)
     servicos.AddScoped<GerenciarAlergiasUseCase>();
     servicos.AddScoped<GerenciarVacinasUseCase>();
     servicos.AddScoped<GerenciarTratamentosUseCase>();
-    servicos.AddScoped<AgendarSessaoUseCase>();
+    servicos.AddScoped<CadastrarSessoesUseCase>();
+    servicos.AddScoped<GerenciarSessoesUseCase>();
     servicos.AddScoped<AtualizarStatusSessaoUseCase>();
     servicos.AddScoped<ConsultarAgendaUseCase>();
     servicos.AddScoped<GerenciarBloqueiosAgendaUseCase>();

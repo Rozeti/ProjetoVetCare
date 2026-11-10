@@ -1,12 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity,
+  CalendarPlus,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ClipboardPlus,
-  History,
   ListFilter,
   Pencil,
   Power,
@@ -15,55 +13,54 @@ import {
 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
-import type { ItemLinhaTempo, StatusTratamento, Tratamento } from '../../types';
+import type { Sessao, StatusTratamento, Tratamento } from '../../types';
 import { Card, Etiqueta, SemDados } from '../../components/ui';
-import {
-  estiloEscalaDor,
-  estiloStatusTratamento,
-  formatarData,
-  formatarDataHora,
-  paraValorInputData,
-  tratamentoAtivo,
-} from '../../utils/formato';
+import { estiloStatusTratamento, formatarData, formatarDataHora, tratamentoAtivo } from '../../utils/formato';
+import { ListaDeSessoes, type AcoesDaSessao } from './ListaDeSessoes';
 
 interface Props {
   pacienteId: string;
   tratamentos: Tratamento[];
-  /** Evoluções do animal (eventos da linha do tempo), separadas aqui por tratamento. */
-  evolucoes: ItemLinhaTempo[];
-  /** Tratamento em destaque, vindo de um atalho da avaliação ou da linha do tempo. */
+  /** Sessões cadastradas do animal; cada tratamento mostra as suas. */
+  sessoes: Sessao[];
+  /** Tratamento em destaque, vindo de um atalho da avaliação ou da linha do tempo: abre expandido. */
   emFoco?: string;
-  /** Administrador e veterinário com o paciente em acompanhamento. */
+  /** Administrador e veterinário com o paciente em acompanhamento: editar, concluir e inativar. */
   podeGerenciar: boolean;
-  /** Link para a tela de evoluções, só para quem tem acesso a ela. */
-  exibeLinkDeEvolucoes: boolean;
+  /** Atalho para a tela de sessões, só para quem tem acesso a ela. */
+  exibeLinkDaTelaDeSessoes: boolean;
   aoEditar: (tratamento: Tratamento) => void;
-  /** Registra uma sessão realizada, que vira a evolução seguinte do tratamento. */
-  aoRegistrarSessao?: (tratamento: Tratamento) => void;
-  aoAbrirEvolucao: (evolucao: ItemLinhaTempo) => void;
+  /** Cadastro do plano de sessões, e de sessões a mais depois; ausente para quem não cadastra. */
+  aoCadastrarSessoes?: (tratamento: Tratamento) => void;
+  acoesDaSessao: AcoesDaSessao;
   aoVerAvaliacao: (avaliacaoId: string) => void;
-  aoVerHistorico: () => void;
   aoAtualizar: (mensagem: string) => void;
   aoFalhar: (mensagem: string) => void;
 }
 
+/** A próxima sessão do plano que ainda vai acontecer. */
+function proximaSessao(sessoes: Sessao[]): Sessao | undefined {
+  return sessoes
+    .filter((s) => s.situacao === 'Agendada')
+    .sort((a, b) => a.dataHora.localeCompare(b.dataHora))[0];
+}
+
 /**
- * Tratamentos do animal, cada um ligado à avaliação de origem. Dentro de um tratamento
- * aparecem só as evoluções dele, em ordem cronológica e com filtro; o histórico completo do
- * animal continua a um clique, na linha do tempo.
+ * Tratamentos do animal em linhas compactas: nome, situação, andamento e a próxima sessão. Ao
+ * expandir, aparecem o plano completo, a avaliação de origem, as ações e as sessões do
+ * tratamento, onde cada sessão realizada recebe o registro do atendimento.
  */
 export function TratamentosDoPaciente({
   pacienteId,
   tratamentos,
-  evolucoes,
+  sessoes,
   emFoco,
   podeGerenciar,
-  exibeLinkDeEvolucoes,
+  exibeLinkDaTelaDeSessoes,
   aoEditar,
-  aoRegistrarSessao,
-  aoAbrirEvolucao,
+  aoCadastrarSessoes,
+  acoesDaSessao,
   aoVerAvaliacao,
-  aoVerHistorico,
   aoAtualizar,
   aoFalhar,
 }: Props) {
@@ -141,295 +138,257 @@ export function TratamentosDoPaciente({
   }
 
   return (
-    <div className="space-y-4">
-      {aoRegistrarSessao && tratamentos.some((t) => tratamentoAtivo(t.status)) && (
-        <p className="rounded-xl bg-brand-50 px-4 py-3 text-sm text-slate-700">
-          Ao fim de cada sessão de fisioterapia, use <strong>Registrar sessão</strong> no tratamento: o sistema
-          numera as sessões (1, 2, 3...) e guarda o que foi feito. As sessões agendadas também podem ser registradas
-          pela Agenda, e todas aparecem na aba Sessões.
-        </p>
-      )}
+    <Card className="overflow-hidden">
+      <ul className="divide-y divide-slate-100">
+        {tratamentos.map((tratamento) => {
+          const aberto = (tratamento.id === emFoco) !== alternados.has(tratamento.id);
+          const doTratamento = sessoes.filter((s) => s.tratamentoId === tratamento.id);
+          const realizadas = doTratamento.filter((s) => s.situacao === 'Realizada').length;
+          const aguardandoRegistro = doTratamento.filter((s) => s.situacao === 'Aguardando registro').length;
+          const agendadas = doTratamento.filter((s) => s.situacao === 'Agendada').length;
+          // O plano: as canceladas e as inativadas não contam.
+          const cadastradas = doTratamento.filter((s) => !s.inativa && s.situacao !== 'Cancelada').length;
+          const faltamCadastrar = Math.max(0, tratamento.sessoesPrevistas - cadastradas);
+          const proxima = proximaSessao(doTratamento);
+          const progresso = Math.min(100, (realizadas / Math.max(1, tratamento.sessoesPrevistas)) * 100);
+          const ativo = tratamentoAtivo(tratamento.status);
+          const podeCadastrar = !!aoCadastrarSessoes && ativo;
+          // Todas as sessões cadastradas já aconteceram e foram registradas: hora de decidir se o
+          // tratamento continua (mais sessões) ou termina.
+          const planoCumprido = ativo && cadastradas > 0 && agendadas === 0 && aguardandoRegistro === 0;
 
-      {tratamentos.map((tratamento) => {
-        const aberto = (tratamento.id === emFoco) !== alternados.has(tratamento.id);
-        const doTratamento = evolucoes
-          .filter((e) => e.tratamentoId === tratamento.id)
-          .sort((a, b) => a.data.localeCompare(b.data));
-        const progresso = Math.min(100, (tratamento.evolucoesRegistradas / Math.max(1, tratamento.sessoesPrevistas)) * 100);
-
-        return (
-          <Card key={tratamento.id} className={`p-5 ${tratamento.id === emFoco ? 'ring-2 ring-brand-300' : ''}`}>
-            <div id={`tratamento-${tratamento.id}`} className="mb-3 flex scroll-mt-24 flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold text-slate-900">{tratamento.nome}</h3>
-                  <Etiqueta className="bg-slate-100 text-slate-600">{tratamento.tipo}</Etiqueta>
-                  <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
-                    {tratamento.status}
-                  </Etiqueta>
-                </div>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {tratamento.nomeVeterinario} · {tratamento.status === 'Planejado' ? 'Início previsto' : 'Início'} em{' '}
-                  {formatarData(tratamento.dataInicio)}
-                  {tratamento.dataFim && ` · Encerrado em ${formatarData(tratamento.dataFim)}`}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => aoVerAvaliacao(tratamento.avaliacaoId)}
-                  className="mt-0.5 text-left text-xs text-brand hover:underline"
-                >
-                  Avaliação de origem
-                  {tratamento.dataAvaliacao && ` (${formatarData(tratamento.dataAvaliacao)})`}
-                  {tratamento.motivoAvaliacao && `: ${tratamento.motivoAvaliacao}`}
-                </button>
-              </div>
-
-              {podeGerenciar && (
-                <div className="flex flex-wrap items-center gap-1">
-                  {aoRegistrarSessao && tratamentoAtivo(tratamento.status) && (
-                    <button
-                      type="button"
-                      onClick={() => aoRegistrarSessao(tratamento)}
-                      className="vc-botao-primario mr-1 px-3 py-1.5 text-sm"
-                      aria-label={`Registrar sessão de ${tratamento.nome}`}
-                    >
-                      <ClipboardPlus size={15} />
-                      Registrar sessão
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => aoEditar(tratamento)}
-                    className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                    title="Editar tratamento"
-                    aria-label={`Editar ${tratamento.nome}`}
-                  >
-                    <Pencil size={16} />
-                  </button>
-
-                  {tratamentoAtivo(tratamento.status) && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => mudarStatus(tratamento, 'Concluído')}
-                        disabled={alterando === tratamento.id}
-                        className="rounded-lg p-2 text-slate-500 hover:bg-sucesso-claro hover:text-sucesso disabled:opacity-50"
-                        title="Concluir tratamento"
-                        aria-label={`Concluir ${tratamento.nome}`}
-                      >
-                        <CheckCircle2 size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => mudarStatus(tratamento, 'Inativado')}
-                        disabled={alterando === tratamento.id}
-                        className="rounded-lg p-2 text-slate-500 hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
-                        title="Inativar tratamento"
-                        aria-label={`Inativar ${tratamento.nome}`}
-                      >
-                        <Power size={16} />
-                      </button>
-                    </>
-                  )}
-
-                  {tratamento.status === 'Inativado' && (
-                    <button
-                      type="button"
-                      onClick={() => mudarStatus(tratamento, 'Em Andamento')}
-                      disabled={alterando === tratamento.id}
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-sucesso hover:bg-sucesso-claro disabled:opacity-50"
-                      title="Reativar tratamento"
-                    >
-                      <RotateCcw size={15} />
-                      Reativar
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <p className="mb-3 whitespace-pre-line text-sm text-slate-700">{tratamento.descricao}</p>
-
-            <dl className="mb-3 grid gap-3 text-sm sm:grid-cols-3">
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Duração prevista</dt>
-                <dd className="text-slate-700">{tratamento.duracaoPrevista}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Frequência</dt>
-                <dd className="text-slate-700">{tratamento.frequencia}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sessões previstas</dt>
-                <dd className="text-slate-700">{tratamento.sessoesPrevistas}</dd>
-              </div>
-            </dl>
-
-            {tratamento.observacoesGerais && (
-              <p className="mb-3 text-sm text-slate-600">
-                <strong className="text-slate-700">Observações:</strong> {tratamento.observacoesGerais}
-              </p>
-            )}
-
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Activity size={14} />
-              {tratamento.evolucoesRegistradas} de {tratamento.sessoesPrevistas} sessões registradas
-              {tratamento.totalSessoes > 0 && ` · ${tratamento.totalSessoes} na agenda`}
-            </div>
-            <div
-              className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={tratamento.sessoesPrevistas}
-              aria-valuenow={tratamento.evolucoesRegistradas}
-              aria-label={`Sessões registradas de ${tratamento.nome}`}
+          return (
+            <li
+              key={tratamento.id}
+              id={`tratamento-${tratamento.id}`}
+              className={`scroll-mt-24 ${tratamento.id === emFoco ? 'bg-brand-50/40' : ''}`}
             >
-              <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${progresso}%` }} />
-            </div>
-
-            <div className="mt-4 border-t border-slate-100 pt-3">
+              {/* Resumo: o que identifica o tratamento e como ele anda, numa linha. */}
               <button
                 type="button"
                 onClick={() => alternar(tratamento.id)}
                 aria-expanded={aberto}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-brand"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 sm:px-5"
               >
-                {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Sessões deste tratamento ({doTratamento.length})
+                {aberto ? (
+                  <ChevronDown size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
+                )}
+
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-semibold text-slate-900" title={tratamento.nome}>
+                      {tratamento.nome}
+                    </span>
+                    <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
+                      {tratamento.status}
+                    </Etiqueta>
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-500">
+                    {[
+                      tratamento.tipo,
+                      tratamento.nomeVeterinario,
+                      `${tratamento.status === 'Planejado' ? 'início previsto' : 'início'} em ${formatarData(tratamento.dataInicio)}`,
+                      proxima && `próxima sessão ${formatarDataHora(proxima.dataHora)}`,
+                      aguardandoRegistro > 0 &&
+                        `${aguardandoRegistro} ${aguardandoRegistro === 1 ? 'sessão aguarda' : 'sessões aguardam'} registro`,
+                      ativo && faltamCadastrar > 0 && `${faltamCadastrar} ${faltamCadastrar === 1 ? 'sessão' : 'sessões'} a cadastrar`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
+
+                <span className="hidden shrink-0 items-center gap-2 sm:flex" title="Sessões realizadas do total previsto">
+                  <span className="text-xs tabular-nums text-slate-600">
+                    {realizadas}/{tratamento.sessoesPrevistas}
+                  </span>
+                  <span className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+                    <span className="block h-full rounded-full bg-brand" style={{ width: `${progresso}%` }} />
+                  </span>
+                </span>
               </button>
 
               {aberto && (
-                <EvolucoesDoTratamento
-                  evolucoes={doTratamento}
-                  aoAbrir={aoAbrirEvolucao}
-                  rodape={
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                      <button type="button" onClick={aoVerHistorico} className="inline-flex items-center gap-1 text-brand hover:underline">
-                        <History size={14} />
-                        Histórico completo do animal
-                      </button>
-                      {exibeLinkDeEvolucoes && (
-                        <Link
-                          to={`/sessoes?pacienteId=${pacienteId}&tratamentoId=${tratamento.id}`}
-                          className="inline-flex items-center gap-1 text-brand hover:underline"
-                        >
-                          <ListFilter size={14} />
-                          Abrir na tela de sessões
-                        </Link>
+                <div className="space-y-4 border-t border-slate-100 bg-white px-4 pb-5 pt-4 sm:px-5 sm:pl-12">
+                  {podeGerenciar && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {podeGerenciar && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => aoEditar(tratamento)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                            title="Editar tratamento"
+                            aria-label={`Editar ${tratamento.nome}`}
+                          >
+                            <Pencil size={16} />
+                          </button>
+
+                          {ativo && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => mudarStatus(tratamento, 'Concluído')}
+                                disabled={alterando === tratamento.id}
+                                className="rounded-lg p-2 text-slate-500 hover:bg-sucesso-claro hover:text-sucesso disabled:opacity-50"
+                                title="Concluir tratamento"
+                                aria-label={`Concluir ${tratamento.nome}`}
+                              >
+                                <CheckCircle2 size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => mudarStatus(tratamento, 'Inativado')}
+                                disabled={alterando === tratamento.id}
+                                className="rounded-lg p-2 text-slate-500 hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
+                                title="Inativar tratamento"
+                                aria-label={`Inativar ${tratamento.nome}`}
+                              >
+                                <Power size={16} />
+                              </button>
+                            </>
+                          )}
+
+                          {tratamento.status === 'Inativado' && (
+                            <button
+                              type="button"
+                              onClick={() => mudarStatus(tratamento, 'Em Andamento')}
+                              disabled={alterando === tratamento.id}
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-sucesso hover:bg-sucesso-claro disabled:opacity-50"
+                              title="Reativar tratamento"
+                            >
+                              <RotateCcw size={15} />
+                              Reativar
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
-                  }
-                />
+                  )}
+
+                  <p className="whitespace-pre-line text-sm text-slate-700">{tratamento.descricao}</p>
+
+                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Duração prevista</dt>
+                      <dd className="text-slate-700">{tratamento.duracaoPrevista || 'Não informada'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Frequência</dt>
+                      <dd className="text-slate-700">{tratamento.frequencia || 'Não informada'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sessões</dt>
+                      <dd className="text-slate-700">
+                        {tratamento.sessoesPrevistas} previstas · {cadastradas} cadastradas · {realizadas}{' '}
+                        {realizadas === 1 ? 'realizada' : 'realizadas'}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {tratamento.observacoesGerais && (
+                    <p className="text-sm text-slate-600">
+                      <strong className="text-slate-700">Observações:</strong> {tratamento.observacoesGerais}
+                    </p>
+                  )}
+
+                  <p className="text-xs text-slate-500">
+                    {tratamento.dataFim && `Encerrado em ${formatarData(tratamento.dataFim)} · `}
+                    <button type="button" onClick={() => aoVerAvaliacao(tratamento.avaliacaoId)} className="text-brand hover:underline">
+                      Avaliação de origem
+                      {tratamento.dataAvaliacao && ` (${formatarData(tratamento.dataAvaliacao)})`}
+                      {tratamento.motivoAvaliacao && `: ${tratamento.motivoAvaliacao}`}
+                    </button>
+                  </p>
+
+                  <div>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-700">Sessões do tratamento</h4>
+                        <p className="text-xs text-slate-500">
+                          {cadastradas} de {tratamento.sessoesPrevistas} cadastradas · {realizadas}{' '}
+                          {realizadas === 1 ? 'realizada' : 'realizadas'}
+                          {exibeLinkDaTelaDeSessoes && doTratamento.length > 0 && (
+                            <>
+                              {' · '}
+                              <Link
+                                to={`/sessoes?pacienteId=${pacienteId}&tratamentoId=${tratamento.id}`}
+                                className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+                              >
+                                <ListFilter size={12} />
+                                Abrir na tela de sessões
+                              </Link>
+                            </>
+                          )}
+                        </p>
+                      </div>
+
+                      {/* Um botão só: o plano inicial e, depois, sessões a mais — no meio ou no fim do tratamento. */}
+                      {podeCadastrar && !planoCumprido && (
+                        <button
+                          type="button"
+                          onClick={() => aoCadastrarSessoes!(tratamento)}
+                          className={cadastradas === 0 ? 'vc-botao-primario px-3 py-1.5 text-sm' : 'vc-botao-secundario px-3 py-1.5 text-sm'}
+                        >
+                          <CalendarPlus size={15} />
+                          {cadastradas === 0 ? 'Cadastrar sessões' : 'Adicionar sessões'}
+                        </button>
+                      )}
+                    </div>
+
+                    {planoCumprido && (podeCadastrar || podeGerenciar) && (
+                      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-sucesso/30 bg-sucesso-claro/60 px-4 py-3">
+                        <CheckCircle2 size={18} className="shrink-0 text-sucesso" aria-hidden="true" />
+                        <p className="min-w-0 flex-1 text-sm text-slate-700">
+                          {cadastradas === 1
+                            ? 'A sessão cadastrada foi realizada.'
+                            : `As ${cadastradas} sessões cadastradas foram realizadas.`}{' '}
+                          Se o animal precisar continuar, adicione mais sessões; se não, conclua o tratamento.
+                        </p>
+                        <span className="flex flex-wrap gap-2">
+                          {podeCadastrar && (
+                            <button
+                              type="button"
+                              onClick={() => aoCadastrarSessoes!(tratamento)}
+                              className="vc-botao-primario px-3 py-1.5 text-sm"
+                            >
+                              <CalendarPlus size={15} />
+                              Adicionar sessões
+                            </button>
+                          )}
+                          {podeGerenciar && (
+                            <button
+                              type="button"
+                              onClick={() => mudarStatus(tratamento, 'Concluído')}
+                              disabled={alterando === tratamento.id}
+                              className="vc-botao-secundario px-3 py-1.5 text-sm"
+                            >
+                              <CheckCircle2 size={15} />
+                              Concluir tratamento
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                    <ListaDeSessoes
+                      sessoes={doTratamento}
+                      vazio={
+                        podeCadastrar
+                          ? `Nenhuma sessão cadastrada. Use “Cadastrar sessões” e informe quantas sessões, em quais dias da semana e em que horário — o plano prevê ${tratamento.sessoesPrevistas}.`
+                          : 'Nenhuma sessão cadastrada neste tratamento.'
+                      }
+                      {...acoesDaSessao}
+                    />
+                  </div>
+                </div>
               )}
-            </div>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Evoluções de um tratamento, em ordem cronológica, com filtro por período e número da sessão. */
-function EvolucoesDoTratamento({
-  evolucoes,
-  aoAbrir,
-  rodape,
-}: {
-  evolucoes: ItemLinhaTempo[];
-  aoAbrir: (evolucao: ItemLinhaTempo) => void;
-  rodape: ReactNode;
-}) {
-  const [de, setDe] = useState('');
-  const [ate, setAte] = useState('');
-  const [sessao, setSessao] = useState('');
-
-  const filtradas = evolucoes.filter((evolucao) => {
-    const dia = paraValorInputData(evolucao.data);
-    if (de && dia < de) return false;
-    if (ate && dia > ate) return false;
-    if (sessao && evolucao.numeroSessao !== Number(sessao)) return false;
-    return true;
-  });
-
-  const filtrando = !!de || !!ate || !!sessao;
-
-  return (
-    <div className="mt-3">
-      {evolucoes.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-end gap-2">
-          <label className="text-xs text-slate-500">
-            De
-            <input type="date" className="vc-campo mt-0.5 block w-auto py-1.5" value={de} onChange={(e) => setDe(e.target.value)} />
-          </label>
-          <label className="text-xs text-slate-500">
-            Até
-            <input type="date" className="vc-campo mt-0.5 block w-auto py-1.5" value={ate} onChange={(e) => setAte(e.target.value)} />
-          </label>
-          <label className="text-xs text-slate-500">
-            Sessão nº
-            <input
-              type="number"
-              min={1}
-              className="vc-campo mt-0.5 block w-24 py-1.5"
-              value={sessao}
-              onChange={(e) => setSessao(e.target.value)}
-            />
-          </label>
-          {filtrando && (
-            <button
-              type="button"
-              className="pb-2 text-xs font-medium text-brand hover:underline"
-              onClick={() => {
-                setDe('');
-                setAte('');
-                setSessao('');
-              }}
-            >
-              Limpar filtro
-            </button>
-          )}
-        </div>
-      )}
-
-      {filtradas.length === 0 ? (
-        <p className="rounded-xl bg-slate-50 px-4 py-4 text-center text-sm text-slate-500">
-          {evolucoes.length === 0
-            ? 'Nenhuma sessão registrada neste tratamento. Use “Registrar sessão” acima ao fim de cada sessão, ou o botão da sessão na Agenda.'
-            : 'Nenhuma sessão no filtro escolhido.'}
-        </p>
-      ) : (
-        <ol className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-          {filtradas.map((evolucao) => (
-            <li key={evolucao.chave}>
-              <button
-                type="button"
-                onClick={() => aoAbrir(evolucao)}
-                className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
-              >
-                <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-cyan-100 px-1.5 text-xs font-bold text-cyan-800">
-                  {evolucao.numeroSessao}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-slate-800">
-                    {evolucao.campos['Procedimentos realizados'] ?? evolucao.descricao}
-                  </span>
-                  <span className="block truncate text-xs text-slate-500">{evolucao.detalhes}</span>
-                  <span className="block text-xs text-slate-500">
-                    {formatarDataHora(evolucao.data)}
-                    {evolucao.autor && ` · ${evolucao.autor}`}
-                  </span>
-                </span>
-                {evolucao.escalaDor != null && (
-                  <Etiqueta className={estiloEscalaDor(evolucao.escalaDor)}>Dor {evolucao.escalaDor}/10</Etiqueta>
-                )}
-              </button>
             </li>
-          ))}
-        </ol>
-      )}
-
-      {rodape}
-    </div>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

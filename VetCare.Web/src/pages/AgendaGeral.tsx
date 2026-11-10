@@ -1,11 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarRange, Check, ChevronLeft, ChevronRight, Loader2, Plus, X } from 'lucide-react';
+import { CalendarRange, Check, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 import { api, mensagemDeErro } from '../services/api';
 import type { AgendaGeral as AgendaGeralDTO, VisaoAgenda } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
-import { estiloStatusSessao, formatarData, formatarHora, paraValorInputData } from '../utils/formato';
-import { ModalAgendarSessao } from './componentes/ModalAgendarSessao';
+import { estiloStatusSessao, formatarData, formatarIntervalo, paraValorInputData } from '../utils/formato';
 import { useCarregamento } from '../hooks/useCarregamento';
 import { useAtualizacao } from '../contexts/atualizacoes';
 import { useConfirmacao } from '../hooks/useConfirmacao';
@@ -20,7 +19,6 @@ const VISOES: { valor: VisaoAgenda; rotulo: string }[] = [
 export function AgendaGeral() {
   const [visao, setVisao] = useState<VisaoAgenda>('dia');
   const [data, setData] = useState(new Date());
-  const [modalAgendar, setModalAgendar] = useState(false);
 
   /** HU-005, CA-2: toggle que exibe ou oculta a agenda de veterinários específicos. */
   const [ocultos, setOcultos] = useState<Set<string>>(new Set());
@@ -149,13 +147,7 @@ export function AgendaGeral() {
     <>
       <CabecalhoPagina
         titulo="Agenda geral da clínica"
-        descricao="Visão única de todos os profissionais no mesmo período."
-        acoes={
-          <button type="button" className="vc-botao-primario" onClick={() => setModalAgendar(true)}>
-            <Plus size={16} />
-            Agendar sessão
-          </button>
-        }
+        descricao="Visão única de todos os profissionais no mesmo período. As sessões são cadastradas no tratamento, no prontuário de cada paciente."
       />
 
       {erro && (
@@ -269,7 +261,7 @@ export function AgendaGeral() {
             descricao={
               ocultos.size > 0
                 ? 'Nenhuma sessão para os profissionais atualmente exibidos. Reative algum profissional na legenda acima.'
-                : 'Nenhuma sessão foi agendada para a data selecionada.'
+                : 'Nenhuma sessão cadastrada para a data selecionada. As sessões são cadastradas no tratamento, no prontuário do paciente.'
             }
           />
         </Card>
@@ -299,8 +291,10 @@ export function AgendaGeral() {
                       aria-hidden="true"
                     />
 
-                    <div className="w-16 shrink-0 text-center">
-                      <p className="text-sm font-bold text-slate-900">{formatarHora(sessao.dataHora)}</p>
+                    <div className="w-24 shrink-0 text-center">
+                      <p className="text-sm font-bold tabular-nums text-slate-900">
+                        {formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}
+                      </p>
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -354,15 +348,6 @@ export function AgendaGeral() {
         </div>
       )}
 
-      <ModalAgendarSessao
-        aberto={modalAgendar}
-        aoFechar={() => setModalAgendar(false)}
-        aoSalvar={() => {
-          setModalAgendar(false);
-          setAviso('Sessão agendada com sucesso. O tutor recebe o aviso para confirmar a presença.');
-          recarregar();
-        }}
-      />
     </>
   );
 }

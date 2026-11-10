@@ -15,6 +15,13 @@ namespace VetCare.API.Models
         public Guid? AvaliacaoId { get; set; }
         public Guid? AtendimentoId { get; set; }
 
+        /// <summary>
+        /// Tratamento para o qual a receita foi prescrita. Na receita de uma sessão é sempre o
+        /// tratamento da própria sessão; na de uma avaliação é opcional, porque a receita pode
+        /// vir antes de qualquer tratamento.
+        /// </summary>
+        public Guid? TratamentoId { get; set; }
+
         public DateTime DataEmissao { get; set; } = DateTime.UtcNow;
         public DateTime? ValidaAte { get; set; }
         public string Orientacoes { get; set; } = string.Empty;
@@ -27,6 +34,7 @@ namespace VetCare.API.Models
         public Veterinario? Veterinario { get; set; }
         public AvaliacaoClinica? Avaliacao { get; set; }
         public AtendimentoFisioterapeutico? Atendimento { get; set; }
+        public Tratamento? Tratamento { get; set; }
         public ICollection<ItemPrescricao> Itens { get; set; } = new List<ItemPrescricao>();
     }
 

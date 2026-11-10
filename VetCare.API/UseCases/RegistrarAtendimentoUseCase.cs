@@ -8,16 +8,14 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// HU-008: evolução, o registro de cada sessão realizada dentro de um tratamento. A evolução
-    /// recebe o número da sessão no tratamento, diz o que foi feito e como o animal reagiu, e
-    /// pode gerar uma receita.
+    /// HU-008: registro do atendimento de uma sessão cadastrada no tratamento. O registro recebe o
+    /// número da sessão no tratamento, diz o que foi feito e como o animal reagiu, e pode gerar uma
+    /// receita. Sessões só nascem do cadastro (<see cref="CadastrarSessoesUseCase"/>): o registro
+    /// nunca cria uma sessão.
     /// </summary>
     public class RegistrarAtendimentoUseCase
     {
         public const string TipoRegistro = "AtendimentoFisioterapeutico";
-
-        /// <summary>Observação da sessão criada no registro de uma evolução sem agendamento.</summary>
-        public const string SessaoSemAgendamento = "Sessão registrada no prontuário, sem agendamento prévio.";
 
         private readonly IAtendimentoRepository _atendimentos;
         private readonly ITratamentoRepository _tratamentos;
@@ -75,44 +73,36 @@ namespace VetCare.API.UseCases
                 return Resultado<AtendimentoDTO>.Invalido(pendente);
             }
 
-            Sessao? sessao = null;
-            Tratamento? tratamento;
-
-            if (dto.SessaoId.HasValue)
-            {
-                sessao = await _sessoes.ObterPorIdComRelacionamentos(dto.SessaoId.Value);
-
-                if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-                {
-                    return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
-                }
-
-                tratamento = sessao.Tratamento!;
-            }
-            else if (dto.TratamentoId.HasValue)
-            {
-                tratamento = await _tratamentos.ObterPorIdComRelacionamentos(dto.TratamentoId.Value);
-
-                if (tratamento == null || tratamento.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-                {
-                    return Resultado<AtendimentoDTO>.NaoEncontrado("Tratamento não encontrado.");
-                }
-            }
-            else
+            if (dto.SessaoId is not { } sessaoId || sessaoId == Guid.Empty)
             {
                 return Resultado<AtendimentoDTO>.Invalido(
-                    "Informe a sessão agendada que foi realizada ou o tratamento da sessão.");
+                    "Informe a sessão realizada. As sessões são cadastradas no tratamento, antes do atendimento.");
             }
+
+            var sessao = await _sessoes.ObterPorIdComRelacionamentos(sessaoId);
+
+            if (sessao == null || sessao.Tratamento?.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
+            {
+                return Resultado<AtendimentoDTO>.NaoEncontrado("Sessão não encontrada.");
+            }
+
+            var tratamento = sessao.Tratamento!;
 
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, tratamento.Paciente))
             {
                 return Resultado<AtendimentoDTO>.NaoAutorizado(AcessoAoPaciente.MensagemNegada);
             }
 
-            if (sessao?.Status == StatusSessao.Cancelada)
+            if (sessao.Status == StatusSessao.Cancelada)
             {
                 return Resultado<AtendimentoDTO>.Invalido(
                     "Não é possível registrar uma sessão cancelada.");
+            }
+
+            if (sessao.Inativa)
+            {
+                return Resultado<AtendimentoDTO>.Invalido(
+                    "Esta sessão está inativada. Reative-a antes de registrar o atendimento.");
             }
 
             // Concluído e inativado não recebem novas evoluções; o histórico fica como está.
@@ -124,44 +114,18 @@ namespace VetCare.API.UseCases
             }
 
             // Uma sessão gera no máximo um atendimento (cardinalidade 1..0..1 do diagrama de classes).
-            if (sessao != null && await _atendimentos.ObterPorSessao(sessao.Id) != null)
+            if (await _atendimentos.ObterPorSessao(sessao.Id) != null)
             {
-                return Resultado<AtendimentoDTO>.Conflito("Esta sessão já foi registrada.");
+                return Resultado<AtendimentoDTO>.Conflito("O atendimento desta sessão já foi registrado.");
             }
 
-            // Sem sessão agendada, quem registra é quem atendeu; a administração registra em
-            // nome do veterinário do tratamento.
-            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? sessao?.VeterinarioId ?? tratamento.VeterinarioId;
+            // Quem registra é quem atendeu: o veterinário logado, inclusive o colega que cobre uma
+            // ausência; a administração registra em nome do veterinário da sessão.
+            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? sessao.VeterinarioId;
 
             if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)
             {
-                return Resultado<AtendimentoDTO>.NaoAutorizado("A sessão deve ser registrada em seu próprio nome.");
-            }
-
-            var sessaoCriadaAgora = false;
-
-            if (sessao == null)
-            {
-                if (tratamento.Paciente?.EmAcompanhamento != true)
-                {
-                    return Resultado<AtendimentoDTO>.Conflito(
-                        "O paciente está inativo ou tem óbito registrado; não é possível registrar novas sessões.");
-                }
-
-                // A sessão realizada sem agendamento entra na agenda de quem atendeu, já concluída.
-                sessao = new Sessao
-                {
-                    TratamentoId = tratamento.Id,
-                    VeterinarioId = veterinarioId,
-                    DataHora = DateTime.UtcNow,
-                    Status = StatusSessao.Concluida,
-                    Observacoes = SessaoSemAgendamento,
-                    LembreteEnviado = true
-                };
-
-                await _sessoes.Adicionar(sessao);
-                await _sessoes.SalvarAlteracoes();
-                sessaoCriadaAgora = true;
+                return Resultado<AtendimentoDTO>.NaoAutorizado("O atendimento deve ser registrado em seu próprio nome.");
             }
 
             var pacienteId = tratamento.PacienteId;
@@ -225,8 +189,7 @@ namespace VetCare.API.UseCases
                 await AtualizarPesoDoPaciente(pacienteId, dto.PesoKg.Value);
             }
 
-            // A sessão criada agora já nasce concluída.
-            var sessaoConcluidaAgora = sessaoCriadaAgora;
+            var sessaoConcluidaAgora = false;
 
             if (dto.ConcluirSessao && sessao.Status != StatusSessao.Concluida)
             {
