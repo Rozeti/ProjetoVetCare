@@ -1,20 +1,21 @@
 import { useState, type FormEvent } from 'react';
-import { Ban, Loader2, Pill, Plus, Printer, Trash2 } from 'lucide-react';
+import { Ban, CalendarClock, GitBranch, Loader2, MessageSquareText, Pill, Plus, Printer, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { Avaliacao, Prescricao, Tratamento } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
 import { SeletorVeterinario } from '../../components/SeletorVeterinario';
-import { formatarData, formatarDia, paraValorInputData } from '../../utils/formato';
+import { formatarData, formatarDataHora, formatarDia, paraValorInputData, paraValorInputDia } from '../../utils/formato';
 import { imprimirReceita } from '../../utils/impressao';
-import { CampoOrigem, CampoTratamento, FiltroPorTratamento, ReferenciaAoTratamento, ResumoDaOrigem } from './VinculoClinico';
+import { CampoOrigem, FiltroPorOrigem, LinhaDaOrigem, OrigemDoDocumento, ResumoDaOrigem } from './VinculoClinico';
+import { BarraDeAcoes, Dado, ItemExpansivel, Topico } from './RegistroClinico';
+import { useItensAbertos } from '../../hooks/useItensAbertos';
 import {
   descreverOrigem,
-  filtrarPorTratamento,
+  filtrarPorOrigem,
   lerOrigem,
-  tratamentoSugerido,
-  tratamentosParaVinculo,
+  tratamentosAtivos,
   valorDaOrigem,
   type OrigemClinica,
   type SessaoRegistrada,
@@ -71,25 +72,50 @@ interface Props {
   aoEmitir?: () => void;
   /** Recarrega o prontuário; a mensagem, quando vem, é exibida pela tela que o contém. */
   aoAtualizar: (mensagem?: string) => void;
-  /** Leva ao tratamento da receita, na aba Tratamentos. */
+  /** Leva à avaliação ou ao tratamento de origem. */
+  aoVerAvaliacao?: (avaliacaoId: string) => void;
   aoVerTratamento?: (tratamentoId: string) => void;
+  /** Filtro de origem vindo de um atalho ("avaliacao:<id>" ou "tratamento:<id>"). */
+  filtroInicial?: string;
+  /** Receita que chegou por um atalho: abre expandida. */
+  emFoco?: string;
+}
+
+/** Ativa, com a validade já passada: a receita ainda existe, mas não serve mais. */
+function vencida(prescricao: Prescricao): boolean {
+  return (
+    prescricao.status === 'Ativa' &&
+    !!prescricao.validaAte &&
+    paraValorInputDia(prescricao.validaAte) < paraValorInputData(new Date())
+  );
 }
 
 /**
- * Medicação do paciente: as receitas, com cancelamento e impressão. Cada uma mostra o
- * tratamento para o qual foi prescrita e de onde veio (avaliação ou sessão); a lista pode ser
- * filtrada por tratamento.
+ * Medicação do paciente: as receitas em linhas compactas — data, situação, medicamentos e a
+ * origem (a avaliação ou o tratamento em que foram prescritas). Ao expandir, aparecem os
+ * medicamentos com dosagem, frequência, duração e via, as orientações, a validade, quem assina
+ * e as ações de impressão e cancelamento. A lista pode ser filtrada pela origem.
  */
-export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar, aoVerTratamento }: Props) {
+export function Receituario({
+  prescricoes,
+  nomeClinica,
+  aoEmitir,
+  aoAtualizar,
+  aoVerAvaliacao,
+  aoVerTratamento,
+  filtroInicial = '',
+  emFoco,
+}: Props) {
   const { temPerfil } = useAuth();
   const podeCancelar = temPerfil('Administrador', 'Veterinario');
   const { perguntar } = useConfirmacao();
+  const { aberto, alternar } = useItensAbertos(emFoco);
 
   const [erro, setErro] = useState('');
   const [cancelando, setCancelando] = useState('');
-  const [filtro, setFiltro] = useState('');
+  const [filtro, setFiltro] = useState(filtroInicial);
 
-  const visiveis = filtrarPorTratamento(prescricoes, filtro);
+  const visiveis = filtrarPorOrigem(prescricoes, filtro);
 
   async function cancelar(prescricao: Prescricao) {
     const { confirmado, texto: motivo } = await perguntar({
@@ -129,15 +155,17 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar, a
   }
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
           <h2 className="font-semibold text-slate-900">Medicação</h2>
-          <p className="text-xs text-slate-500">Receitas com os medicamentos prescritos, para consulta e impressão.</p>
+          <p className="text-xs text-slate-500">
+            Receitas prescritas nas avaliações e nos tratamentos, para consulta e impressão.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <FiltroPorTratamento itens={prescricoes} valor={filtro} aoMudar={setFiltro} />
+          <FiltroPorOrigem itens={prescricoes} valor={filtro} aoMudar={setFiltro} />
 
           {aoEmitir && (
             <button type="button" className="vc-botao-primario" onClick={aoEmitir}>
@@ -158,48 +186,120 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar, a
         <SemDados
           icone={<Pill size={40} />}
           titulo="Nenhuma receita emitida"
-          descricao="As receitas são emitidas a partir de uma avaliação ou de uma sessão e ficam aqui para consulta e impressão."
+          descricao="As receitas são emitidas em uma avaliação ou em um tratamento e ficam aqui para consulta e impressão."
         />
       ) : (
         <ul className="divide-y divide-slate-100">
-          {visiveis.map((prescricao) => (
-            <li key={prescricao.id} id={`receita-${prescricao.id}`} className="scroll-mt-4 px-5 py-4">
-              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-900">
-                      Receita de {formatarData(prescricao.dataEmissao)}
-                    </span>
+          {visiveis.map((prescricao) => {
+            const dataDaReceita = formatarData(prescricao.dataEmissao);
+            const estaVencida = vencida(prescricao);
 
+            return (
+              <ItemExpansivel
+                key={prescricao.id}
+                ancora={`receita-${prescricao.id}`}
+                aberto={aberto(prescricao.id)}
+                aoAlternar={() => alternar(prescricao.id)}
+                emFoco={prescricao.id === emFoco}
+                rotulo={`Receita de ${dataDaReceita}`}
+                titulo={
+                  <>
+                    <span className="font-semibold text-slate-900">Receita de {dataDaReceita}</span>
                     <Etiqueta
                       className={
-                        prescricao.status === 'Ativa' ? 'bg-sucesso-claro text-emerald-800' : 'bg-slate-200 text-slate-600'
+                        prescricao.status !== 'Ativa'
+                          ? 'bg-slate-200 text-slate-600'
+                          : estaVencida
+                            ? 'bg-alerta-claro text-amber-800'
+                            : 'bg-sucesso-claro text-emerald-800'
                       }
                     >
-                      {prescricao.status}
+                      {estaVencida ? 'Vencida' : prescricao.status}
                     </Etiqueta>
-                  </div>
-
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {prescricao.nomeVeterinario}
-                    {prescricao.crmv && ` · ${prescricao.crmv}`}
-                    {prescricao.validaAte && ` · Válida até ${formatarDia(prescricao.validaAte)}`}
-                  </p>
-                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                    <ReferenciaAoTratamento item={prescricao} aoVerTratamento={aoVerTratamento} />
-                    {prescricao.origem && <span>Origem: {prescricao.origem}</span>}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1">
+                  </>
+                }
+                linhas={[
+                  <LinhaDaOrigem key="origem" item={prescricao} />,
+                  [prescricao.itens.map((item) => item.medicamento).join(', '), prescricao.nomeVeterinario]
+                    .filter(Boolean)
+                    .join(' · '),
+                ]}
+                atalhos={
                   <button
                     type="button"
                     onClick={() => imprimirReceita(prescricao, nomeClinica)}
                     className="rounded-lg p-2 text-slate-500 transition hover:bg-brand-100 hover:text-brand"
                     title="Imprimir receita"
-                    aria-label={`Imprimir a receita de ${formatarData(prescricao.dataEmissao)}`}
+                    aria-label={`Imprimir a receita de ${dataDaReceita}`}
                   >
                     <Printer size={16} />
+                  </button>
+                }
+              >
+                <Topico titulo="Origem" icone={<GitBranch size={14} />} semCaixa>
+                  <OrigemDoDocumento item={prescricao} aoVerAvaliacao={aoVerAvaliacao} aoVerTratamento={aoVerTratamento} />
+                </Topico>
+
+                <Topico
+                  titulo={prescricao.itens.length === 1 ? 'Medicamento' : `Medicamentos (${prescricao.itens.length})`}
+                  icone={<Pill size={14} />}
+                  semCaixa
+                >
+                  <ul className="space-y-2">
+                    {prescricao.itens.map((item) => (
+                      <li key={item.id} className="rounded-xl border border-slate-200/80 bg-slate-50 px-4 py-3">
+                        <p className="font-semibold text-slate-900">{item.medicamento}</p>
+                        <dl className="mt-2 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+                          {(
+                            [
+                              ['Dosagem', item.dosagem],
+                              ['Frequência', item.frequencia],
+                              ['Duração', item.duracao],
+                              ['Via', item.via],
+                            ] as const
+                          ).map(([rotulo, valor]) => (
+                            <div key={rotulo}>
+                              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{rotulo}</dt>
+                              <dd className="text-slate-800">{valor || '—'}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        {item.observacao && (
+                          <p className="mt-2 border-t border-slate-200/80 pt-2 text-sm text-slate-700">
+                            <span className="font-semibold text-slate-900">Observação: </span>
+                            {item.observacao}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </Topico>
+
+                {prescricao.orientacoes && (
+                  <Topico titulo="Orientações" icone={<MessageSquareText size={14} />}>
+                    {prescricao.orientacoes}
+                  </Topico>
+                )}
+
+                <dl className="grid gap-3 sm:grid-cols-3">
+                  <Dado rotulo="Emitida em">{formatarDataHora(prescricao.dataEmissao)}</Dado>
+                  <Dado rotulo="Válida até">
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarClock size={14} className="text-slate-400" aria-hidden="true" />
+                      {prescricao.validaAte ? formatarDia(prescricao.validaAte) : 'Sem validade informada'}
+                      {estaVencida && <span className="text-xs font-semibold text-amber-700">(vencida)</span>}
+                    </span>
+                  </Dado>
+                  <Dado rotulo="Veterinário">
+                    {prescricao.nomeVeterinario}
+                    {prescricao.crmv && <span className="block text-xs font-normal text-slate-500">{prescricao.crmv}</span>}
+                  </Dado>
+                </dl>
+
+                <BarraDeAcoes>
+                  <button type="button" className="vc-botao-secundario" onClick={() => imprimirReceita(prescricao, nomeClinica)}>
+                    <Printer size={15} />
+                    Imprimir receita
                   </button>
 
                   {podeCancelar && prescricao.status === 'Ativa' && (
@@ -207,35 +307,16 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar, a
                       type="button"
                       onClick={() => cancelar(prescricao)}
                       disabled={cancelando === prescricao.id}
-                      className="rounded-lg p-2 text-slate-500 transition hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
-                      title="Cancelar receita"
-                      aria-label={`Cancelar a receita de ${formatarData(prescricao.dataEmissao)}`}
+                      className="vc-botao-secundario text-perigo hover:bg-perigo-claro"
                     >
-                      {cancelando === prescricao.id ? <Loader2 className="animate-spin" size={16} /> : <Ban size={16} />}
+                      {cancelando === prescricao.id ? <Loader2 className="animate-spin" size={15} /> : <Ban size={15} />}
+                      Cancelar receita
                     </button>
                   )}
-                </div>
-              </div>
-
-              <ul className="space-y-2">
-                {prescricao.itens.map((item) => (
-                  <li key={item.id} className="rounded-xl bg-slate-50 px-4 py-3">
-                    <p className="text-sm font-semibold text-slate-800">{item.medicamento}</p>
-                    <p className="mt-0.5 text-xs text-slate-600">
-                      {[item.dosagem, item.frequencia, item.duracao, item.via].filter(Boolean).join(' · ')}
-                    </p>
-                    {item.observacao && <p className="mt-1 text-xs text-slate-500">{item.observacao}</p>}
-                  </li>
-                ))}
-              </ul>
-
-              {prescricao.orientacoes && (
-                <p className="mt-3 text-sm text-slate-600">
-                  <strong className="text-slate-700">Orientações:</strong> {prescricao.orientacoes}
-                </p>
-              )}
-            </li>
-          ))}
+                </BarraDeAcoes>
+              </ItemExpansivel>
+            );
+          })}
         </ul>
       )}
     </Card>
@@ -245,7 +326,7 @@ export function Receituario({ prescricoes, nomeClinica, aoEmitir, aoAtualizar, a
 export interface PropsDoFormularioDeReceita {
   pacienteId: string;
   avaliacoes: Avaliacao[];
-  /** Sessões registradas do animal, que também originam receitas. */
+  /** Sessões registradas do animal: descrevem a origem da receita feita no registro de uma sessão. */
   sessoes: SessaoRegistrada[];
   tratamentos: Tratamento[];
   /** Origem já definida pelo botão que abriu o formulário; sem ela, o usuário escolhe. */
@@ -260,8 +341,9 @@ interface ModalProps extends Omit<PropsDoFormularioDeReceita, 'aoCancelar'> {
 }
 
 /**
- * Emissão de receita. Toda receita vem de uma avaliação ou de uma sessão registrada: a origem é
- * escolhida no formulário, ou já vem marcada quando a emissão parte do próprio registro.
+ * Emissão de receita. Toda receita vem de uma avaliação ou de um tratamento (direto nele ou no
+ * registro de uma sessão dele): a origem é escolhida no formulário, ou já vem marcada quando a
+ * emissão parte do próprio registro.
  */
 export function ModalReceita({ aberto, aoFechar, ...props }: ModalProps) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos novos.
@@ -271,7 +353,7 @@ export function ModalReceita({ aberto, aoFechar, ...props }: ModalProps) {
     <Modal
       aberto
       titulo="Nova receita"
-      descricao="A receita fica no prontuário, ligada à origem e ao tratamento, e pode ser impressa para o tutor."
+      descricao="A receita fica no prontuário, ligada à avaliação ou ao tratamento de origem, e pode ser impressa para o tutor."
       aoFechar={aoFechar}
       largura="max-w-3xl"
     >
@@ -293,10 +375,6 @@ export function FormularioDeReceita({
   const { ehVeterinario } = useAuth();
 
   const [origem, setOrigem] = useState(valorDaOrigem(origemInicial));
-  // Na origem avaliação, o tratamento é escolhido (com sugestão); na sessão, é o da própria sessão.
-  const [tratamentoEscolhido, setTratamentoEscolhido] = useState(() =>
-    tratamentoSugerido(tratamentos, valorDaOrigem(origemInicial)),
-  );
   const [itens, setItens] = useState<ItemFormulario[]>([{ ...ITEM_VAZIO }]);
   // O veterinário logado assina a própria receita; o administrador precisa escolher quem assina.
   const [veterinarioId, setVeterinarioId] = useState('');
@@ -308,13 +386,7 @@ export function FormularioDeReceita({
   // Limite inferior do campo de validade, calculado uma vez: o lint pede funções puras na renderização.
   const [amanha] = useState(() => paraValorInputData(new Date(Date.now() + 86_400_000)));
 
-  const { avaliacaoId, atendimentoId } = lerOrigem(origem);
-  const sessaoDaOrigem = atendimentoId ? sessoes.find((s) => s.id === atendimentoId) : undefined;
-
-  function mudarOrigem(valor: string) {
-    setOrigem(valor);
-    setTratamentoEscolhido(tratamentoSugerido(tratamentos, valor));
-  }
+  const ativos = tratamentosAtivos(tratamentos);
 
   function atualizarItem(indice: number, campo: keyof ItemFormulario, valor: string) {
     setItens((atual) => atual.map((item, i) => (i === indice ? { ...item, [campo]: valor } : item)));
@@ -325,7 +397,7 @@ export function FormularioDeReceita({
     setErro('');
 
     if (!origem) {
-      setErro('Informe a origem da receita: a avaliação ou a sessão em que ela foi prescrita.');
+      setErro('Informe a origem da receita: a avaliação ou o tratamento em que ela foi prescrita.');
       return;
     }
 
@@ -390,10 +462,8 @@ export function FormularioDeReceita({
       await api.post('/api/prescricoes', {
         pacienteId,
         veterinarioId: veterinarioId || null,
-        avaliacaoId,
-        atendimentoId,
-        // Na receita de uma sessão, a API liga o tratamento da própria sessão.
-        tratamentoId: atendimentoId ? null : tratamentoEscolhido || null,
+        // A avaliação, a sessão (a API liga o tratamento dela) ou o próprio tratamento.
+        ...lerOrigem(origem),
         validaAte: validaAte || null,
         orientacoes: orientacoes.trim(),
         itens: preenchidos.map((i) => ({
@@ -414,10 +484,10 @@ export function FormularioDeReceita({
     }
   }
 
-  if (!origemInicial && avaliacoes.length === 0 && sessoes.length === 0) {
+  if (!origemInicial && avaliacoes.length === 0 && ativos.length === 0) {
     return (
       <Alerta tipo="aviso">
-        A receita é emitida a partir de uma avaliação ou de uma sessão. Registre a avaliação do animal antes de
+        A receita é emitida em uma avaliação ou em um tratamento. Registre a avaliação do animal antes de
         prescrever.
       </Alerta>
     );
@@ -426,35 +496,16 @@ export function FormularioDeReceita({
   return (
     <form onSubmit={aoEnviar} className="space-y-4" noValidate>
       {origemInicial ? (
-        <ResumoDaOrigem
-          origem={descreverOrigem(origem, avaliacoes, sessoes)}
-          tratamento={sessaoDaOrigem?.nomeTratamento}
-        />
+        <ResumoDaOrigem origem={descreverOrigem(origem, avaliacoes, sessoes, tratamentos)} />
       ) : (
         <CampoOrigem
           valor={origem}
-          aoMudar={mudarOrigem}
+          aoMudar={setOrigem}
           avaliacoes={avaliacoes}
-          sessoes={sessoes}
-          dica="A avaliação ou a sessão em que o medicamento foi prescrito."
+          tratamentos={ativos}
+          dica="A avaliação ou o tratamento em que o medicamento foi prescrito."
         />
       )}
-
-      {atendimentoId
-        ? sessaoDaOrigem &&
-          !origemInicial && (
-            <Campo rotulo="Tratamento" dica="A receita de uma sessão fica no tratamento da própria sessão.">
-              <input className="vc-campo bg-slate-50" value={sessaoDaOrigem.nomeTratamento} readOnly />
-            </Campo>
-          )
-        : (
-            <CampoTratamento
-              tratamentos={tratamentosParaVinculo(tratamentos)}
-              valor={tratamentoEscolhido}
-              aoMudar={setTratamentoEscolhido}
-              tipoDoRegistro="a receita"
-            />
-          )}
 
       {itens.map((item, indice) => (
         <fieldset key={indice} className="rounded-xl border border-slate-200 p-4">

@@ -49,6 +49,7 @@ import { ModalPedidoExame, PedidosExame } from './componentes/PedidosExame';
 import { ModalReceitaOuExame } from './componentes/ModalReceitaOuExame';
 import {
   ABA_DA_EMISSAO,
+  tratamentosAtivos,
   type OrigemClinica,
   type SessaoDeOrigem,
   type SessaoRegistrada,
@@ -56,7 +57,7 @@ import {
 } from '../utils/vinculoClinico';
 import { LinhaDoTempo, ModalRegistroCompleto } from './componentes/LinhaDoTempoClinica';
 import { AvaliacoesDoPaciente } from './componentes/AvaliacoesDoPaciente';
-import { TratamentosDoPaciente } from './componentes/TratamentosDoPaciente';
+import { TratamentosDoPaciente, type DocumentosPorTratamento } from './componentes/TratamentosDoPaciente';
 import { SessoesDoPaciente } from './componentes/SessoesDoPaciente';
 import { ModalCadastrarSessoes } from './componentes/ModalCadastrarSessoes';
 import type { AcoesDaSessao } from './componentes/ListaDeSessoes';
@@ -98,8 +99,8 @@ const TIPOS_DE_DOCUMENTO = ['Contrato', 'Exame', 'Laudo', 'Outro'];
 /**
  * HU-011: prontuário do animal. O fluxo clínico segue animal → avaliações → tratamentos
  * originados das avaliações → sessões registradas de cada tratamento. A linha do tempo reúne
- * os principais eventos; receitas e pedidos de exame vêm de uma avaliação ou de uma sessão e
- * ficam ligados ao tratamento para o qual foram feitos.
+ * os principais eventos; receitas e pedidos de exame nascem de uma avaliação ou de um
+ * tratamento (direto nele ou no registro de uma das sessões dele).
  */
 export function Prontuario() {
   const { pacienteId = '' } = useParams();
@@ -151,9 +152,11 @@ export function Prontuario() {
   }, [location, navigate]);
   // "Abrir no prontuário", na tela de Sessões, chega com o tratamento na URL: ele abre expandido e à vista.
   const tratamentoDaUrl = parametros.get('tratamento');
-  const [foco, setFoco] = useState<{ avaliacao?: string; tratamento?: string }>(() =>
+  const [foco, setFoco] = useState<{ avaliacao?: string; tratamento?: string; receita?: string; pedido?: string }>(() =>
     tratamentoDaUrl ? { tratamento: tratamentoDaUrl } : {},
   );
+  // Filtro de origem das abas Medicação e Exames, vindo dos atalhos de uma avaliação ou de um tratamento.
+  const [filtroDosDocumentos, setFiltroDosDocumentos] = useState({ medicacao: '', exames: '' });
 
   const [modalAvaliacao, setModalAvaliacao] = useState(false);
   const [avaliacaoEmCorrecao, setAvaliacaoEmCorrecao] = useState<Avaliacao | null>(null);
@@ -252,6 +255,26 @@ export function Prontuario() {
   function verTratamento(id: string) {
     setFoco({ tratamento: id });
     irPara('tratamentos', `tratamento-${id}`);
+  }
+
+  /** Receitas ou pedidos de exame de uma avaliação ou de um tratamento ("avaliacao:<id>", "tratamento:<id>"). */
+  function verDocumentos(destino: 'medicacao' | 'exames', filtro: string) {
+    setFiltroDosDocumentos((atual) => ({ ...atual, [destino]: filtro }));
+    irPara(destino);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /** Abre a receita ou o pedido da linha do tempo, expandido, sem filtro que o esconda. */
+  function verDocumento(destino: 'medicacao' | 'exames', id: string) {
+    setFoco(destino === 'medicacao' ? { receita: id } : { pedido: id });
+    setFiltroDosDocumentos((atual) => ({ ...atual, [destino]: '' }));
+    irPara(destino, destino === 'medicacao' ? `receita-${id}` : `pedido-${id}`);
+  }
+
+  /** Depois de emitir, a aba do documento abre sem filtro, com o novo à vista. */
+  function mostrarEmitido(destino: 'medicacao' | 'exames') {
+    setFiltroDosDocumentos((atual) => ({ ...atual, [destino]: '' }));
+    mudarAba(destino);
   }
 
   function concluido(mensagem: string) {
@@ -360,7 +383,7 @@ export function Prontuario() {
   // Doses vencidas entram nos alertas clínicos, ao lado das alergias e comorbidades.
   const dosesVencidas = prontuario.vacinas.filter((v) => v.situacaoDose === 'Vencida');
 
-  // As sessões registradas, da mais recente à mais antiga: também originam receitas e pedidos de exame.
+  // As sessões registradas, da mais recente à mais antiga: receitas e pedidos também nascem no registro delas.
   const sessoesRegistradas: SessaoRegistrada[] = prontuario.historico
     .filter((item) => item.categoria === 'Sessão')
     .map((item) => ({
@@ -371,6 +394,17 @@ export function Prontuario() {
       nomeTratamento: prontuario.tratamentos.find((t) => t.id === item.tratamentoId)?.nome ?? 'Tratamento',
       nomeVeterinario: item.autor,
     }));
+
+  // Receitas e pedidos de cada tratamento, para os atalhos do cartão do tratamento.
+  const documentosPorTratamento: DocumentosPorTratamento = {};
+
+  for (const receita of prontuario.prescricoes) {
+    if (receita.tratamentoId) (documentosPorTratamento[receita.tratamentoId] ??= { receitas: 0, pedidos: 0 }).receitas++;
+  }
+
+  for (const pedido of prontuario.pedidosExame) {
+    if (pedido.tratamentoId) (documentosPorTratamento[pedido.tratamentoId] ??= { receitas: 0, pedidos: 0 }).pedidos++;
+  }
 
   const abas: { valor: Aba; rotulo: string; contador?: number; alerta?: boolean }[] = [
     { valor: 'linha-do-tempo', rotulo: 'Linha do tempo', contador: prontuario.historico.length },
@@ -405,7 +439,7 @@ export function Prontuario() {
     setEvolucaoAberta(null);
     setSessaoParaRegistro(null);
     concluido(mensagem);
-    mudarAba(ABA_DA_EMISSAO[tipo]);
+    mostrarEmitido(ABA_DA_EMISSAO[tipo]);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -498,9 +532,9 @@ export function Prontuario() {
     setOrigemDoTratamento(avaliacao);
   }
 
-  function pedirExames(avaliacaoId?: string) {
+  function pedirExames(origem?: OrigemClinica) {
     setRegistroAberto(null);
-    setPedidoExame({ aberto: true, origem: avaliacaoId ? { avaliacaoId } : undefined });
+    setPedidoExame({ aberto: true, origem });
   }
 
   function corrigirAvaliacao(avaliacao: Avaliacao) {
@@ -530,7 +564,7 @@ export function Prontuario() {
           botao('Ver em Avaliações', <ClipboardList size={15} />, () => verAvaliacao(item.id)),
           avaliacao && podeRegistrar && botao('Corrigir', <Pencil size={15} />, () => corrigirAvaliacao(avaliacao)),
           avaliacao && podeAgir && botao('Emitir receita', <Pill size={15} />, () => emitirReceita({ avaliacaoId: item.id })),
-          avaliacao && podeAgir && botao('Pedir exames', <FlaskConical size={15} />, () => pedirExames(item.id)),
+          avaliacao && podeAgir && botao('Pedir exames', <FlaskConical size={15} />, () => pedirExames({ avaliacaoId: item.id })),
           avaliacao &&
             podeAgir &&
             botao('Criar tratamento', <Stethoscope size={15} />, () => criarTratamento(avaliacao), true),
@@ -550,13 +584,13 @@ export function Prontuario() {
         return [
           item.tratamentoId &&
             botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
-          botao('Ver medicação', <Pill size={15} />, () => irPara('medicacao', `receita-${item.id}`), true),
+          botao('Ver medicação', <Pill size={15} />, () => verDocumento('medicacao', item.id), true),
         ];
       case 'Exame':
         return [
           item.tratamentoId &&
             botao('Ver tratamento', <Stethoscope size={15} />, () => verTratamento(item.tratamentoId!)),
-          botao('Ver pedidos de exame', <FlaskConical size={15} />, () => irPara('exames', `pedido-${item.id}`), true),
+          botao('Ver pedidos de exame', <FlaskConical size={15} />, () => verDocumento('exames', item.id), true),
         ];
       case 'Vacinação':
         return botao('Abrir carteira de vacinação', <Syringe size={15} />, () => irPara('vacinas'), true);
@@ -731,9 +765,10 @@ export function Prontuario() {
           }
           aoCriarTratamento={podeAgir ? criarTratamento : undefined}
           aoEmitirReceita={podeAgir ? (avaliacao) => emitirReceita({ avaliacaoId: avaliacao.id }) : undefined}
-          aoPedirExames={podeAgir ? (avaliacao) => pedirExames(avaliacao.id) : undefined}
+          aoPedirExames={podeAgir ? (avaliacao) => pedirExames({ avaliacaoId: avaliacao.id }) : undefined}
           aoCorrigir={podeRegistrar ? corrigirAvaliacao : undefined}
           aoVerTratamento={verTratamento}
+          aoVerDocumentos={verDocumentos}
         />
       )}
 
@@ -748,6 +783,10 @@ export function Prontuario() {
           aoEditar={setTratamentoEmEdicao}
           aoCadastrarSessoes={podeCadastrarSessoes ? setCadastroDeSessoes : undefined}
           acoesDaSessao={acoesDaSessao}
+          aoEmitirReceita={podeAgir ? (tratamento) => emitirReceita({ tratamentoId: tratamento.id }) : undefined}
+          aoPedirExames={podeAgir ? (tratamento) => pedirExames({ tratamentoId: tratamento.id }) : undefined}
+          documentosPorTratamento={documentosPorTratamento}
+          aoVerDocumentos={verDocumentos}
           aoVerAvaliacao={verAvaliacao}
           aoAtualizar={concluido}
           aoFalhar={setErro}
@@ -778,6 +817,8 @@ export function Prontuario() {
 
       {aba === 'medicacao' && (
         <Receituario
+          // Um atalho com outro filtro remonta a lista já filtrada.
+          key={`receitas-${filtroDosDocumentos.medicacao}`}
           prescricoes={prontuario.prescricoes}
           nomeClinica={nomeClinica}
           aoEmitir={podeAgir ? () => setReceita({ aberta: true, origem: null }) : undefined}
@@ -785,22 +826,29 @@ export function Prontuario() {
             if (mensagem) setAviso(mensagem);
             recarregar();
           }}
+          aoVerAvaliacao={verAvaliacao}
           aoVerTratamento={verTratamento}
+          filtroInicial={filtroDosDocumentos.medicacao}
+          emFoco={foco.receita}
         />
       )}
 
       {aba === 'exames' && (
         <PedidosExame
+          key={`pedidos-${filtroDosDocumentos.exames}`}
           pedidos={prontuario.pedidosExame}
           nomeClinica={nomeClinica}
-          temOrigens={prontuario.avaliacoes.length > 0 || sessoesRegistradas.length > 0}
+          temOrigens={prontuario.avaliacoes.length > 0 || tratamentosAtivos(prontuario.tratamentos).length > 0}
           aoPedir={podeAgir ? () => pedirExames() : undefined}
           aoEditar={podeRegistrar ? (pedido) => setPedidoExame({ aberto: true, pedido }) : undefined}
           aoAtualizar={(mensagem) => {
             if (mensagem) setAviso(mensagem);
             recarregar();
           }}
+          aoVerAvaliacao={verAvaliacao}
           aoVerTratamento={verTratamento}
+          filtroInicial={filtroDosDocumentos.exames}
+          emFoco={foco.pedido}
         />
       )}
 
@@ -959,7 +1007,7 @@ export function Prontuario() {
         aoSalvar={(mensagem) => {
           fecharReceita();
           concluido(mensagem);
-          mudarAba('medicacao');
+          mostrarEmitido('medicacao');
         }}
       />
 
@@ -974,7 +1022,7 @@ export function Prontuario() {
         aoSalvar={(mensagem) => {
           setPedidoExame({ aberto: false });
           concluido(mensagem);
-          mudarAba('exames');
+          mostrarEmitido('exames');
         }}
       />
 

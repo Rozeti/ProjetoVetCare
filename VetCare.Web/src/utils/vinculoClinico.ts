@@ -1,10 +1,10 @@
-import type { Avaliacao, Tratamento } from '../types';
+import type { Avaliacao, TipoOrigem, Tratamento } from '../types';
 import { formatarData, resumirTexto } from './formato';
 
 /*
- * Origem e tratamento de receitas e pedidos de exame. Os dois nascem de uma avaliação ou de uma
- * sessão registrada e podem ficar ligados ao tratamento para o qual foram feitos: na sessão, o
- * tratamento é sempre o dela; na avaliação, o vínculo é opcional e só com tratamento ativo.
+ * Origem de receitas e pedidos de exame: a avaliação em que foram feitos ou o tratamento —
+ * direto nele ou no registro de uma das sessões dele. A sessão fica guardada no registro, mas a
+ * origem mostrada é o tratamento: a sessão está dentro dele.
  */
 
 /** Sessão registrada (o atendimento) que pode originar uma receita ou um pedido de exame. */
@@ -26,7 +26,7 @@ export interface SessaoDeOrigem extends SessaoRegistrada {
 }
 
 /** Origem já decidida pelo botão que abriu o formulário. */
-export type OrigemClinica = { avaliacaoId: string } | { atendimentoId: string };
+export type OrigemClinica = { avaliacaoId: string } | { tratamentoId: string } | { atendimentoId: string };
 
 /** O que o veterinário emite a partir de uma sessão. */
 export type TipoDeEmissao = 'receita' | 'exame';
@@ -37,89 +37,139 @@ export const ABA_DA_EMISSAO: Record<TipoDeEmissao, 'medicacao' | 'exames'> = {
   exame: 'exames',
 };
 
-/** Valor do campo de origem: "avaliacao:<id>" ou "sessao:<id>". */
+/** Valor do campo de origem: "avaliacao:<id>", "tratamento:<id>" ou "sessao:<id>". */
 export function valorDaOrigem(origem?: OrigemClinica | null): string {
   if (!origem) return '';
-  return 'avaliacaoId' in origem ? `avaliacao:${origem.avaliacaoId}` : `sessao:${origem.atendimentoId}`;
+  if ('avaliacaoId' in origem) return `avaliacao:${origem.avaliacaoId}`;
+  if ('tratamentoId' in origem) return `tratamento:${origem.tratamentoId}`;
+  return `sessao:${origem.atendimentoId}`;
 }
 
 /** Ids da origem escolhida, no formato que a API espera. */
-export function lerOrigem(valor: string): { avaliacaoId: string | null; atendimentoId: string | null } {
+export function lerOrigem(valor: string): {
+  avaliacaoId: string | null;
+  tratamentoId: string | null;
+  atendimentoId: string | null;
+} {
   const [tipo, id] = valor.split(':');
   return {
     avaliacaoId: tipo === 'avaliacao' ? id : null,
+    tratamentoId: tipo === 'tratamento' ? id : null,
     atendimentoId: tipo === 'sessao' ? id : null,
   };
 }
 
-export function descreverSessao(sessao: SessaoRegistrada): string {
-  return `Sessão nº ${sessao.numeroSessao} de ${formatarData(sessao.data)}`;
+/** "Avaliação de 10/11/2026 — Claudicação no membro posterior". */
+export function descreverAvaliacao(avaliacao: Pick<Avaliacao, 'dataRegistro' | 'motivoConsulta'>, limite = 60): string {
+  return `Avaliação de ${formatarData(avaliacao.dataRegistro)} — ${resumirTexto(avaliacao.motivoConsulta, limite)}`;
 }
 
-/** "Avaliação de 10/11/2026 — motivo" ou "Sessão nº 3 de 12/11/2026"; vazio se não achar. */
-export function descreverOrigem(valor: string, avaliacoes: Avaliacao[], sessoes: SessaoRegistrada[]): string {
-  const { avaliacaoId, atendimentoId } = lerOrigem(valor);
+/** A origem escolhida no formulário, por extenso; vazio se não achar. */
+export function descreverOrigem(
+  valor: string,
+  avaliacoes: Avaliacao[],
+  sessoes: SessaoRegistrada[],
+  tratamentos: Tratamento[],
+): string {
+  const { avaliacaoId, tratamentoId, atendimentoId } = lerOrigem(valor);
 
   if (avaliacaoId) {
     const avaliacao = avaliacoes.find((a) => a.id === avaliacaoId);
-    return avaliacao
-      ? `Avaliação de ${formatarData(avaliacao.dataRegistro)} — ${resumirTexto(avaliacao.motivoConsulta, 60)}`
-      : '';
+    return avaliacao ? descreverAvaliacao(avaliacao) : '';
   }
 
+  if (tratamentoId) {
+    const tratamento = tratamentos.find((t) => t.id === tratamentoId);
+    return tratamento ? `Tratamento ${tratamento.nome}` : '';
+  }
+
+  // Feito no registro de uma sessão: a origem é o tratamento dela.
   const sessao = sessoes.find((s) => s.id === atendimentoId);
-  return sessao ? descreverSessao(sessao) : '';
+  return sessao ? `Tratamento ${sessao.nomeTratamento}` : '';
 }
 
 const ATIVOS: Tratamento['status'][] = ['Planejado', 'Em Andamento'];
 
-/** Tratamentos que aceitam um vínculo novo (os ativos), mais o já ligado ao registro em correção. */
-export function tratamentosParaVinculo(tratamentos: Tratamento[], atual?: string | null): Tratamento[] {
-  return tratamentos.filter((t) => ATIVOS.includes(t.status) || t.id === atual);
+/** Tratamentos que recebem receitas e pedidos novos: os planejados e os em andamento. */
+export function tratamentosAtivos(tratamentos: Tratamento[]): Tratamento[] {
+  return tratamentos.filter((t) => ATIVOS.includes(t.status));
 }
 
-/** Sugestão para a origem avaliação: o único tratamento ativo que ela originou, se houver um só. */
-export function tratamentoSugerido(tratamentos: Tratamento[], valorDaOrigemEscolhida: string): string {
-  const { avaliacaoId } = lerOrigem(valorDaOrigemEscolhida);
-  if (!avaliacaoId) return '';
-
-  const daAvaliacao = tratamentosParaVinculo(tratamentos).filter((t) => t.avaliacaoId === avaliacaoId);
-  return daAvaliacao.length === 1 ? daAvaliacao[0].id : '';
-}
-
-/** O que as listas de receitas e de pedidos sabem sobre o tratamento de cada item. */
-export interface ComTratamento {
+/** O que as listas de receitas e de pedidos sabem sobre a origem de cada item. */
+export interface ComOrigem {
+  tipoOrigem: TipoOrigem;
+  avaliacaoId?: string | null;
+  dataAvaliacao?: string | null;
+  motivoAvaliacao: string;
   tratamentoId?: string | null;
   nomeTratamento: string;
 }
 
-export const SEM_TRATAMENTO = 'sem-tratamento';
+export const SEM_ORIGEM = 'sem-origem';
 
-/** Opções do filtro: os tratamentos presentes na lista e, se houver, os itens sem tratamento. */
-export function opcoesDeTratamento(itens: ComTratamento[]): { valor: string; rotulo: string }[] {
-  const tratamentos = new Map<string, string>();
-  let haSemTratamento = false;
-
-  for (const item of itens) {
-    if (item.tratamentoId) tratamentos.set(item.tratamentoId, item.nomeTratamento || 'Tratamento');
-    else haSemTratamento = true;
-  }
-
-  const opcoes = Array.from(tratamentos, ([valor, rotulo]) => ({ valor, rotulo })).sort((a, b) =>
-    a.rotulo.localeCompare(b.rotulo, 'pt-BR'),
-  );
-
-  return haSemTratamento ? [...opcoes, { valor: SEM_TRATAMENTO, rotulo: 'Sem tratamento vinculado' }] : opcoes;
+export interface OpcaoDeOrigem {
+  valor: string;
+  rotulo: string;
+  grupo: 'Avaliações' | 'Tratamentos' | 'Outros';
 }
 
 /**
- * Aplica o filtro de tratamento. Um filtro que deixou de existir na lista (o último item dele
- * foi excluído, por exemplo) volta a mostrar tudo, em vez de esconder a lista inteira.
+ * Opções do filtro das abas Medicação e Exames: as avaliações e os tratamentos que aparecem na
+ * lista e, se houver, os registros antigos sem origem.
  */
-export function filtrarPorTratamento<T extends ComTratamento>(itens: T[], filtro: string): T[] {
-  const opcoes = opcoesDeTratamento(itens);
+export function opcoesDeOrigem(itens: ComOrigem[]): OpcaoDeOrigem[] {
+  const avaliacoes = new Map<string, OpcaoDeOrigem>();
+  const tratamentos = new Map<string, OpcaoDeOrigem>();
+  let haSemOrigem = false;
 
-  if (!filtro || opcoes.length < 2 || !opcoes.some((opcao) => opcao.valor === filtro)) return itens;
+  for (const item of itens) {
+    if (item.tipoOrigem === 'Avaliação' && item.avaliacaoId) {
+      avaliacoes.set(item.avaliacaoId, {
+        valor: `avaliacao:${item.avaliacaoId}`,
+        rotulo: item.dataAvaliacao
+          ? descreverAvaliacao({ dataRegistro: item.dataAvaliacao, motivoConsulta: item.motivoAvaliacao }, 40)
+          : 'Avaliação',
+        grupo: 'Avaliações',
+      });
+    } else if (!item.tipoOrigem) {
+      haSemOrigem = true;
+    }
 
-  return itens.filter((item) => (filtro === SEM_TRATAMENTO ? !item.tratamentoId : item.tratamentoId === filtro));
+    // Um tratamento entra no filtro também quando é só o vínculo de um registro antigo da avaliação.
+    if (item.tratamentoId) {
+      tratamentos.set(item.tratamentoId, {
+        valor: `tratamento:${item.tratamentoId}`,
+        rotulo: item.nomeTratamento || 'Tratamento',
+        grupo: 'Tratamentos',
+      });
+    }
+  }
+
+  const porRotulo = (a: OpcaoDeOrigem, b: OpcaoDeOrigem) => a.rotulo.localeCompare(b.rotulo, 'pt-BR');
+
+  return [
+    ...[...avaliacoes.values()],
+    ...[...tratamentos.values()].sort(porRotulo),
+    ...(haSemOrigem ? [{ valor: SEM_ORIGEM, rotulo: 'Sem origem registrada', grupo: 'Outros' as const }] : []),
+  ];
+}
+
+/** O item pertence à origem do filtro? O tratamento inclui o que foi feito nele e o vinculado a ele. */
+export function pertenceAOrigem(item: ComOrigem, filtro: string): boolean {
+  if (filtro === SEM_ORIGEM) return !item.tipoOrigem;
+
+  const [tipo, id] = filtro.split(':');
+  if (tipo === 'avaliacao') return item.tipoOrigem === 'Avaliação' && item.avaliacaoId === id;
+  if (tipo === 'tratamento') return item.tratamentoId === id;
+  return true;
+}
+
+/**
+ * Aplica o filtro de origem. Um filtro que deixou de existir na lista (o último item dele foi
+ * excluído, por exemplo) volta a mostrar tudo, em vez de esconder a lista inteira.
+ */
+export function filtrarPorOrigem<T extends ComOrigem>(itens: T[], filtro: string): T[] {
+  if (!filtro || !opcoesDeOrigem(itens).some((opcao) => opcao.valor === filtro)) return itens;
+
+  return itens.filter((item) => pertenceAOrigem(item, filtro));
 }

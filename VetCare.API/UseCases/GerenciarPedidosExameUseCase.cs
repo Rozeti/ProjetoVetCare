@@ -8,11 +8,10 @@ using VetCare.API.Services;
 namespace VetCare.API.UseCases
 {
     /// <summary>
-    /// Pedidos de exame gerados a partir de uma avaliação ou de uma sessão registrada, ligados ao
-    /// tratamento para o qual foram feitos quando houver um (no pedido de uma sessão, é sempre o
-    /// tratamento da sessão). O pedido é um documento assinado por quem solicita, que pode
-    /// corrigi-lo (a versão anterior fica guardada, RN-004) ou excluí-lo. Emissão, correção e
-    /// exclusão ficam na auditoria.
+    /// Pedidos de exame feitos em uma avaliação ou em um tratamento (direto nele ou no registro de
+    /// uma das sessões dele); o pedido de uma avaliação pode ainda ficar ligado a um tratamento.
+    /// O pedido é um documento assinado por quem solicita, que pode corrigi-lo (a versão anterior
+    /// fica guardada, RN-004) ou excluí-lo. Emissão, correção e exclusão ficam na auditoria.
     /// </summary>
     public class GerenciarPedidosExameUseCase
     {
@@ -63,43 +62,43 @@ namespace VetCare.API.UseCases
                 return Resultado<PedidoExameDTO>.Invalido("Informe os exames solicitados.");
             }
 
-            if (dto.AvaliacaoId.HasValue == dto.AtendimentoId.HasValue)
+            // Uma origem só: a avaliação, a sessão ou, sem as duas, o próprio tratamento.
+            if (dto.AvaliacaoId.HasValue && dto.AtendimentoId.HasValue ||
+                !dto.AvaliacaoId.HasValue && !dto.AtendimentoId.HasValue && !dto.TratamentoId.HasValue)
             {
                 return Resultado<PedidoExameDTO>.Invalido(
-                    "Informe a origem do pedido: a avaliação ou a sessão em que os exames foram pedidos.");
+                    "Informe a origem do pedido: a avaliação ou o tratamento em que os exames foram pedidos.");
             }
 
-            AvaliacaoClinica? avaliacao;
+            AvaliacaoClinica? avaliacao = null;
             AtendimentoFisioterapeutico? atendimento = null;
+            Guid? pacienteId;
+            string naoEncontrada;
 
             if (dto.AtendimentoId.HasValue)
             {
-                // Pedido feito em uma sessão: a avaliação de origem é a que originou o tratamento dela.
                 atendimento = await _atendimentos.ObterPorId(dto.AtendimentoId.Value);
-
-                if (atendimento?.Tratamento == null)
-                {
-                    return Resultado<PedidoExameDTO>.NaoEncontrado("Sessão de origem não encontrada.");
-                }
-
-                avaliacao = await _avaliacoes.ObterPorId(atendimento.Tratamento.AvaliacaoId);
+                pacienteId = atendimento?.Tratamento?.PacienteId;
+                naoEncontrada = "Sessão de origem não encontrada.";
+            }
+            else if (dto.AvaliacaoId.HasValue)
+            {
+                avaliacao = await _avaliacoes.ObterPorId(dto.AvaliacaoId.Value);
+                pacienteId = avaliacao?.PacienteId;
+                naoEncontrada = "Avaliação de origem não encontrada.";
             }
             else
             {
-                avaliacao = await _avaliacoes.ObterPorId(dto.AvaliacaoId!.Value);
+                // Pedido feito no tratamento: o paciente é o do tratamento, validado adiante.
+                pacienteId = (await _tratamentos.ObterPorId(dto.TratamentoId!.Value))?.PacienteId;
+                naoEncontrada = "Tratamento não encontrado.";
             }
 
-            if (avaliacao == null || avaliacao.Paciente?.ClinicaId != _usuarioAtual.ClinicaId)
-            {
-                return Resultado<PedidoExameDTO>.NaoEncontrado(
-                    atendimento != null ? "Sessão de origem não encontrada." : "Avaliação de origem não encontrada.");
-            }
+            var pet = pacienteId.HasValue ? await _pets.ObterPorIdComTutor(pacienteId.Value) : null;
 
-            var pet = await _pets.ObterPorIdComTutor(avaliacao.PacienteId);
-
-            if (pet == null)
+            if (pet == null || pet.ClinicaId != _usuarioAtual.ClinicaId)
             {
-                return Resultado<PedidoExameDTO>.NaoEncontrado("Paciente não encontrado.");
+                return Resultado<PedidoExameDTO>.NaoEncontrado(naoEncontrada);
             }
 
             if (!AcessoAoPaciente.Permitido(_usuarioAtual, pet))
@@ -113,8 +112,20 @@ namespace VetCare.API.UseCases
                     "O paciente está inativo ou tem óbito registrado; o prontuário fica apenas para consulta.");
             }
 
-            // Sem veterinário logado, assina quem atendeu a sessão ou quem fez a avaliação.
-            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ?? atendimento?.VeterinarioId ?? avaliacao.VeterinarioId;
+            // O tratamento do pedido: o da sessão, o próprio tratamento de origem ou o vínculo
+            // opcional escolhido na avaliação.
+            var (tratamento, erroDoTratamento) = await VinculoComTratamento.Resolver(
+                _tratamentos, pet.Id, atendimento, dto.TratamentoId, ehOrigem: avaliacao == null && atendimento == null);
+
+            if (erroDoTratamento != null)
+            {
+                return Resultado<PedidoExameDTO>.Invalido(erroDoTratamento);
+            }
+
+            // Sem veterinário logado, assina quem atendeu a sessão, quem fez a avaliação ou o
+            // responsável pelo tratamento.
+            var veterinarioId = dto.VeterinarioId ?? _usuarioAtual.VeterinarioId ??
+                                atendimento?.VeterinarioId ?? avaliacao?.VeterinarioId ?? tratamento!.VeterinarioId;
 
             // O pedido é um documento assinado por quem solicita.
             if (_usuarioAtual.EhVeterinario && _usuarioAtual.VeterinarioId != veterinarioId)
@@ -129,22 +140,14 @@ namespace VetCare.API.UseCases
                 return Resultado<PedidoExameDTO>.NaoEncontrado("Veterinário não encontrado nesta clínica.");
             }
 
-            // O tratamento para o qual os exames são pedidos: o da sessão, ou o escolhido na avaliação.
-            var (tratamento, erroDoTratamento) =
-                await VinculoComTratamento.Resolver(_tratamentos, pet.Id, atendimento, dto.TratamentoId);
-
-            if (erroDoTratamento != null)
-            {
-                return Resultado<PedidoExameDTO>.Invalido(erroDoTratamento);
-            }
-
             var prontuario = await _prontuarios.ObterOuCriarPorPacienteId(pet.Id);
 
             var pedido = new PedidoExame
             {
                 PacienteId = pet.Id,
                 ProntuarioId = prontuario.Id,
-                AvaliacaoId = avaliacao.Id,
+                // A avaliação só é a origem no pedido feito nela; no do tratamento, fica vazia.
+                AvaliacaoId = avaliacao?.Id,
                 AtendimentoId = atendimento?.Id,
                 TratamentoId = tratamento?.Id,
                 VeterinarioId = veterinario.Id,
@@ -163,9 +166,8 @@ namespace VetCare.API.UseCases
 
             await _auditoria.RegistrarDoUsuarioAtual(
                 AuditoriaService.Acoes.Criacao, TipoRegistro, pedido.Id,
-                $"Pedido de exame de {pet.Nome}, assinado por {veterinario.Usuario?.Nome}, a partir da " +
-                DescreverOrigem(pedido).ToLowerInvariant() +
-                (tratamento != null ? $", para o tratamento {tratamento.Nome}" : string.Empty));
+                $"Pedido de exame de {pet.Nome}, assinado por {veterinario.Usuario?.Nome}, feito n" +
+                OrigemClinica.ParaAuditoria(avaliacao, atendimento, tratamento));
 
             var usuarioTutor = pet.Tutor?.UsuarioId;
 
@@ -216,9 +218,10 @@ namespace VetCare.API.UseCases
         }
 
         /// <summary>
-        /// Correção do pedido: exames, justificativa, tratamento e, no pedido de uma avaliação, a
-        /// avaliação de origem (do mesmo animal). O pedido feito em uma sessão continua ligado a ela
-        /// e ao tratamento dela. A versão anterior fica guardada (RN-004) e a correção vai para a auditoria.
+        /// Correção do pedido: exames, justificativa e, no pedido de uma avaliação, a avaliação de
+        /// origem (do mesmo animal) e o tratamento vinculado. O pedido feito no tratamento ou em uma
+        /// sessão continua ligado ao tratamento. A versão anterior fica guardada (RN-004) e a
+        /// correção vai para a auditoria.
         /// </summary>
         public async Task<Resultado<PedidoExameDTO>> Atualizar(Guid id, AtualizarPedidoExameDTO dto)
         {
@@ -241,17 +244,20 @@ namespace VetCare.API.UseCases
             }
 
             Guid? novaOrigem = null;
-            var feitoEmSessao = pedido.AtendimentoId.HasValue;
+            var feitoNoTratamento = TipoDeOrigem(pedido) == OrigemClinica.Tratamento;
 
-            // A origem pode passar a ser outra avaliação, desde que do mesmo animal; o pedido de
-            // uma sessão não troca de origem.
-            if (feitoEmSessao && dto.AvaliacaoId.HasValue && dto.AvaliacaoId.Value != pedido.AvaliacaoId)
+            // A origem pode passar a ser outra avaliação, desde que do mesmo animal; o pedido feito
+            // no tratamento (ou em uma sessão dele) não troca de origem.
+            if (feitoNoTratamento && dto.AvaliacaoId.HasValue && dto.AvaliacaoId.Value != pedido.AvaliacaoId)
             {
                 return Resultado<PedidoExameDTO>.Invalido(
-                    "Este pedido foi feito em uma sessão e continua ligado a ela. Para outra origem, emita um novo pedido.");
+                    (pedido.AtendimentoId.HasValue
+                        ? "Este pedido foi feito em uma sessão e continua ligado ao tratamento dela."
+                        : "Este pedido foi feito no tratamento e continua ligado a ele.") +
+                    " Para outra origem, emita um novo pedido.");
             }
 
-            if (!feitoEmSessao && dto.AvaliacaoId.HasValue && dto.AvaliacaoId.Value != pedido.AvaliacaoId)
+            if (!feitoNoTratamento && dto.AvaliacaoId.HasValue && dto.AvaliacaoId.Value != pedido.AvaliacaoId)
             {
                 var avaliacao = await _avaliacoes.ObterPorId(dto.AvaliacaoId.Value);
 
@@ -263,11 +269,11 @@ namespace VetCare.API.UseCases
                 novaOrigem = avaliacao.Id;
             }
 
-            // O tratamento do pedido de uma sessão é o da sessão; o do pedido de uma avaliação é
+            // O tratamento do pedido feito no tratamento não muda; o do pedido de uma avaliação é
             // o enviado na correção (vazio, o pedido fica sem tratamento).
             var tratamento = pedido.Tratamento;
 
-            if (!feitoEmSessao)
+            if (!feitoNoTratamento)
             {
                 var (escolhido, erroDoTratamento) = await VinculoComTratamento.Resolver(
                     _tratamentos, pedido.PacienteId, null, dto.TratamentoId, pedido.TratamentoId);
@@ -372,18 +378,13 @@ namespace VetCare.API.UseCases
             return (pedido, TipoFalha.Nenhuma, string.Empty);
         }
 
-        /// <summary>"Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026".</summary>
-        public static string DescreverOrigem(PedidoExame pedido)
-        {
-            if (pedido.Atendimento != null)
-            {
-                return GerenciarPrescricoesUseCase.DescreverSessao(pedido.Atendimento);
-            }
+        /// <summary>"Avaliação" ou "Tratamento" (também o pedido feito em uma sessão).</summary>
+        public static string TipoDeOrigem(PedidoExame pedido) =>
+            OrigemClinica.Tipo(pedido.AvaliacaoId, pedido.AtendimentoId, pedido.TratamentoId);
 
-            return pedido.Avaliacao != null
-                ? $"Avaliação de {RelogioDaClinica.Padrao.Formatar(pedido.Avaliacao.DataRegistro, "dd/MM/yyyy")}"
-                : string.Empty;
-        }
+        /// <summary>"Avaliação de 12/04/2026" ou "Tratamento Hidroterapia".</summary>
+        public static string DescreverOrigem(PedidoExame pedido) =>
+            OrigemClinica.Descrever(TipoDeOrigem(pedido), pedido.Avaliacao, pedido.Tratamento ?? pedido.Atendimento?.Tratamento);
 
         public static PedidoExameDTO MapearParaDTO(PedidoExame pedido, Pet? pet)
         {
@@ -400,6 +401,7 @@ namespace VetCare.API.UseCases
                 MotivoAvaliacao = pedido.Avaliacao?.MotivoConsulta ?? string.Empty,
                 AtendimentoId = pedido.AtendimentoId,
                 NumeroSessao = pedido.Atendimento?.NumeroSessao,
+                TipoOrigem = TipoDeOrigem(pedido),
                 Origem = DescreverOrigem(pedido),
                 TratamentoId = pedido.TratamentoId,
                 NomeTratamento = pedido.Tratamento?.Nome ?? string.Empty,

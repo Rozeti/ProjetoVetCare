@@ -1,19 +1,20 @@
 import { useState, type FormEvent } from 'react';
-import { FlaskConical, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
+import { FileText, FlaskConical, GitBranch, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
 import { api, mensagemDeErro } from '../../services/api';
 import { useAuth } from '../../contexts/auth';
 import { useConfirmacao } from '../../hooks/useConfirmacao';
 import type { Avaliacao, PedidoExame, Tratamento } from '../../types';
 import { Alerta, Campo, Card, Etiqueta, Modal, SemDados } from '../../components/ui';
-import { formatarData, resumirTexto } from '../../utils/formato';
+import { formatarData, formatarDataHora, resumirTexto } from '../../utils/formato';
 import { imprimirPedidoExame } from '../../utils/impressao';
-import { CampoOrigem, CampoTratamento, FiltroPorTratamento, ReferenciaAoTratamento, ResumoDaOrigem } from './VinculoClinico';
+import { CampoOrigem, FiltroPorOrigem, LinhaDaOrigem, OrigemDoDocumento, ResumoDaOrigem } from './VinculoClinico';
+import { BarraDeAcoes, Dado, ItemExpansivel, Topico } from './RegistroClinico';
+import { useItensAbertos } from '../../hooks/useItensAbertos';
 import {
   descreverOrigem,
-  filtrarPorTratamento,
+  filtrarPorOrigem,
   lerOrigem,
-  tratamentoSugerido,
-  tratamentosParaVinculo,
+  tratamentosAtivos,
   valorDaOrigem,
   type OrigemClinica,
   type SessaoRegistrada,
@@ -23,25 +24,38 @@ import {
 const LIMITE_EXAMES = 2000;
 const LIMITE_JUSTIFICATIVA = 2000;
 
+/** Os exames do pedido, um por linha. */
+function examesDo(pedido: PedidoExame): string[] {
+  return pedido.exames
+    .split(/\r?\n/)
+    .map((exame) => exame.trim())
+    .filter(Boolean);
+}
+
 interface ListaProps {
   pedidos: PedidoExame[];
   nomeClinica: string;
-  /** Há avaliação ou sessão registrada para originar um pedido. */
+  /** Há avaliação ou tratamento ativo para originar um pedido. */
   temOrigens: boolean;
   /** Abre o formulário de pedido; ausente quando o prontuário é só consulta. */
   aoPedir?: () => void;
   /** Abre o pedido para edição; ausente para quem não pode alterá-lo. */
   aoEditar?: (pedido: PedidoExame) => void;
   aoAtualizar: (mensagem?: string) => void;
-  /** Leva ao tratamento do pedido, na aba Tratamentos. */
+  /** Leva à avaliação ou ao tratamento de origem. */
+  aoVerAvaliacao?: (avaliacaoId: string) => void;
   aoVerTratamento?: (tratamentoId: string) => void;
+  /** Filtro de origem vindo de um atalho ("avaliacao:<id>" ou "tratamento:<id>"). */
+  filtroInicial?: string;
+  /** Pedido que chegou por um atalho: abre expandido. */
+  emFoco?: string;
 }
 
 /**
- * Pedidos de exame do animal. Cada um mostra o tratamento para o qual foi feito e de onde veio
- * (avaliação ou sessão); a lista pode ser filtrada por tratamento. Quem assinou o pedido (e a
- * administração) pode editá-lo ou excluí-lo; a exclusão tira o pedido do prontuário e fica
- * registrada na auditoria.
+ * Pedidos de exame do animal em linhas compactas — data, exames e a origem (a avaliação ou o
+ * tratamento em que foram pedidos). Ao expandir, aparecem os exames, a justificativa, quem
+ * assina e as ações. Quem assinou o pedido (e a administração) pode editá-lo ou excluí-lo; a
+ * exclusão tira o pedido do prontuário e fica registrada na auditoria.
  */
 export function PedidosExame({
   pedidos,
@@ -50,16 +64,20 @@ export function PedidosExame({
   aoPedir,
   aoEditar,
   aoAtualizar,
+  aoVerAvaliacao,
   aoVerTratamento,
+  filtroInicial = '',
+  emFoco,
 }: ListaProps) {
   const { temPerfil, ehVeterinario, usuario } = useAuth();
   const { confirmarExclusao } = useConfirmacao();
+  const { aberto, alternar } = useItensAbertos(emFoco);
 
   const [erro, setErro] = useState('');
   const [excluindo, setExcluindo] = useState('');
-  const [filtro, setFiltro] = useState('');
+  const [filtro, setFiltro] = useState(filtroInicial);
 
-  const visiveis = filtrarPorTratamento(pedidos, filtro);
+  const visiveis = filtrarPorOrigem(pedidos, filtro);
 
   // O veterinário altera só os pedidos que ele assinou; a administração, qualquer um.
   const podeAlterar = (pedido: PedidoExame) =>
@@ -90,12 +108,15 @@ export function PedidosExame({
   }
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-        <h2 className="font-semibold text-slate-900">Pedidos de exame</h2>
+        <div>
+          <h2 className="font-semibold text-slate-900">Pedidos de exame</h2>
+          <p className="text-xs text-slate-500">Exames pedidos nas avaliações e nos tratamentos, para consulta e impressão.</p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <FiltroPorTratamento itens={pedidos} valor={filtro} aoMudar={setFiltro} />
+          <FiltroPorOrigem itens={pedidos} valor={filtro} aoMudar={setFiltro} />
 
           {aoPedir && temOrigens && (
             <button type="button" className="vc-botao-primario" onClick={aoPedir}>
@@ -118,53 +139,99 @@ export function PedidosExame({
           titulo="Nenhum pedido de exame"
           descricao={
             temOrigens
-              ? 'Os pedidos feitos nas avaliações e nas sessões ficam aqui para consulta e impressão.'
-              : 'Os pedidos de exame são feitos a partir de uma avaliação ou de uma sessão. Registre a avaliação do animal primeiro.'
+              ? 'Os pedidos feitos nas avaliações e nos tratamentos ficam aqui para consulta e impressão.'
+              : 'Os pedidos de exame são feitos em uma avaliação ou em um tratamento. Registre a avaliação do animal primeiro.'
           }
         />
       ) : (
         <ul className="divide-y divide-slate-100">
-          {visiveis.map((pedido) => (
-            <li key={pedido.id} id={`pedido-${pedido.id}`} className="scroll-mt-4 px-5 py-4">
-              <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-900">Pedido de {formatarData(pedido.dataEmissao)}</span>
-                    {/* Só os pedidos antigos podem estar cancelados: hoje o pedido é excluído. */}
-                    {pedido.status === 'Cancelado' && (
-                      <Etiqueta className="bg-slate-200 text-slate-600">Cancelado</Etiqueta>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {pedido.nomeVeterinario}
-                    {pedido.crmv && ` · ${pedido.crmv}`}
-                  </p>
-                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                    <ReferenciaAoTratamento item={pedido} aoVerTratamento={aoVerTratamento} />
-                    {pedido.origem && <span>Origem: {pedido.origem}</span>}
-                  </p>
-                </div>
+          {visiveis.map((pedido) => {
+            const dataDoPedido = formatarData(pedido.dataEmissao);
+            const exames = examesDo(pedido);
 
-                <div className="flex items-center gap-1">
+            return (
+              <ItemExpansivel
+                key={pedido.id}
+                ancora={`pedido-${pedido.id}`}
+                aberto={aberto(pedido.id)}
+                aoAlternar={() => alternar(pedido.id)}
+                emFoco={pedido.id === emFoco}
+                rotulo={`Pedido de exame de ${dataDoPedido}`}
+                titulo={
+                  <>
+                    <span className="font-semibold text-slate-900">Pedido de {dataDoPedido}</span>
+                    {/* Só os pedidos antigos podem estar cancelados: hoje o pedido é excluído. */}
+                    {pedido.status === 'Cancelado' && <Etiqueta className="bg-slate-200 text-slate-600">Cancelado</Etiqueta>}
+                  </>
+                }
+                linhas={[
+                  <LinhaDaOrigem key="origem" item={pedido} />,
+                  [exames.join(', '), pedido.nomeVeterinario].filter(Boolean).join(' · '),
+                ]}
+                atalhos={
                   <button
                     type="button"
                     onClick={() => imprimirPedidoExame(pedido, nomeClinica)}
                     className="rounded-lg p-2 text-slate-500 transition hover:bg-brand-100 hover:text-brand"
                     title="Imprimir pedido"
-                    aria-label={`Imprimir o pedido de ${formatarData(pedido.dataEmissao)}`}
+                    aria-label={`Imprimir o pedido de ${dataDoPedido}`}
                   >
                     <Printer size={16} />
                   </button>
+                }
+              >
+                <Topico titulo="Origem" icone={<GitBranch size={14} />} semCaixa>
+                  <OrigemDoDocumento item={pedido} aoVerAvaliacao={aoVerAvaliacao} aoVerTratamento={aoVerTratamento} />
+                </Topico>
+
+                <Topico
+                  titulo={exames.length === 1 ? 'Exame solicitado' : `Exames solicitados (${exames.length})`}
+                  icone={<FlaskConical size={14} />}
+                  semCaixa
+                >
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {exames.map((exame, indice) => (
+                      <li
+                        key={`${exame}-${indice}`}
+                        className="flex items-start gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-800"
+                      >
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
+                        {exame}
+                      </li>
+                    ))}
+                  </ul>
+                </Topico>
+
+                {pedido.justificativa && (
+                  <Topico titulo="Justificativa clínica" icone={<FileText size={14} />}>
+                    {pedido.justificativa}
+                  </Topico>
+                )}
+
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <Dado rotulo="Emitido em">{formatarDataHora(pedido.dataEmissao)}</Dado>
+                  <Dado rotulo="Veterinário">
+                    {pedido.nomeVeterinario}
+                    {pedido.crmv && <span className="block text-xs font-normal text-slate-500">{pedido.crmv}</span>}
+                  </Dado>
+                </dl>
+
+                {pedido.status === 'Cancelado' && pedido.motivoCancelamento && (
+                  <p className="text-sm text-slate-500">
+                    <span className="font-semibold text-slate-700">Motivo do cancelamento:</span> {pedido.motivoCancelamento}
+                  </p>
+                )}
+
+                <BarraDeAcoes>
+                  <button type="button" className="vc-botao-secundario" onClick={() => imprimirPedidoExame(pedido, nomeClinica)}>
+                    <Printer size={15} />
+                    Imprimir pedido
+                  </button>
 
                   {aoEditar && podeAlterar(pedido) && pedido.status === 'Ativo' && (
-                    <button
-                      type="button"
-                      onClick={() => aoEditar(pedido)}
-                      className="rounded-lg p-2 text-slate-500 transition hover:bg-brand-100 hover:text-brand"
-                      title="Editar pedido"
-                      aria-label={`Editar o pedido de ${formatarData(pedido.dataEmissao)}`}
-                    >
-                      <Pencil size={16} />
+                    <button type="button" className="vc-botao-secundario" onClick={() => aoEditar(pedido)}>
+                      <Pencil size={15} />
+                      Editar pedido
                     </button>
                   )}
 
@@ -173,39 +240,16 @@ export function PedidosExame({
                       type="button"
                       onClick={() => excluir(pedido)}
                       disabled={excluindo === pedido.id}
-                      className="rounded-lg p-2 text-slate-500 transition hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
-                      title="Excluir pedido"
-                      aria-label={`Excluir o pedido de ${formatarData(pedido.dataEmissao)}`}
+                      className="vc-botao-secundario text-perigo hover:bg-perigo-claro"
                     >
-                      {excluindo === pedido.id ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
+                      {excluindo === pedido.id ? <Loader2 className="animate-spin" size={15} /> : <Trash2 size={15} />}
+                      Excluir pedido
                     </button>
                   )}
-                </div>
-              </div>
-
-              <ul className="flex flex-wrap gap-2">
-                {pedido.exames
-                  .split(/\r?\n/)
-                  .map((exame) => exame.trim())
-                  .filter(Boolean)
-                  .map((exame, indice) => (
-                    <li key={`${exame}-${indice}`} className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                      {exame}
-                    </li>
-                  ))}
-              </ul>
-
-              {pedido.justificativa && (
-                <p className="mt-2 text-sm text-slate-600">
-                  <strong className="text-slate-700">Justificativa:</strong> {pedido.justificativa}
-                </p>
-              )}
-
-              {pedido.status === 'Cancelado' && pedido.motivoCancelamento && (
-                <p className="mt-1 text-xs text-slate-500">Motivo do cancelamento: {pedido.motivoCancelamento}</p>
-              )}
-            </li>
-          ))}
+                </BarraDeAcoes>
+              </ItemExpansivel>
+            );
+          })}
         </ul>
       )}
     </Card>
@@ -214,10 +258,10 @@ export function PedidosExame({
 
 export interface PropsDoFormularioDePedido {
   avaliacoes: Avaliacao[];
-  /** Sessões registradas do animal, que também originam pedidos. */
+  /** Sessões registradas do animal: descrevem a origem do pedido feito no registro de uma sessão. */
   sessoes: SessaoRegistrada[];
   tratamentos: Tratamento[];
-  /** Origem já definida pelo botão que abriu o formulário (cartão da avaliação ou registro da sessão). */
+  /** Origem já definida pelo botão que abriu o formulário (avaliação, tratamento ou registro da sessão). */
   origem?: OrigemClinica | null;
   /** Pedido em edição; ausente para um pedido novo. */
   pedido?: PedidoExame | null;
@@ -230,7 +274,7 @@ interface ModalProps extends Omit<PropsDoFormularioDePedido, 'aoCancelar'> {
   aoFechar: () => void;
 }
 
-/** Pedido de exames a partir de uma avaliação ou de uma sessão registrada: emissão ou edição. */
+/** Pedido de exames feito em uma avaliação ou em um tratamento: emissão ou edição. */
 export function ModalPedidoExame({ aberto, aoFechar, ...props }: ModalProps) {
   // O formulário só existe enquanto o modal está aberto: cada abertura monta campos novos.
   if (!aberto) return null;
@@ -244,7 +288,7 @@ export function ModalPedidoExame({ aberto, aoFechar, ...props }: ModalProps) {
       descricao={
         pedido
           ? `Pedido emitido em ${formatarData(pedido.dataEmissao)}. A versão anterior fica guardada no histórico.`
-          : 'O pedido fica no prontuário, ligado à origem e ao tratamento, e pode ser impresso para o tutor.'
+          : 'O pedido fica no prontuário, ligado à avaliação ou ao tratamento de origem, e pode ser impresso para o tutor.'
       }
       aoFechar={aoFechar}
       largura="max-w-2xl"
@@ -255,7 +299,9 @@ export function ModalPedidoExame({ aberto, aoFechar, ...props }: ModalProps) {
 }
 
 function origemDoPedido(pedido: PedidoExame): string {
-  return pedido.atendimentoId ? `sessao:${pedido.atendimentoId}` : `avaliacao:${pedido.avaliacaoId}`;
+  if (pedido.tipoOrigem === 'Avaliação' && pedido.avaliacaoId) return `avaliacao:${pedido.avaliacaoId}`;
+  if (pedido.atendimentoId) return `sessao:${pedido.atendimentoId}`;
+  return pedido.tratamentoId ? `tratamento:${pedido.tratamentoId}` : '';
 }
 
 /** Campos do pedido, usados no modal de pedido e no de receita ou pedido de exame da sessão. */
@@ -271,38 +317,31 @@ export function FormularioDePedido({
   const { ehVeterinario } = useAuth();
   const editando = !!pedido;
 
+  const ativos = tratamentosAtivos(tratamentos);
   const [origem, setOrigem] = useState(() => {
     if (pedido) return origemDoPedido(pedido);
     if (origemInicial) return valorDaOrigem(origemInicial);
-    return avaliacoes.length === 1 && sessoes.length === 0 ? `avaliacao:${avaliacoes[0].id}` : '';
+    return avaliacoes.length === 1 && ativos.length === 0 ? `avaliacao:${avaliacoes[0].id}` : '';
   });
-  // Na origem avaliação, o tratamento é escolhido (com sugestão); na sessão, é o da própria sessão.
-  const [tratamentoEscolhido, setTratamentoEscolhido] = useState(() =>
-    pedido ? (pedido.tratamentoId ?? '') : tratamentoSugerido(tratamentos, origem),
-  );
   const [exames, setExames] = useState(pedido?.exames ?? '');
   const [justificativa, setJustificativa] = useState(pedido?.justificativa ?? '');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  const { avaliacaoId, atendimentoId } = lerOrigem(origem);
+  const { avaliacaoId, tratamentoId, atendimentoId } = lerOrigem(origem);
   const avaliacaoEscolhida = avaliacoes.find((a) => a.id === avaliacaoId);
   const sessaoDaOrigem = atendimentoId ? sessoes.find((s) => s.id === atendimentoId) : undefined;
+  const tratamentoDaOrigem = tratamentoId ? tratamentos.find((t) => t.id === tratamentoId) : undefined;
 
-  // O pedido de uma sessão não muda de origem; o de uma avaliação pode passar a outra avaliação.
-  const origemTravada = !!origemInicial || !!pedido?.atendimentoId;
-
-  function mudarOrigem(valor: string) {
-    setOrigem(valor);
-    setTratamentoEscolhido(tratamentoSugerido(tratamentos, valor));
-  }
+  // O pedido feito no tratamento não muda de origem; o de uma avaliação pode passar a outra avaliação.
+  const origemTravada = !!origemInicial || (!!pedido && pedido.tipoOrigem !== 'Avaliação');
 
   async function aoEnviar(evento: FormEvent) {
     evento.preventDefault();
     setErro('');
 
     if (!origem) {
-      setErro('Selecione a origem do pedido: a avaliação ou a sessão em que os exames foram pedidos.');
+      setErro('Selecione a origem do pedido: a avaliação ou o tratamento em que os exames foram pedidos.');
       return;
     }
 
@@ -318,23 +357,20 @@ export function FormularioDePedido({
 
     setSalvando(true);
 
-    // No pedido de uma sessão, a API liga o tratamento da própria sessão.
-    const tratamentoId = atendimentoId ? null : tratamentoEscolhido || null;
-
     try {
       if (pedido) {
         await api.put(`/api/pedidos-exame/${pedido.id}`, {
-          avaliacaoId: pedido.atendimentoId ? null : avaliacaoId,
-          tratamentoId,
+          avaliacaoId: pedido.tipoOrigem === 'Avaliação' ? avaliacaoId : null,
+          // O vínculo antigo de um pedido da avaliação com um tratamento é mantido.
+          tratamentoId: pedido.tratamentoId ?? null,
           exames: exames.trim(),
           justificativa: justificativa.trim(),
         });
         aoSalvar('Pedido de exame atualizado.');
       } else {
         await api.post('/api/pedidos-exame', {
-          avaliacaoId,
-          atendimentoId,
-          tratamentoId,
+          // A avaliação, a sessão (a API liga o tratamento dela) ou o próprio tratamento.
+          ...lerOrigem(origem),
           exames: exames.trim(),
           justificativa: justificativa.trim(),
         });
@@ -349,11 +385,11 @@ export function FormularioDePedido({
     }
   }
 
-  if (!origemTravada && !editando && avaliacoes.length === 0 && sessoes.length === 0) {
+  if (!origemTravada && !editando && avaliacoes.length === 0 && ativos.length === 0) {
     return (
       <Alerta tipo="aviso">
-        O pedido de exame é feito a partir de uma avaliação ou de uma sessão. Registre a avaliação do animal antes
-        de pedir exames.
+        O pedido de exame é feito em uma avaliação ou em um tratamento. Registre a avaliação do animal antes de
+        pedir exames.
       </Alerta>
     );
   }
@@ -366,41 +402,28 @@ export function FormularioDePedido({
         ? `Assinado por ${sessaoDaOrigem.nomeVeterinario}, que atendeu a sessão.`
         : avaliacaoEscolhida
           ? `Assinado por ${avaliacaoEscolhida.nomeVeterinario}, responsável pela avaliação.`
-          : '';
+          : tratamentoDaOrigem
+            ? `Assinado por ${tratamentoDaOrigem.nomeVeterinario}, responsável pelo tratamento.`
+            : '';
 
   return (
     <form onSubmit={aoEnviar} className="space-y-4" noValidate>
       {origemTravada ? (
-        <ResumoDaOrigem
-          origem={descreverOrigem(origem, avaliacoes, sessoes) || pedido?.origem || ''}
-          tratamento={atendimentoId ? sessaoDaOrigem?.nomeTratamento || pedido?.nomeTratamento : undefined}
-        />
+        <ResumoDaOrigem origem={descreverOrigem(origem, avaliacoes, sessoes, tratamentos) || pedido?.origem || ''} />
       ) : (
         <CampoOrigem
           valor={origem}
-          aoMudar={mudarOrigem}
+          aoMudar={setOrigem}
           avaliacoes={avaliacoes}
           // Um pedido de avaliação já emitido só troca por outra avaliação.
-          sessoes={editando ? [] : sessoes}
-          dica="A avaliação ou a sessão em que os exames foram pedidos."
+          tratamentos={editando ? [] : ativos}
+          dica={
+            editando
+              ? 'A avaliação em que os exames foram pedidos.'
+              : 'A avaliação ou o tratamento em que os exames foram pedidos.'
+          }
         />
       )}
-
-      {atendimentoId
-        ? sessaoDaOrigem &&
-          !origemTravada && (
-            <Campo rotulo="Tratamento" dica="O pedido de uma sessão fica no tratamento da própria sessão.">
-              <input className="vc-campo bg-slate-50" value={sessaoDaOrigem.nomeTratamento} readOnly />
-            </Campo>
-          )
-        : (
-            <CampoTratamento
-              tratamentos={tratamentosParaVinculo(tratamentos, pedido?.tratamentoId)}
-              valor={tratamentoEscolhido}
-              aoMudar={setTratamentoEscolhido}
-              tipoDoRegistro="o pedido"
-            />
-          )}
 
       <Campo rotulo="Exames solicitados" obrigatorio dica="Um exame por linha.">
         <textarea

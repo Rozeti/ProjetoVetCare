@@ -11,16 +11,17 @@ namespace VetCare.API.DTOs
         public Guid? VeterinarioId { get; set; }
 
         /// <summary>
-        /// Origem da receita: a avaliação ou a evolução (atendimento) em que foi prescrita.
-        /// Informe exatamente uma das duas.
+        /// Origem da receita: a avaliação ou a sessão registrada (atendimento) em que foi
+        /// prescrita. Sem as duas, a origem é o tratamento informado em <see cref="TratamentoId"/>.
         /// </summary>
         public Guid? AvaliacaoId { get; set; }
 
         public Guid? AtendimentoId { get; set; }
 
         /// <summary>
-        /// Tratamento para o qual a receita é prescrita. Na receita de uma sessão é sempre o da
-        /// própria sessão (pode ser omitido); na de uma avaliação é opcional.
+        /// Tratamento da receita. Sozinho, é a origem (receita emitida no tratamento); na receita
+        /// de uma sessão é sempre o da própria sessão (pode ser omitido); na de uma avaliação é um
+        /// vínculo opcional.
         /// </summary>
         public Guid? TratamentoId { get; set; }
 
@@ -75,12 +76,17 @@ namespace VetCare.API.DTOs
         public string Status { get; set; } = string.Empty;
 
         public Guid? AvaliacaoId { get; set; }
+        public DateTime? DataAvaliacao { get; set; }
+        public string MotivoAvaliacao { get; set; } = string.Empty;
         public Guid? AtendimentoId { get; set; }
 
-        /// <summary>Descrição da origem, por exemplo "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026".</summary>
+        /// <summary>"Avaliação" ou "Tratamento" (também a receita feita em uma sessão); vazio nas antigas sem origem.</summary>
+        public string TipoOrigem { get; set; } = string.Empty;
+
+        /// <summary>Descrição da origem: "Avaliação de 12/04/2026" ou "Tratamento Hidroterapia".</summary>
         public string Origem { get; set; } = string.Empty;
 
-        /// <summary>Tratamento para o qual a receita foi prescrita; vazio quando não há vínculo.</summary>
+        /// <summary>Tratamento da receita (a origem, ou o vínculo da receita de uma avaliação); vazio sem vínculo.</summary>
         public Guid? TratamentoId { get; set; }
         public string NomeTratamento { get; set; } = string.Empty;
 

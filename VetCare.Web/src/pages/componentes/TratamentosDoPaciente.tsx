@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  CalendarDays,
   CalendarPlus,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
+  ClipboardList,
+  FlaskConical,
+  GitBranch,
   ListFilter,
+  NotebookPen,
   Pencil,
+  Pill,
   Power,
   RotateCcw,
   Stethoscope,
@@ -17,6 +21,11 @@ import type { Sessao, StatusTratamento, Tratamento } from '../../types';
 import { Card, Etiqueta, SemDados } from '../../components/ui';
 import { estiloStatusTratamento, formatarData, formatarDataHora, tratamentoAtivo } from '../../utils/formato';
 import { ListaDeSessoes, type AcoesDaSessao } from './ListaDeSessoes';
+import { Atalho, BarraDeAcoes, Dado, ItemExpansivel, Topico } from './RegistroClinico';
+import { useItensAbertos } from '../../hooks/useItensAbertos';
+
+/** Quantas receitas e quantos pedidos de exame cada tratamento tem. */
+export type DocumentosPorTratamento = Record<string, { receitas: number; pedidos: number }>;
 
 interface Props {
   pacienteId: string;
@@ -33,6 +42,12 @@ interface Props {
   /** Cadastro do plano de sessões, e de sessões a mais depois; ausente para quem não cadastra. */
   aoCadastrarSessoes?: (tratamento: Tratamento) => void;
   acoesDaSessao: AcoesDaSessao;
+  /** Receita e pedido de exame emitidos no tratamento; ausentes para quem não emite. */
+  aoEmitirReceita?: (tratamento: Tratamento) => void;
+  aoPedirExames?: (tratamento: Tratamento) => void;
+  documentosPorTratamento: DocumentosPorTratamento;
+  /** Leva às receitas ou aos pedidos de exame do tratamento. */
+  aoVerDocumentos?: (aba: 'medicacao' | 'exames', filtro: string) => void;
   aoVerAvaliacao: (avaliacaoId: string) => void;
   aoAtualizar: (mensagem: string) => void;
   aoFalhar: (mensagem: string) => void;
@@ -47,8 +62,9 @@ function proximaSessao(sessoes: Sessao[]): Sessao | undefined {
 
 /**
  * Tratamentos do animal em linhas compactas: nome, situação, andamento e a próxima sessão. Ao
- * expandir, aparecem o plano completo, a avaliação de origem, as ações e as sessões do
- * tratamento, onde cada sessão realizada recebe o registro do atendimento.
+ * expandir, aparecem os tópicos do plano, a avaliação de origem, as receitas e os pedidos de
+ * exame do tratamento, as ações (emitir receita, pedir exames, editar, concluir, inativar) e as
+ * sessões, onde cada sessão realizada recebe o registro do atendimento.
  */
 export function TratamentosDoPaciente({
   pacienteId,
@@ -60,23 +76,17 @@ export function TratamentosDoPaciente({
   aoEditar,
   aoCadastrarSessoes,
   acoesDaSessao,
+  aoEmitirReceita,
+  aoPedirExames,
+  documentosPorTratamento,
+  aoVerDocumentos,
   aoVerAvaliacao,
   aoAtualizar,
   aoFalhar,
 }: Props) {
-  // O tratamento em foco abre expandido; clicar alterna a partir daí.
-  const [alternados, setAlternados] = useState<Set<string>>(new Set());
+  const { aberto, alternar } = useItensAbertos(emFoco);
   const [alterando, setAlterando] = useState('');
   const { confirmar } = useConfirmacao();
-
-  function alternar(id: string) {
-    setAlternados((atual) => {
-      const novo = new Set(atual);
-      if (novo.has(id)) novo.delete(id);
-      else novo.add(id);
-      return novo;
-    });
-  }
 
   async function mudarStatus(tratamento: Tratamento, status: StatusTratamento) {
     const textos: Record<string, { titulo: string; mensagem: string; rotulo: string; perigo?: boolean }> = {
@@ -141,7 +151,6 @@ export function TratamentosDoPaciente({
     <Card className="overflow-hidden">
       <ul className="divide-y divide-slate-100">
         {tratamentos.map((tratamento) => {
-          const aberto = (tratamento.id === emFoco) !== alternados.has(tratamento.id);
           const doTratamento = sessoes.filter((s) => s.tratamentoId === tratamento.id);
           const realizadas = doTratamento.filter((s) => s.situacao === 'Realizada').length;
           const aguardandoRegistro = doTratamento.filter((s) => s.situacao === 'Aguardando registro').length;
@@ -156,50 +165,40 @@ export function TratamentosDoPaciente({
           // Todas as sessões cadastradas já aconteceram e foram registradas: hora de decidir se o
           // tratamento continua (mais sessões) ou termina.
           const planoCumprido = ativo && cadastradas > 0 && agendadas === 0 && aguardandoRegistro === 0;
+          const documentos = documentosPorTratamento[tratamento.id] ?? { receitas: 0, pedidos: 0 };
+          const podeEmitir = ativo && (!!aoEmitirReceita || !!aoPedirExames);
 
           return (
-            <li
+            <ItemExpansivel
               key={tratamento.id}
-              id={`tratamento-${tratamento.id}`}
-              className={`scroll-mt-24 ${tratamento.id === emFoco ? 'bg-brand-50/40' : ''}`}
-            >
-              {/* Resumo: o que identifica o tratamento e como ele anda, numa linha. */}
-              <button
-                type="button"
-                onClick={() => alternar(tratamento.id)}
-                aria-expanded={aberto}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 sm:px-5"
-              >
-                {aberto ? (
-                  <ChevronDown size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
-                ) : (
-                  <ChevronRight size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
-                )}
-
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate font-semibold text-slate-900" title={tratamento.nome}>
-                      {tratamento.nome}
-                    </span>
-                    <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
-                      {tratamento.status}
-                    </Etiqueta>
+              ancora={`tratamento-${tratamento.id}`}
+              aberto={aberto(tratamento.id)}
+              aoAlternar={() => alternar(tratamento.id)}
+              emFoco={tratamento.id === emFoco}
+              titulo={
+                <>
+                  <span className="truncate font-semibold text-slate-900" title={tratamento.nome}>
+                    {tratamento.nome}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-slate-500">
-                    {[
-                      tratamento.tipo,
-                      tratamento.nomeVeterinario,
-                      `${tratamento.status === 'Planejado' ? 'início previsto' : 'início'} em ${formatarData(tratamento.dataInicio)}`,
-                      proxima && `próxima sessão ${formatarDataHora(proxima.dataHora)}`,
-                      aguardandoRegistro > 0 &&
-                        `${aguardandoRegistro} ${aguardandoRegistro === 1 ? 'sessão aguarda' : 'sessões aguardam'} registro`,
-                      ativo && faltamCadastrar > 0 && `${faltamCadastrar} ${faltamCadastrar === 1 ? 'sessão' : 'sessões'} a cadastrar`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                </span>
-
+                  <Etiqueta className={estiloStatusTratamento[tratamento.status] ?? 'bg-slate-200 text-slate-700'}>
+                    {tratamento.status}
+                  </Etiqueta>
+                </>
+              }
+              linhas={[
+                [
+                  tratamento.tipo,
+                  tratamento.nomeVeterinario,
+                  `${tratamento.status === 'Planejado' ? 'início previsto' : 'início'} em ${formatarData(tratamento.dataInicio)}`,
+                  proxima && `próxima sessão ${formatarDataHora(proxima.dataHora)}`,
+                  aguardandoRegistro > 0 &&
+                    `${aguardandoRegistro} ${aguardandoRegistro === 1 ? 'sessão aguarda' : 'sessões aguardam'} registro`,
+                  ativo && faltamCadastrar > 0 && `${faltamCadastrar} ${faltamCadastrar === 1 ? 'sessão' : 'sessões'} a cadastrar`,
+                ]
+                  .filter(Boolean)
+                  .join(' · '),
+              ]}
+              lateral={
                 <span className="hidden shrink-0 items-center gap-2 sm:flex" title="Sessões realizadas do total previsto">
                   <span className="text-xs tabular-nums text-slate-600">
                     {realizadas}/{tratamento.sessoesPrevistas}
@@ -208,184 +207,219 @@ export function TratamentosDoPaciente({
                     <span className="block h-full rounded-full bg-brand" style={{ width: `${progresso}%` }} />
                   </span>
                 </span>
-              </button>
+              }
+            >
+              <Topico titulo="Plano do tratamento" icone={<ClipboardList size={14} />}>
+                {tratamento.descricao}
+              </Topico>
 
-              {aberto && (
-                <div className="space-y-4 border-t border-slate-100 bg-white px-4 pb-5 pt-4 sm:px-5 sm:pl-12">
+              <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <Dado rotulo="Duração prevista">{tratamento.duracaoPrevista || 'Não informada'}</Dado>
+                <Dado rotulo="Frequência">{tratamento.frequencia || 'Não informada'}</Dado>
+                <Dado rotulo="Sessões">
+                  {tratamento.sessoesPrevistas} previstas · {cadastradas} cadastradas · {realizadas}{' '}
+                  {realizadas === 1 ? 'realizada' : 'realizadas'}
+                </Dado>
+                <Dado rotulo={tratamento.dataFim ? 'Período' : tratamento.status === 'Planejado' ? 'Início previsto' : 'Início'}>
+                  {formatarData(tratamento.dataInicio)}
+                  {tratamento.dataFim && ` a ${formatarData(tratamento.dataFim)}`}
+                </Dado>
+              </dl>
+
+              {tratamento.observacoesGerais && (
+                <Topico titulo="Observações gerais" icone={<NotebookPen size={14} />}>
+                  {tratamento.observacoesGerais}
+                </Topico>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Topico titulo="Avaliação de origem" icone={<GitBranch size={14} />} semCaixa>
+                  <Atalho
+                    icone={<ClipboardList size={13} className="shrink-0 text-brand" />}
+                    aoClicar={() => aoVerAvaliacao(tratamento.avaliacaoId)}
+                    titulo="Abrir a avaliação"
+                  >
+                    Avaliação{tratamento.dataAvaliacao && ` de ${formatarData(tratamento.dataAvaliacao)}`}
+                    {tratamento.motivoAvaliacao && ` — ${tratamento.motivoAvaliacao}`}
+                  </Atalho>
+                </Topico>
+
+                <Topico titulo="Receitas e pedidos de exame" icone={<Pill size={14} />} semCaixa>
+                  {documentos.receitas + documentos.pedidos === 0 ? (
+                    <p className="text-sm text-slate-500">Nenhum emitido para este tratamento.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {documentos.receitas > 0 && (
+                        <Atalho
+                          icone={<Pill size={13} className="shrink-0 text-brand" />}
+                          aoClicar={aoVerDocumentos ? () => aoVerDocumentos('medicacao', `tratamento:${tratamento.id}`) : undefined}
+                          titulo="Ver as receitas deste tratamento"
+                        >
+                          {documentos.receitas} {documentos.receitas === 1 ? 'receita' : 'receitas'}
+                        </Atalho>
+                      )}
+                      {documentos.pedidos > 0 && (
+                        <Atalho
+                          icone={<FlaskConical size={13} className="shrink-0 text-brand" />}
+                          aoClicar={aoVerDocumentos ? () => aoVerDocumentos('exames', `tratamento:${tratamento.id}`) : undefined}
+                          titulo="Ver os pedidos de exame deste tratamento"
+                        >
+                          {documentos.pedidos} {documentos.pedidos === 1 ? 'pedido de exame' : 'pedidos de exame'}
+                        </Atalho>
+                      )}
+                    </div>
+                  )}
+                </Topico>
+              </div>
+
+              {(podeEmitir || podeGerenciar) && (
+                <BarraDeAcoes>
+                  {ativo && aoEmitirReceita && (
+                    <button type="button" className="vc-botao-secundario" onClick={() => aoEmitirReceita(tratamento)}>
+                      <Pill size={15} />
+                      Emitir receita
+                    </button>
+                  )}
+                  {ativo && aoPedirExames && (
+                    <button type="button" className="vc-botao-secundario" onClick={() => aoPedirExames(tratamento)}>
+                      <FlaskConical size={15} />
+                      Pedir exames
+                    </button>
+                  )}
+
                   {podeGerenciar && (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {podeGerenciar && (
+                    <>
+                      <button type="button" className="vc-botao-secundario" onClick={() => aoEditar(tratamento)}>
+                        <Pencil size={15} />
+                        Editar
+                      </button>
+
+                      {ativo && (
                         <>
                           <button
                             type="button"
-                            onClick={() => aoEditar(tratamento)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                            title="Editar tratamento"
-                            aria-label={`Editar ${tratamento.nome}`}
+                            onClick={() => mudarStatus(tratamento, 'Concluído')}
+                            disabled={alterando === tratamento.id}
+                            className="vc-botao-secundario"
                           >
-                            <Pencil size={16} />
+                            <CheckCircle2 size={15} />
+                            Concluir
                           </button>
-
-                          {ativo && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => mudarStatus(tratamento, 'Concluído')}
-                                disabled={alterando === tratamento.id}
-                                className="rounded-lg p-2 text-slate-500 hover:bg-sucesso-claro hover:text-sucesso disabled:opacity-50"
-                                title="Concluir tratamento"
-                                aria-label={`Concluir ${tratamento.nome}`}
-                              >
-                                <CheckCircle2 size={16} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => mudarStatus(tratamento, 'Inativado')}
-                                disabled={alterando === tratamento.id}
-                                className="rounded-lg p-2 text-slate-500 hover:bg-perigo-claro hover:text-perigo disabled:opacity-50"
-                                title="Inativar tratamento"
-                                aria-label={`Inativar ${tratamento.nome}`}
-                              >
-                                <Power size={16} />
-                              </button>
-                            </>
-                          )}
-
-                          {tratamento.status === 'Inativado' && (
-                            <button
-                              type="button"
-                              onClick={() => mudarStatus(tratamento, 'Em Andamento')}
-                              disabled={alterando === tratamento.id}
-                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-sucesso hover:bg-sucesso-claro disabled:opacity-50"
-                              title="Reativar tratamento"
-                            >
-                              <RotateCcw size={15} />
-                              Reativar
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => mudarStatus(tratamento, 'Inativado')}
+                            disabled={alterando === tratamento.id}
+                            className="vc-botao-secundario text-perigo hover:bg-perigo-claro"
+                          >
+                            <Power size={15} />
+                            Inativar
+                          </button>
                         </>
                       )}
-                    </div>
+
+                      {tratamento.status === 'Inativado' && (
+                        <button
+                          type="button"
+                          onClick={() => mudarStatus(tratamento, 'Em Andamento')}
+                          disabled={alterando === tratamento.id}
+                          className="vc-botao-secundario text-sucesso hover:bg-sucesso-claro"
+                        >
+                          <RotateCcw size={15} />
+                          Reativar
+                        </button>
+                      )}
+                    </>
                   )}
+                </BarraDeAcoes>
+              )}
 
-                  <p className="whitespace-pre-line text-sm text-slate-700">{tratamento.descricao}</p>
-
-                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Duração prevista</dt>
-                      <dd className="text-slate-700">{tratamento.duracaoPrevista || 'Não informada'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Frequência</dt>
-                      <dd className="text-slate-700">{tratamento.frequencia || 'Não informada'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sessões</dt>
-                      <dd className="text-slate-700">
-                        {tratamento.sessoesPrevistas} previstas · {cadastradas} cadastradas · {realizadas}{' '}
-                        {realizadas === 1 ? 'realizada' : 'realizadas'}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  {tratamento.observacoesGerais && (
-                    <p className="text-sm text-slate-600">
-                      <strong className="text-slate-700">Observações:</strong> {tratamento.observacoesGerais}
-                    </p>
-                  )}
-
-                  <p className="text-xs text-slate-500">
-                    {tratamento.dataFim && `Encerrado em ${formatarData(tratamento.dataFim)} · `}
-                    <button type="button" onClick={() => aoVerAvaliacao(tratamento.avaliacaoId)} className="text-brand hover:underline">
-                      Avaliação de origem
-                      {tratamento.dataAvaliacao && ` (${formatarData(tratamento.dataAvaliacao)})`}
-                      {tratamento.motivoAvaliacao && `: ${tratamento.motivoAvaliacao}`}
-                    </button>
-                  </p>
-
+              {/* div, e não section: os blocos de ListaDeSessoes já são as seções das sessões. */}
+              <div className="border-t border-slate-100 pt-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h4 className="text-sm font-semibold text-slate-700">Sessões do tratamento</h4>
-                        <p className="text-xs text-slate-500">
-                          {cadastradas} de {tratamento.sessoesPrevistas} cadastradas · {realizadas}{' '}
-                          {realizadas === 1 ? 'realizada' : 'realizadas'}
-                          {exibeLinkDaTelaDeSessoes && doTratamento.length > 0 && (
-                            <>
-                              {' · '}
-                              <Link
-                                to={`/sessoes?pacienteId=${pacienteId}&tratamentoId=${tratamento.id}`}
-                                className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
-                              >
-                                <ListFilter size={12} />
-                                Abrir na tela de sessões
-                              </Link>
-                            </>
-                          )}
-                        </p>
-                      </div>
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-50 text-brand" aria-hidden="true">
+                        <CalendarDays size={14} />
+                      </span>
+                      Sessões do tratamento
+                    </h4>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {cadastradas} de {tratamento.sessoesPrevistas} cadastradas · {realizadas}{' '}
+                      {realizadas === 1 ? 'realizada' : 'realizadas'}
+                      {exibeLinkDaTelaDeSessoes && doTratamento.length > 0 && (
+                        <>
+                          {' · '}
+                          <Link
+                            to={`/sessoes?pacienteId=${pacienteId}&tratamentoId=${tratamento.id}`}
+                            className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+                          >
+                            <ListFilter size={12} />
+                            Abrir na tela de sessões
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  </div>
 
-                      {/* Um botão só: o plano inicial e, depois, sessões a mais — no meio ou no fim do tratamento. */}
-                      {podeCadastrar && !planoCumprido && (
+                  {/* Um botão só: o plano inicial e, depois, sessões a mais — no meio ou no fim do tratamento. */}
+                  {podeCadastrar && !planoCumprido && (
+                    <button
+                      type="button"
+                      onClick={() => aoCadastrarSessoes!(tratamento)}
+                      className={cadastradas === 0 ? 'vc-botao-primario px-3 py-1.5 text-sm' : 'vc-botao-secundario px-3 py-1.5 text-sm'}
+                    >
+                      <CalendarPlus size={15} />
+                      {cadastradas === 0 ? 'Cadastrar sessões' : 'Adicionar sessões'}
+                    </button>
+                  )}
+                </div>
+
+                {planoCumprido && (podeCadastrar || podeGerenciar) && (
+                  <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-sucesso/30 bg-sucesso-claro/60 px-4 py-3">
+                    <CheckCircle2 size={18} className="shrink-0 text-sucesso" aria-hidden="true" />
+                    <p className="min-w-0 flex-1 text-sm text-slate-700">
+                      {cadastradas === 1
+                        ? 'A sessão cadastrada foi realizada.'
+                        : `As ${cadastradas} sessões cadastradas foram realizadas.`}{' '}
+                      Se o animal precisar continuar, adicione mais sessões; se não, conclua o tratamento.
+                    </p>
+                    <span className="flex flex-wrap gap-2">
+                      {podeCadastrar && (
                         <button
                           type="button"
                           onClick={() => aoCadastrarSessoes!(tratamento)}
-                          className={cadastradas === 0 ? 'vc-botao-primario px-3 py-1.5 text-sm' : 'vc-botao-secundario px-3 py-1.5 text-sm'}
+                          className="vc-botao-primario px-3 py-1.5 text-sm"
                         >
                           <CalendarPlus size={15} />
-                          {cadastradas === 0 ? 'Cadastrar sessões' : 'Adicionar sessões'}
+                          Adicionar sessões
                         </button>
                       )}
-                    </div>
-
-                    {planoCumprido && (podeCadastrar || podeGerenciar) && (
-                      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-sucesso/30 bg-sucesso-claro/60 px-4 py-3">
-                        <CheckCircle2 size={18} className="shrink-0 text-sucesso" aria-hidden="true" />
-                        <p className="min-w-0 flex-1 text-sm text-slate-700">
-                          {cadastradas === 1
-                            ? 'A sessão cadastrada foi realizada.'
-                            : `As ${cadastradas} sessões cadastradas foram realizadas.`}{' '}
-                          Se o animal precisar continuar, adicione mais sessões; se não, conclua o tratamento.
-                        </p>
-                        <span className="flex flex-wrap gap-2">
-                          {podeCadastrar && (
-                            <button
-                              type="button"
-                              onClick={() => aoCadastrarSessoes!(tratamento)}
-                              className="vc-botao-primario px-3 py-1.5 text-sm"
-                            >
-                              <CalendarPlus size={15} />
-                              Adicionar sessões
-                            </button>
-                          )}
-                          {podeGerenciar && (
-                            <button
-                              type="button"
-                              onClick={() => mudarStatus(tratamento, 'Concluído')}
-                              disabled={alterando === tratamento.id}
-                              className="vc-botao-secundario px-3 py-1.5 text-sm"
-                            >
-                              <CheckCircle2 size={15} />
-                              Concluir tratamento
-                            </button>
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    <ListaDeSessoes
-                      sessoes={doTratamento}
-                      vazio={
-                        podeCadastrar
-                          ? `Nenhuma sessão cadastrada. Use “Cadastrar sessões” e informe quantas sessões, em quais dias da semana e em que horário — o plano prevê ${tratamento.sessoesPrevistas}.`
-                          : 'Nenhuma sessão cadastrada neste tratamento.'
-                      }
-                      {...acoesDaSessao}
-                    />
+                      {podeGerenciar && (
+                        <button
+                          type="button"
+                          onClick={() => mudarStatus(tratamento, 'Concluído')}
+                          disabled={alterando === tratamento.id}
+                          className="vc-botao-secundario px-3 py-1.5 text-sm"
+                        >
+                          <CheckCircle2 size={15} />
+                          Concluir tratamento
+                        </button>
+                      )}
+                    </span>
                   </div>
-                </div>
-              )}
-            </li>
+                )}
+
+                <ListaDeSessoes
+                  sessoes={doTratamento}
+                  vazio={
+                    podeCadastrar
+                      ? `Nenhuma sessão cadastrada. Use “Cadastrar sessões” e informe quantas sessões, em quais dias da semana e em que horário — o plano prevê ${tratamento.sessoesPrevistas}.`
+                      : 'Nenhuma sessão cadastrada neste tratamento.'
+                  }
+                  {...acoesDaSessao}
+                />
+              </div>
+            </ItemExpansivel>
           );
         })}
       </ul>

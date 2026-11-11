@@ -95,6 +95,26 @@ function rodape(): string {
   return `<footer>Documento gerado pelo VetCare em ${escapar(formatarDataHora(new Date()))}.</footer>`;
 }
 
+/**
+ * Origem do documento impresso: a avaliação (e o tratamento, quando uma receita antiga da
+ * avaliação foi ligada a um) ou o tratamento em que foi emitido.
+ */
+function origemImpressa(documento: Pick<Prescricao, 'tipoOrigem' | 'origem' | 'nomeTratamento' | 'dataAvaliacao'>): string {
+  const linha = (rotulo: string, valor: string) => `<div><span>${rotulo}</span>${escapar(valor)}</div>`;
+
+  if (documento.tipoOrigem === 'Tratamento' && documento.nomeTratamento) {
+    return linha('Tratamento', documento.nomeTratamento);
+  }
+
+  const avaliacao = documento.origem
+    ? linha('Origem', documento.origem)
+    : documento.dataAvaliacao
+      ? linha('Avaliação de origem', formatarData(documento.dataAvaliacao))
+      : '';
+
+  return avaliacao + (documento.nomeTratamento ? linha('Tratamento', documento.nomeTratamento) : '');
+}
+
 /** Receita pronta para entregar ao tutor, com espaço para assinatura do veterinário. */
 export function imprimirReceita(prescricao: Prescricao, nomeClinica: string) {
   const itens = prescricao.itens
@@ -116,8 +136,7 @@ export function imprimirReceita(prescricao: Prescricao, nomeClinica: string) {
       <div><span>Tutor</span>${escapar(prescricao.nomeTutor)}</div>
       <div><span>Emissão</span>${escapar(formatarData(prescricao.dataEmissao))}</div>
       ${prescricao.validaAte ? `<div><span>Válida até</span>${escapar(formatarDia(prescricao.validaAte))}</div>` : ''}
-      ${prescricao.nomeTratamento ? `<div><span>Tratamento</span>${escapar(prescricao.nomeTratamento)}</div>` : ''}
-      ${prescricao.origem ? `<div><span>Origem</span>${escapar(prescricao.origem)}</div>` : ''}
+      ${origemImpressa(prescricao)}
     </div>
 
     ${prescricao.status === 'Cancelada' ? '<div class="alerta"><strong>Receita cancelada.</strong> Este documento não tem validade.</div>' : ''}
@@ -138,7 +157,7 @@ export function imprimirReceita(prescricao: Prescricao, nomeClinica: string) {
   abrirParaImpressao(`Receita — ${prescricao.nomePaciente}`, corpo);
 }
 
-/** Pedido de exames emitido a partir de uma avaliação ou de uma sessão, com espaço para assinatura. */
+/** Pedido de exames feito em uma avaliação ou em um tratamento, com espaço para assinatura. */
 export function imprimirPedidoExame(pedido: PedidoExame, nomeClinica: string) {
   const exames = pedido.exames
     .split(/\r?\n/)
@@ -155,14 +174,7 @@ export function imprimirPedidoExame(pedido: PedidoExame, nomeClinica: string) {
       <div><span>Espécie / Raça</span>${escapar([pedido.especie, pedido.raca].filter(Boolean).join(' · '))}</div>
       <div><span>Tutor</span>${escapar(pedido.nomeTutor)}</div>
       <div><span>Emissão</span>${escapar(formatarData(pedido.dataEmissao))}</div>
-      ${pedido.nomeTratamento ? `<div><span>Tratamento</span>${escapar(pedido.nomeTratamento)}</div>` : ''}
-      ${
-        pedido.origem
-          ? `<div><span>Origem</span>${escapar(pedido.origem)}</div>`
-          : pedido.dataAvaliacao
-            ? `<div><span>Avaliação de origem</span>${escapar(formatarData(pedido.dataAvaliacao))}</div>`
-            : ''
-      }
+      ${origemImpressa(pedido)}
     </div>
 
     ${pedido.status === 'Cancelado' ? '<div class="alerta"><strong>Pedido cancelado.</strong> Este documento não tem validade.</div>' : ''}

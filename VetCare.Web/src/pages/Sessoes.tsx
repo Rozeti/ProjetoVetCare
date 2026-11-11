@@ -9,7 +9,7 @@ import { useAtualizacao } from '../contexts/atualizacoes';
 import type { Atendimento, GestaoDeSessoes, PetSelecao, Sessao, SituacaoSessao, Tratamento, Veterinario } from '../types';
 import { Alerta, CabecalhoPagina, Card, Carregando, Etiqueta, SemDados } from '../components/ui';
 import { Paginacao } from '../components/Paginacao';
-import { estiloSituacaoSessao, formatarData, formatarIntervalo } from '../utils/formato';
+import { estiloSituacaoSessao, formatarData, formatarDataExtensa, formatarHora, paraValorInputData } from '../utils/formato';
 import { paginaVazia } from '../utils/paginacao';
 import { ModalRegistrarAtendimento } from './componentes/ModalRegistrarAtendimento';
 
@@ -33,12 +33,39 @@ const FILTROS_VAZIOS = {
 
 type Filtros = typeof FILTROS_VAZIOS;
 
+/** Sessões da página agrupadas pelo dia, na ordem em que a API as entrega. */
+function agruparPorDia(sessoes: Sessao[]): { dia: string; sessoes: Sessao[] }[] {
+  const grupos: { dia: string; sessoes: Sessao[] }[] = [];
+
+  for (const sessao of sessoes) {
+    const dia = paraValorInputData(sessao.dataHora);
+    const ultimo = grupos[grupos.length - 1];
+
+    if (ultimo?.dia === dia) ultimo.sessoes.push(sessao);
+    else grupos.push({ dia, sessoes: [sessao] });
+  }
+
+  return grupos;
+}
+
+/** "Hoje", "Amanhã" ou "Ontem", quando o dia é um desses. */
+function diaRelativo(dia: string): string {
+  const hoje = new Date();
+  const deslocado = (dias: number) => paraValorInputData(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + dias));
+
+  if (dia === deslocado(0)) return 'Hoje';
+  if (dia === deslocado(1)) return 'Amanhã';
+  if (dia === deslocado(-1)) return 'Ontem';
+  return '';
+}
+
 /**
  * Tela "Sessões": a gestão das sessões cadastradas nos tratamentos da clínica, separadas pela
  * situação — as que vão acontecer, as que aguardam o registro do atendimento, as realizadas, as
- * canceladas e as inativadas —, com filtro por animal, tratamento, veterinário e período. Daqui
- * se consulta o registro e se inativa ou reativa uma sessão; as sessões são cadastradas no
- * tratamento, e o atendimento é registrado na agenda ou no prontuário.
+ * canceladas e as inativadas —, com filtro por animal, tratamento, veterinário e período. As
+ * sessões aparecem agrupadas por dia, uma linha cada, com o horário, o animal, o tratamento, o
+ * veterinário e a situação. Daqui se consulta o registro e se inativa ou reativa uma sessão; as
+ * sessões são cadastradas no tratamento, e o atendimento é registrado na agenda ou no prontuário.
  */
 export function Sessoes() {
   const { ehVeterinario, usuario } = useAuth();
@@ -186,11 +213,13 @@ export function Sessoes() {
   /** O veterinário inativa e reativa só as sessões da própria agenda; a API confere de novo. */
   const podeAlterar = (sessao: Sessao) => !ehVeterinario || sessao.veterinarioId === meuVeterinarioId;
 
+  const icone = 'rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-brand';
+
   return (
     <>
       <CabecalhoPagina
         titulo="Sessões"
-        descricao="As sessões cadastradas nos tratamentos da clínica, separadas pela situação. As sessões são cadastradas no tratamento, no prontuário de cada paciente."
+        descricao="As sessões dos tratamentos da clínica, por situação. Novas sessões são cadastradas no tratamento, no prontuário do paciente."
       />
 
       {erro && (
@@ -204,131 +233,137 @@ export function Sessoes() {
         </Alerta>
       )}
 
-      {/* A situação organiza a tela: o que vai acontecer, o que pede registro e o que já foi feito. */}
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200" role="tablist" aria-label="Situação das sessões">
-        {ABAS.map((aba) => {
-          const contagem = contagemDa(aba.valor);
-          const ativa = situacao === aba.valor;
+      <Card className="overflow-hidden">
+        {/* A situação organiza a tela: o que vai acontecer, o que pede registro e o que já foi feito. */}
+        <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-3" role="tablist" aria-label="Situação das sessões">
+          {ABAS.map((aba) => {
+            const contagem = contagemDa(aba.valor);
+            const ativa = situacao === aba.valor;
+            const pendente = aba.valor === 'Aguardando registro' && !!contagem;
 
-          return (
-            <button
-              key={aba.rotulo}
-              type="button"
-              role="tab"
-              aria-selected={ativa}
-              onClick={() => {
-                setSituacao(aba.valor);
-                setNumeroPagina(1);
-              }}
-              className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${
-                ativa ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {aba.rotulo}
-              {contagem !== undefined && (
-                <span
-                  className={`ml-1.5 rounded-full px-1.5 py-0.5 text-xs ${
-                    aba.valor === 'Aguardando registro' && contagem > 0
-                      ? 'bg-alerta-claro font-semibold text-amber-800'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {contagem}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={aba.rotulo}
+                type="button"
+                role="tab"
+                aria-selected={ativa}
+                onClick={() => {
+                  setSituacao(aba.valor);
+                  setNumeroPagina(1);
+                }}
+                className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition ${
+                  ativa ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {aba.rotulo}
+                {contagem !== undefined && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
+                      pendente
+                        ? 'bg-alerta-claro font-semibold text-amber-800'
+                        : ativa
+                          ? 'bg-brand-100 text-brand-dark'
+                          : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {contagem}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-      <Card className="mb-6 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="text-xs font-semibold text-slate-600">
-            Animal
-            <select className="vc-campo mt-1" value={filtros.pacienteId} onChange={(e) => filtrar('pacienteId', e.target.value)}>
-              <option value="">Todos os animais</option>
-              {opcoes?.pacientes.map((paciente) => (
-                <option key={paciente.id} value={paciente.id}>
-                  {paciente.nome} — {paciente.nomeTutor}
-                </option>
-              ))}
-            </select>
-          </label>
+        {/* Filtros numa barra só; o tratamento aparece depois de escolhido o animal. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
+          <select
+            className="vc-campo w-full py-2 sm:w-auto sm:max-w-56"
+            value={filtros.pacienteId}
+            onChange={(e) => filtrar('pacienteId', e.target.value)}
+            aria-label="Animal"
+          >
+            <option value="">Todos os animais</option>
+            {opcoes?.pacientes.map((paciente) => (
+              <option key={paciente.id} value={paciente.id}>
+                {paciente.nome} — {paciente.nomeTutor}
+              </option>
+            ))}
+          </select>
 
-          <label className="text-xs font-semibold text-slate-600">
-            Tratamento
+          {filtros.pacienteId && (
             <select
-              className="vc-campo mt-1"
+              className="vc-campo w-full py-2 sm:w-auto sm:max-w-64"
               value={filtros.tratamentoId}
               onChange={(e) => filtrar('tratamentoId', e.target.value)}
-              disabled={!filtros.pacienteId}
-              title={filtros.pacienteId ? undefined : 'Escolha o animal para filtrar por tratamento'}
+              aria-label="Tratamento"
             >
-              <option value="">{filtros.pacienteId ? 'Todos os tratamentos' : 'Escolha o animal'}</option>
+              <option value="">Todos os tratamentos</option>
               {tratamentos?.map((tratamento) => (
                 <option key={tratamento.id} value={tratamento.id}>
                   {tratamento.nome} ({tratamento.status.toLowerCase()})
                 </option>
               ))}
             </select>
-          </label>
+          )}
 
-          <label className="text-xs font-semibold text-slate-600">
-            Veterinário
-            <select className="vc-campo mt-1" value={filtros.veterinarioId} onChange={(e) => filtrar('veterinarioId', e.target.value)}>
-              <option value="">Todos</option>
-              {meuVeterinarioId && <option value={meuVeterinarioId}>Minhas sessões</option>}
-              {opcoes?.veterinarios
-                .filter((vet) => vet.id !== meuVeterinarioId)
-                .map((vet) => (
-                  <option key={vet.id} value={vet.id}>
-                    {vet.nome}
-                  </option>
-                ))}
-            </select>
-          </label>
+          <select
+            className="vc-campo w-full py-2 sm:w-auto sm:max-w-56"
+            value={filtros.veterinarioId}
+            onChange={(e) => filtrar('veterinarioId', e.target.value)}
+            aria-label="Veterinário"
+          >
+            <option value="">Todos os veterinários</option>
+            {meuVeterinarioId && <option value={meuVeterinarioId}>Minhas sessões</option>}
+            {opcoes?.veterinarios
+              .filter((vet) => vet.id !== meuVeterinarioId)
+              .map((vet) => (
+                <option key={vet.id} value={vet.id}>
+                  {vet.nome}
+                </option>
+              ))}
+          </select>
 
-          <label className="text-xs font-semibold text-slate-600">
-            De
-            <input type="date" className="vc-campo mt-1" value={filtros.inicio} onChange={(e) => filtrar('inicio', e.target.value)} />
-          </label>
-
-          <label className="text-xs font-semibold text-slate-600">
-            Até
+          <span className="flex w-full items-center gap-2 text-sm text-slate-500 sm:w-auto">
             <input
               type="date"
-              className="vc-campo mt-1"
+              className="vc-campo min-w-0 flex-1 py-2 sm:w-auto sm:flex-none"
+              value={filtros.inicio}
+              onChange={(e) => filtrar('inicio', e.target.value)}
+              aria-label="De"
+              title="De"
+            />
+            até
+            <input
+              type="date"
+              className="vc-campo min-w-0 flex-1 py-2 sm:w-auto sm:flex-none"
               min={filtros.inicio || undefined}
               value={filtros.fim}
               onChange={(e) => filtrar('fim', e.target.value)}
+              aria-label="Até"
+              title="Até"
             />
-          </label>
+          </span>
+
+          {filtrando && (
+            <button
+              type="button"
+              onClick={() => {
+                setFiltros(FILTROS_VAZIOS);
+                setNumeroPagina(1);
+              }}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-medium text-brand hover:bg-brand-50"
+            >
+              <X size={14} />
+              Limpar filtros
+            </button>
+          )}
+
+          {periodoInvalido && <p className="w-full text-sm text-perigo">A data final não pode ser anterior à inicial.</p>}
         </div>
 
-        {(filtrando || periodoInvalido) && (
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-            {periodoInvalido && <span className="text-perigo">A data final não pode ser anterior à inicial.</span>}
-            {filtrando && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFiltros(FILTROS_VAZIOS);
-                  setNumeroPagina(1);
-                }}
-                className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
-              >
-                <X size={14} />
-                Limpar filtros
-              </button>
-            )}
-          </div>
-        )}
-      </Card>
-
-      {carregando ? (
-        <Carregando texto="Carregando sessões..." />
-      ) : pagina.itens.length === 0 ? (
-        <Card>
+        {carregando ? (
+          <Carregando texto="Carregando sessões..." />
+        ) : pagina.itens.length === 0 ? (
           <SemDados
             icone={<Activity size={40} />}
             titulo={filtrando || situacao ? 'Nenhuma sessão encontrada' : 'Nenhuma sessão cadastrada'}
@@ -338,109 +373,122 @@ export function Sessoes() {
                 : 'As sessões são cadastradas no tratamento, no prontuário de cada paciente, uma ou várias de uma vez.'
             }
           />
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
-          {/* "relative" prende o rótulo sr-only do cabeçalho de ações dentro da rolagem da tabela;
-              sem isso ele escapa da caixa e cria rolagem horizontal na página do celular. */}
-          <div className="relative overflow-x-auto">
-            <table className="vc-tabela">
-              <thead>
-                <tr>
-                  <th scope="col">Data</th>
-                  <th scope="col">Animal</th>
-                  <th scope="col">Tratamento</th>
-                  <th scope="col">Veterinário</th>
-                  <th scope="col">Situação</th>
-                  <th scope="col">
-                    <span className="sr-only">Ações</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagina.itens.map((sessao) => (
-                  <tr key={sessao.id} className={sessao.inativa ? 'text-slate-400' : undefined}>
-                    <td className="whitespace-nowrap">
-                      <span className="block font-medium text-slate-900">{formatarData(sessao.dataHora)}</span>
-                      <span className="block text-xs text-slate-500">{formatarIntervalo(sessao.dataHora, sessao.dataHoraFim)}</span>
-                    </td>
-                    <td>
-                      <Link to={`/prontuario/${sessao.pacienteId}`} className="font-semibold text-slate-900 hover:text-brand">
-                        {sessao.nomePaciente}
-                      </Link>
-                      <span className="block text-xs text-slate-500">{sessao.nomeTutor}</span>
-                    </td>
-                    <td className="max-w-xs">
-                      <span className="line-clamp-1">{sessao.nomeTratamento}</span>
-                      {sessao.numeroSessao && (
-                        <span className="line-clamp-1 text-xs text-slate-500">
-                          Sessão nº {sessao.numeroSessao}
-                          {sessao.escalaDor != null && ` · dor ${sessao.escalaDor}/10`}
-                          {sessao.tecnicasAplicadas && ` · ${sessao.tecnicasAplicadas}`}
+        ) : (
+          <>
+            {agruparPorDia(pagina.itens).map(({ dia, sessoes }) => {
+              const relativo = diaRelativo(dia);
+              const extenso = formatarDataExtensa(`${dia}T12:00:00`);
+
+              return (
+                <section key={dia} aria-label={extenso}>
+                  <h3 className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 sm:px-5 text-xs font-semibold text-slate-600">
+                    <span className="inline-block first-letter:uppercase">{extenso}</span>
+                    {relativo && <Etiqueta className="bg-brand-100 py-0.5 text-brand-dark">{relativo}</Etiqueta>}
+                    <span className="ml-auto whitespace-nowrap font-normal text-slate-400">
+                      {sessoes.length} {sessoes.length === 1 ? 'sessão' : 'sessões'}
+                    </span>
+                  </h3>
+
+                  <ul className="divide-y divide-slate-100">
+                    {sessoes.map((sessao) => (
+                      <li
+                        key={sessao.id}
+                        className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5 transition hover:bg-slate-50/80 ${
+                          sessao.inativa ? 'text-slate-400' : ''
+                        }`}
+                      >
+                        <span className="w-14 shrink-0 tabular-nums">
+                          <span className={`block text-sm font-semibold ${sessao.inativa ? 'line-through' : 'text-slate-900'}`}>
+                            {formatarHora(sessao.dataHora)}
+                          </span>
+                          <span className="block text-xs text-slate-500">até {formatarHora(sessao.dataHoraFim)}</span>
                         </span>
-                      )}
-                    </td>
-                    <td>{sessao.nomeVeterinario}</td>
-                    <td>
-                      <Etiqueta className={estiloSituacaoSessao[sessao.situacao]}>{sessao.situacao}</Etiqueta>
-                    </td>
-                    <td className="whitespace-nowrap text-right">
-                      <span className="inline-flex items-center gap-1">
-                        {sessao.atendimentoId && (
-                          <button
-                            type="button"
-                            onClick={() => abrirRegistro(sessao)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-brand"
-                            title="Ver o registro do atendimento"
-                            aria-label={`Ver o registro da sessão de ${sessao.nomePaciente}`}
+
+                        <span className="min-w-0 flex-1 basis-52">
+                          <span className="block truncate text-sm">
+                            <Link to={`/prontuario/${sessao.pacienteId}`} className="font-semibold text-slate-900 hover:text-brand">
+                              {sessao.nomePaciente}
+                            </Link>
+                            <span className="text-slate-500"> · tutor {sessao.nomeTutor}</span>
+                          </span>
+                          <span className="block truncate text-xs text-slate-500" title={sessao.nomeTratamento}>
+                            {[
+                              sessao.nomeTratamento,
+                              sessao.numeroSessao && `sessão nº ${sessao.numeroSessao}`,
+                              sessao.escalaDor != null && `dor ${sessao.escalaDor}/10`,
+                              sessao.tecnicasAplicadas,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                            <span className="xl:hidden"> · {sessao.nomeVeterinario}</span>
+                          </span>
+                        </span>
+
+                        <span className="hidden w-44 shrink-0 truncate text-sm text-slate-600 xl:block" title={sessao.nomeVeterinario}>
+                          {sessao.nomeVeterinario}
+                        </span>
+
+                        <span className="shrink-0 sm:w-40">
+                          <Etiqueta className={estiloSituacaoSessao[sessao.situacao]}>{sessao.situacao}</Etiqueta>
+                        </span>
+
+                        <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                          {sessao.atendimentoId && (
+                            <button
+                              type="button"
+                              onClick={() => abrirRegistro(sessao)}
+                              className={icone}
+                              title="Ver o registro do atendimento"
+                              aria-label={`Ver o registro da sessão de ${sessao.nomePaciente}`}
+                            >
+                              <FileText size={16} />
+                            </button>
+                          )}
+
+                          {!sessao.inativa && !sessao.possuiAtendimento && sessao.status !== 'Concluída' && podeAlterar(sessao) && (
+                            <button
+                              type="button"
+                              onClick={() => inativar(sessao)}
+                              className="rounded-lg p-2 text-slate-400 transition hover:bg-perigo-claro hover:text-perigo"
+                              title="Inativar sessão"
+                              aria-label={`Inativar a sessão de ${sessao.nomePaciente}`}
+                            >
+                              <Power size={16} />
+                            </button>
+                          )}
+
+                          {sessao.inativa && podeAlterar(sessao) && (
+                            <button
+                              type="button"
+                              onClick={() => reativar(sessao)}
+                              className={icone}
+                              title="Reativar sessão"
+                              aria-label={`Reativar a sessão de ${sessao.nomePaciente}`}
+                            >
+                              <RotateCcw size={16} />
+                            </button>
+                          )}
+
+                          <Link
+                            to={`/prontuario/${sessao.pacienteId}?aba=tratamentos&tratamento=${sessao.tratamentoId}`}
+                            className={icone}
+                            title="Abrir o tratamento no prontuário"
+                            aria-label={`Abrir o tratamento de ${sessao.nomePaciente} no prontuário`}
                           >
-                            <FileText size={16} />
-                          </button>
-                        )}
+                            <ExternalLink size={16} />
+                          </Link>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </>
+        )}
 
-                        {!sessao.inativa && !sessao.possuiAtendimento && sessao.status !== 'Concluída' && podeAlterar(sessao) && (
-                          <button
-                            type="button"
-                            onClick={() => inativar(sessao)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-perigo-claro hover:text-perigo"
-                            title="Inativar sessão"
-                            aria-label={`Inativar a sessão de ${sessao.nomePaciente}`}
-                          >
-                            <Power size={16} />
-                          </button>
-                        )}
-
-                        {sessao.inativa && podeAlterar(sessao) && (
-                          <button
-                            type="button"
-                            onClick={() => reativar(sessao)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                            title="Reativar sessão"
-                            aria-label={`Reativar a sessão de ${sessao.nomePaciente}`}
-                          >
-                            <RotateCcw size={16} />
-                          </button>
-                        )}
-
-                        <Link
-                          to={`/prontuario/${sessao.pacienteId}?aba=tratamentos&tratamento=${sessao.tratamentoId}`}
-                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-brand"
-                          title="Abrir o tratamento no prontuário"
-                          aria-label={`Abrir o tratamento de ${sessao.nomePaciente} no prontuário`}
-                        >
-                          <ExternalLink size={16} />
-                        </Link>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <Paginacao pagina={pagina} aoMudarPagina={setNumeroPagina} rotuloItens="sessões" />
-        </Card>
-      )}
+        <Paginacao pagina={pagina} aoMudarPagina={setNumeroPagina} rotuloItens="sessões" />
+      </Card>
 
       <ModalRegistrarAtendimento
         key={registroAberto?.id ?? 'nenhum'}

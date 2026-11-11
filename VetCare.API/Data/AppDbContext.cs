@@ -328,7 +328,7 @@ namespace VetCare.API.Data
                 entidade.HasOne(p => p.Paciente).WithMany().HasForeignKey(p => p.PacienteId);
                 entidade.HasOne(p => p.Veterinario).WithMany().HasForeignKey(p => p.VeterinarioId);
 
-                // Origem da receita: a avaliação ou a evolução em que foi prescrita.
+                // Origem da receita: a avaliação, ou o tratamento (e a sessão, quando foi prescrita nela).
                 entidade.HasOne(p => p.Avaliacao).WithMany().HasForeignKey(p => p.AvaliacaoId).IsRequired(false);
                 entidade.HasOne(p => p.Atendimento).WithMany().HasForeignKey(p => p.AtendimentoId).IsRequired(false);
 
@@ -348,10 +348,10 @@ namespace VetCare.API.Data
 
                 entidade.HasOne(p => p.Paciente).WithMany().HasForeignKey(p => p.PacienteId);
                 entidade.HasOne(p => p.Prontuario).WithMany().HasForeignKey(p => p.ProntuarioId);
-                entidade.HasOne(p => p.Avaliacao).WithMany().HasForeignKey(p => p.AvaliacaoId);
                 entidade.HasOne(p => p.Veterinario).WithMany().HasForeignKey(p => p.VeterinarioId);
 
-                // A sessão em que o pedido foi feito e o tratamento a que ele se refere, quando houver.
+                // Origem do pedido: a avaliação, ou o tratamento (e a sessão, quando foi feito nela).
+                entidade.HasOne(p => p.Avaliacao).WithMany().HasForeignKey(p => p.AvaliacaoId).IsRequired(false);
                 entidade.HasOne(p => p.Atendimento).WithMany().HasForeignKey(p => p.AtendimentoId).IsRequired(false);
                 entidade.HasOne(p => p.Tratamento).WithMany().HasForeignKey(p => p.TratamentoId).IsRequired(false);
             });

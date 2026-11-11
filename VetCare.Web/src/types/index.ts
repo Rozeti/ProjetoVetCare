@@ -192,18 +192,26 @@ export interface Prescricao {
   validaAte?: string | null;
   orientacoes: string;
   status: 'Ativa' | 'Cancelada';
-  /** Origem da receita: a avaliação ou a sessão registrada em que foi prescrita. */
+  /** Avaliação em que a receita foi prescrita, quando a origem é uma avaliação. */
   avaliacaoId?: string | null;
+  dataAvaliacao?: string | null;
+  motivoAvaliacao: string;
+  /** Sessão em que foi prescrita, quando foi no registro de uma sessão (a origem é o tratamento dela). */
   atendimentoId?: string | null;
-  /** "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026"; vazio nas receitas antigas sem origem. */
+  /** De onde veio: a avaliação ou o tratamento; vazio nas receitas antigas sem origem. */
+  tipoOrigem: TipoOrigem;
+  /** "Avaliação de 12/04/2026" ou "Tratamento Hidroterapia". */
   origem: string;
-  /** Tratamento para o qual a receita foi prescrita; vazio quando não há vínculo. */
+  /** Tratamento da receita (a origem, ou o vínculo de uma receita antiga da avaliação); vazio sem vínculo. */
   tratamentoId?: string | null;
   nomeTratamento: string;
   itens: ItemPrescricao[];
 }
 
-/** Pedido de exames gerado a partir de uma avaliação ou de uma sessão registrada. */
+/** De onde vem uma receita ou um pedido de exame. */
+export type TipoOrigem = 'Avaliação' | 'Tratamento' | '';
+
+/** Pedido de exames feito em uma avaliação ou em um tratamento (direto nele ou em uma sessão dele). */
 export interface PedidoExame {
   id: string;
   pacienteId: string;
@@ -211,16 +219,17 @@ export interface PedidoExame {
   especie: string;
   raca: string;
   nomeTutor: string;
-  /** Avaliação de origem; no pedido de uma sessão, a que originou o tratamento da sessão. */
-  avaliacaoId: string;
+  /** Avaliação em que o pedido foi feito; vazio no pedido feito no tratamento. */
+  avaliacaoId?: string | null;
   dataAvaliacao?: string | null;
   motivoAvaliacao: string;
-  /** Sessão registrada em que o pedido foi feito; vazio no pedido da avaliação. */
+  /** Sessão em que o pedido foi feito, quando foi no registro de uma sessão (a origem é o tratamento dela). */
   atendimentoId?: string | null;
   numeroSessao?: number | null;
-  /** "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026". */
+  tipoOrigem: TipoOrigem;
+  /** "Avaliação de 12/04/2026" ou "Tratamento Hidroterapia". */
   origem: string;
-  /** Tratamento para o qual os exames foram pedidos; vazio quando não há vínculo. */
+  /** Tratamento do pedido (a origem, ou o vínculo de um pedido antigo da avaliação); vazio sem vínculo. */
   tratamentoId?: string | null;
   nomeTratamento: string;
   /** Quem assinou: o veterinário só edita e exclui os próprios pedidos. */

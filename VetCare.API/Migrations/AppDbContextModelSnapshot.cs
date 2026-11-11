@@ -625,7 +625,7 @@ namespace VetCare.API.Migrations
                     b.Property<Guid?>("AtendimentoId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("AvaliacaoId")
+                    b.Property<Guid?>("AvaliacaoId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("DataEmissao")
@@ -1525,9 +1525,7 @@ namespace VetCare.API.Migrations
 
                     b.HasOne("VetCare.API.Models.AvaliacaoClinica", "Avaliacao")
                         .WithMany()
-                        .HasForeignKey("AvaliacaoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .HasForeignKey("AvaliacaoId");
 
                     b.HasOne("VetCare.API.Models.Pet", "Paciente")
                         .WithMany()

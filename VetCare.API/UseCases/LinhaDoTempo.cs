@@ -316,9 +316,13 @@ namespace VetCare.API.UseCases
         private static ItemLinhaTempoDTO DeReceita(Prescricao receita)
         {
             var medicamentos = string.Join(", ", receita.Itens.Select(i => i.Medicamento));
-            var origem = GerenciarPrescricoesUseCase.DescreverOrigem(receita);
             var cancelada = receita.Status == StatusPrescricao.Cancelada;
-            var tratamento = receita.Tratamento ?? receita.Atendimento?.Tratamento;
+            var tratamento = GerenciarPrescricoesUseCase.TratamentoDe(receita);
+            var (campoDeOrigem, origem) = Origem(
+                GerenciarPrescricoesUseCase.TipoDeOrigem(receita),
+                GerenciarPrescricoesUseCase.DescreverOrigem(receita),
+                tratamento,
+                "Emitida");
 
             var campos = new Dictionary<string, string>
             {
@@ -326,14 +330,9 @@ namespace VetCare.API.UseCases
                 ["Situação"] = receita.Status
             };
 
-            if (origem.Length > 0)
+            foreach (var (rotulo, valor) in campoDeOrigem)
             {
-                campos["Origem"] = origem;
-            }
-
-            if (tratamento != null)
-            {
-                campos["Tratamento"] = tratamento.Nome;
+                campos[rotulo] = valor;
             }
 
             return new ItemLinhaTempoDTO
@@ -367,16 +366,15 @@ namespace VetCare.API.UseCases
                 campos["Justificativa"] = pedido.Justificativa;
             }
 
-            var origem = GerenciarPedidosExameUseCase.DescreverOrigem(pedido);
+            var (campoDeOrigem, origem) = Origem(
+                GerenciarPedidosExameUseCase.TipoDeOrigem(pedido),
+                GerenciarPedidosExameUseCase.DescreverOrigem(pedido),
+                pedido.Tratamento ?? pedido.Atendimento?.Tratamento,
+                "Pedido feito");
 
-            if (origem.Length > 0)
+            foreach (var (rotulo, valor) in campoDeOrigem)
             {
-                campos["Origem"] = origem;
-            }
-
-            if (pedido.Tratamento != null)
-            {
-                campos["Tratamento"] = pedido.Tratamento.Nome;
+                campos[rotulo] = valor;
             }
 
             return new ItemLinhaTempoDTO
@@ -388,10 +386,42 @@ namespace VetCare.API.UseCases
                 Tipo = cancelado ? "Pedido de exame cancelado" : "Pedido de exame",
                 Autor = pedido.Veterinario?.Usuario?.Nome ?? string.Empty,
                 Descricao = string.Join(", ", exames.Select(e => e.Trim())),
-                Detalhes = origem.Length > 0 ? $"A partir da {origem.ToLowerInvariant()}" : string.Empty,
+                Detalhes = origem,
                 TratamentoId = pedido.TratamentoId,
                 Campos = campos
             };
+        }
+
+        /// <summary>
+        /// Origem de uma receita ou de um pedido: o campo "Origem" (a avaliação ou o tratamento),
+        /// o tratamento vinculado à avaliação, quando houver, e a frase do resumo — "Emitida na
+        /// avaliação de 12/04/2026" ou "Pedido feito no tratamento Hidroterapia".
+        /// </summary>
+        private static (List<(string Rotulo, string Valor)> Campos, string Frase) Origem(
+            string tipo, string descricao, Tratamento? tratamento, string verbo)
+        {
+            var campos = new List<(string, string)>();
+
+            if (descricao.Length == 0)
+            {
+                return (campos, string.Empty);
+            }
+
+            campos.Add(("Origem", descricao));
+
+            // Na origem tratamento, o próprio campo Origem já diz qual é.
+            if (tipo == OrigemClinica.Avaliacao && tratamento != null)
+            {
+                campos.Add(("Tratamento", tratamento.Nome));
+            }
+
+            var frase = tipo == OrigemClinica.Avaliacao
+                ? $"{verbo} na {char.ToLowerInvariant(descricao[0])}{descricao[1..]}"
+                : tipo == OrigemClinica.Tratamento && tratamento != null
+                    ? $"{verbo} no tratamento {tratamento.Nome}"
+                    : string.Empty;
+
+            return (campos, frase);
         }
 
         private static ItemLinhaTempoDTO DeObservacao(ObservacaoInterna observacao)

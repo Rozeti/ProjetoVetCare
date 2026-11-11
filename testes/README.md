@@ -60,9 +60,9 @@ com as contagens, a inativação que tira a sessão da agenda e libera o horári
 confere o horário de novo, a recusa de inativar sessão com atendimento, o registro do
 atendimento que exige uma sessão cadastrada e a reação do animal e recebe o número, a recusa
 de registrar atendimento em sessão inativada, o filtro de sessões por tratamento, a receita que exige origem, a
-receita e o pedido de exame ligados ao tratamento (o da sessão, ou o escolhido na avaliação),
-o pedido de exame feito na sessão, o pedido sem origem recusado, o pedido de exame emitido da
-avaliação, editado e excluído (sai do prontuário em vez de ficar cancelado), a inativação e a reativação do tratamento sem perder as sessões registradas e a
+receita e o pedido de exame emitidos na avaliação, no próprio tratamento ou no registro da
+sessão (com o tratamento como origem), o pedido sem origem recusado, a recusa de pedido em
+tratamento inativado, o pedido de exame emitido da avaliação, editado e excluído (sai do prontuário em vez de ficar cancelado), a inativação e a reativação do tratamento sem perder as sessões registradas e a
 garantia de que paciente não é excluído, só inativado.
 
 ```bash
@@ -125,15 +125,17 @@ bash testes/teste-tempo-real.sh
 
 Roteiro com Puppeteer sobre o Microsoft Edge: percorre login, painel, pacientes (ações
 reduzidas a visualizar e inativar, filtro por raça), prontuário com todas as abas
-(avaliações e tratamentos em linhas resumidas que expandem, o tratamento com a avaliação de
-origem, as próprias sessões em blocos — hoje, próximas e anteriores, das mais recentes para
+(avaliações, tratamentos, receitas e pedidos de exame em linhas resumidas que expandem em
+tópicos, as receitas e os pedidos com a origem — avaliação ou tratamento, nunca a sessão —, o
+tratamento com a avaliação de origem e os botões "Emitir receita" e "Pedir exames", as
+próprias sessões em blocos — hoje, próximas e anteriores, das mais recentes para
 as mais antigas — e o cadastro de sessões pela quantidade, dias e horário, com a prévia das
 datas, a aba Sessões, medicação, exames, sem a antiga aba de gráficos), a linha do tempo
 neutra, sem cor por categoria, com a data de cada evento, o filtro por período e o registro
-completo, a tela de sessões organizada pela situação, com filtros e sem cadastro, a agenda
+completo, a tela de sessões organizada pela situação e agrupada por dia, com filtros e sem cadastro, a agenda
 geral sem "Agendar sessão", o botão único "Receita ou pedido de exame" no registro da sessão
 (a escolha abre o formulário certo, e o pedido emitido leva à aba Exames mostrando o
-tratamento e a sessão de origem), o cursor de mão nos itens clicáveis, o chat sem
+tratamento como origem), o cursor de mão nos itens clicáveis, o chat sem
 seletor de pet e com o foco mantido no campo depois do Enter, agenda
 geral, tutores em tabela com os animais vinculados, digitação contínua nos formulários,
 auditoria, responsividade em tela de celular e a visão filtrada do tutor. Gera capturas de

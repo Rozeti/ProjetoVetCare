@@ -125,9 +125,10 @@ namespace VetCare.API.UseCases
                     .Select(a => RegistrarAvaliacaoUseCase.MapearParaDTO(
                         a,
                         tratamentos,
-                        prescricoes.Count(p => p.AvaliacaoId == a.Id),
-                        // O pedido feito em uma sessão conta na sessão, não na avaliação do tratamento.
-                        pedidosExame.Count(p => p.AvaliacaoId == a.Id && p.AtendimentoId == null)))
+                        prescricoes.Count(p => p.AvaliacaoId == a.Id && GerenciarPrescricoesUseCase.TipoDeOrigem(p) == OrigemClinica.Avaliacao),
+                        // Só contam os documentos feitos na própria avaliação: os emitidos no
+                        // tratamento (ou em uma sessão dele) pertencem ao tratamento.
+                        pedidosExame.Count(p => p.AvaliacaoId == a.Id && GerenciarPedidosExameUseCase.TipoDeOrigem(p) == OrigemClinica.Avaliacao)))
                     .ToList(),
                 Historico = new LinhaDoTempo(_assinador, midias, observacoes).Montar(
                     avaliacoes, tratamentos, atendimentos, registrosClinicos, vacinas, prescricoes, pedidosExame),

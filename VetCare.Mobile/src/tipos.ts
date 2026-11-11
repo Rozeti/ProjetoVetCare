@@ -129,21 +129,25 @@ export interface Prescricao {
   validaAte?: string | null;
   orientacoes: string;
   status: 'Ativa' | 'Cancelada';
-  /** Avaliação ou sessão em que a receita foi prescrita ("Avaliação de 12/04/2026"). */
+  /** "Avaliação" ou "Tratamento": onde a receita foi prescrita. */
+  tipoOrigem?: string;
+  /** "Avaliação de 12/04/2026" ou "Tratamento Hidroterapia". */
   origem: string;
-  /** Tratamento para o qual a receita foi prescrita; vazio quando não há vínculo. */
+  /** Tratamento da receita; vazio quando não há vínculo. */
   nomeTratamento: string;
   itens: ItemPrescricao[];
 }
 
-/** Pedido de exames emitido a partir de uma avaliação ou de uma sessão. */
+/** Pedido de exames feito em uma avaliação ou em um tratamento. */
 export interface PedidoExame {
   id: string;
-  avaliacaoId: string;
+  avaliacaoId?: string | null;
   dataAvaliacao?: string | null;
-  /** "Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026". */
+  /** "Avaliação" ou "Tratamento": onde os exames foram pedidos. */
+  tipoOrigem?: string;
+  /** "Avaliação de 12/04/2026" ou "Tratamento Hidroterapia". */
   origem: string;
-  /** Tratamento para o qual os exames foram pedidos; vazio quando não há vínculo. */
+  /** Tratamento do pedido; vazio quando não há vínculo. */
   nomeTratamento: string;
   nomeVeterinario: string;
   crmv: string;

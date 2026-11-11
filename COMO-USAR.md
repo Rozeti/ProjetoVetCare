@@ -615,8 +615,9 @@ Faça nesta ordem, porque cada passo depende do anterior:
    tipo, descrição, duração prevista, frequência e sessões previstas, e escolha **Planejado**
    ou **Em andamento**.
    *Não existe "Novo tratamento" solto: todo tratamento nasce de uma avaliação. Na aba
-   Tratamentos ele mostra a avaliação de origem, e os botões editar, concluir e inativar —
-   inativar não apaga nada e pode ser desfeito; concluir é definitivo.*
+   Tratamentos ele mostra a avaliação de origem, as receitas e os pedidos de exame dele e os
+   botões **Emitir receita**, **Pedir exames**, editar, concluir e inativar — inativar não
+   apaga nada e pode ser desfeito; concluir é definitivo.*
 6. **Prontuário → Tratamentos → clique no tratamento → Cadastrar sessões.** Cada tratamento
    aparece numa linha resumida; clicar nela mostra os detalhes, as ações e as sessões dele.
    Informe **quantas sessões** (já vem a quantidade prevista no tratamento), **a partir de**
@@ -659,21 +660,22 @@ Faça nesta ordem, porque cada passo depende do anterior:
 10. **Entre como Apoio administrativo** (crie um usuário com esse perfil) e vá em **Agenda
     geral**: a recepção confirma e cancela sessões, mas não as conclui, que é tarefa do
     veterinário.
-11. **Prontuário → Avaliações → Emitir receita** (ou **Medicação → Nova receita**, escolhendo
-    a origem). Adicione dois medicamentos, escolha o **veterinário responsável** e o
-    **tratamento** e emita. Depois clique em imprimir.
-    *Toda receita vem de uma avaliação ou de uma sessão. Na avaliação, o tratamento é
-    opcional e já vem escolhido quando ela originou um único tratamento ativo. Na aba
-    Medicação, cada receita mostra o tratamento para o qual foi prescrita (clique no nome para
-    abrir o tratamento) e a origem; com receitas de mais de um tratamento, aparece um filtro
-    no topo da lista. A validade vai de 1 a 365 dias; cancelar uma receita pede o motivo. No
-    mesmo cartão da avaliação, **Pedir exames** gera o pedido de exames, que fica na aba Exames,
-    também com o tratamento, e pode ser impresso. Lá, o lápis edita o pedido e a lixeira o
-    exclui de vez, depois de confirmar; a exclusão aparece na Auditoria.*
+11. **Prontuário → Avaliações → Emitir receita** (ou **Tratamentos → Emitir receita**, ou
+    **Medicação → Nova receita**, escolhendo a avaliação ou o tratamento de origem). Adicione
+    dois medicamentos, escolha o **veterinário responsável** e emita. Depois clique em imprimir.
+    *Toda receita tem uma origem: a avaliação em que foi prescrita ou o tratamento. Na aba
+    Medicação, cada receita aparece numa linha com a data, a origem e os medicamentos; clique
+    nela para ver os medicamentos com dosagem, frequência, duração e via, as orientações, a
+    validade e quem assina, e clique na origem para abrir a avaliação ou o tratamento. Com
+    receitas de mais de uma origem, aparece um filtro no topo da lista. A validade vai de 1 a
+    365 dias; cancelar uma receita pede o motivo. **Pedir exames**, na avaliação ou no
+    tratamento, gera o pedido de exames, que fica na aba Exames, no mesmo formato, e pode ser
+    impresso. Lá, **Editar pedido** corrige o pedido e **Excluir pedido** o tira de vez,
+    depois de confirmar; a exclusão aparece na Auditoria.*
     *Na sessão registrada, **Ver registro → Receita ou pedido de exame** abre um formulário
     só: escolha **Receita de medicamento** ou **Pedido de exame**, preencha e emita. Você vai
-    direto para a aba Medicação ou Exames do prontuário, com o documento novo no topo, ligado
-    à sessão e ao tratamento dela.*
+    direto para a aba Medicação ou Exames do prontuário, com o documento novo no topo. Ele fica
+    no tratamento da sessão, que aparece como a origem.*
 12. **Prontuário → Linha do tempo.** Clique num evento para abrir o registro completo.
     *Cada evento mostra à esquerda a data (e a hora) em que foi feito. Os campos **De** e
     **Até** filtram por período, e os botões de categoria filtram por tipo — por exemplo,
@@ -683,7 +685,8 @@ Faça nesta ordem, porque cada passo depende do anterior:
 13. **Menu Sessões** (administrador e veterinário). As abas separam as sessões pela situação:
     **Agendadas**, **Aguardando registro** (já passaram e o atendimento não foi registrado),
     **Realizadas**, **Canceladas** e **Inativadas**, cada uma com a contagem. Filtre por
-    animal, tratamento, veterinário e período.
+    animal, veterinário e período na barra logo abaixo; escolhido o animal, aparece também o
+    filtro de tratamento. As sessões vêm agrupadas por dia, uma linha cada.
     *Daqui você abre o registro do atendimento, inativa ou reativa uma sessão e vai ao
     tratamento no prontuário (ícone de link). A tela não cadastra sessões: isso é feito no
     tratamento.*

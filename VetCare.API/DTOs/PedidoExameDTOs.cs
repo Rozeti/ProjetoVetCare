@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace VetCare.API.DTOs
 {
     /// <summary>
-    /// Pedido de exames gerado a partir de uma avaliação ou de uma sessão registrada: informe
-    /// exatamente uma das duas origens. O paciente vem da origem.
+    /// Pedido de exames feito em uma avaliação, em uma sessão registrada ou no tratamento: informe
+    /// a avaliação, a sessão ou, sem as duas, o tratamento. O paciente vem da origem.
     /// </summary>
     public class CriarPedidoExameDTO
     {
@@ -14,8 +14,9 @@ namespace VetCare.API.DTOs
         public Guid? AtendimentoId { get; set; }
 
         /// <summary>
-        /// Tratamento para o qual os exames são pedidos. No pedido de uma sessão é sempre o da
-        /// própria sessão (pode ser omitido); no de uma avaliação é opcional.
+        /// Tratamento do pedido. Sozinho, é a origem (pedido feito no tratamento); no pedido de uma
+        /// sessão é sempre o da própria sessão (pode ser omitido); no de uma avaliação é um vínculo
+        /// opcional.
         /// </summary>
         public Guid? TratamentoId { get; set; }
 
@@ -30,8 +31,9 @@ namespace VetCare.API.DTOs
     }
 
     /// <summary>
-    /// Correção do pedido: os exames, a justificativa, o tratamento e, no pedido de uma avaliação,
-    /// a avaliação de origem. O pedido feito em uma sessão continua ligado a ela e ao tratamento dela.
+    /// Correção do pedido: os exames, a justificativa e, no pedido de uma avaliação, a avaliação de
+    /// origem e o tratamento vinculado. O pedido feito no tratamento ou em uma sessão continua
+    /// ligado ao tratamento.
     /// </summary>
     public class AtualizarPedidoExameDTO
     {
@@ -39,8 +41,8 @@ namespace VetCare.API.DTOs
         public Guid? AvaliacaoId { get; set; }
 
         /// <summary>
-        /// O tratamento do pedido depois da correção; vazio, o pedido fica sem tratamento. Ignorado
-        /// no pedido de uma sessão, que fica sempre com o tratamento da sessão.
+        /// O tratamento do pedido de uma avaliação depois da correção; vazio, o pedido fica sem
+        /// tratamento. Ignorado no pedido feito no tratamento ou em uma sessão, que não muda de tratamento.
         /// </summary>
         public Guid? TratamentoId { get; set; }
 
@@ -60,18 +62,22 @@ namespace VetCare.API.DTOs
         public string Especie { get; set; } = string.Empty;
         public string Raca { get; set; } = string.Empty;
         public string NomeTutor { get; set; } = string.Empty;
-        public Guid AvaliacaoId { get; set; }
+        /// <summary>Avaliação em que o pedido foi feito; vazio no pedido feito no tratamento.</summary>
+        public Guid? AvaliacaoId { get; set; }
         public DateTime? DataAvaliacao { get; set; }
         public string MotivoAvaliacao { get; set; } = string.Empty;
 
-        /// <summary>Sessão registrada em que o pedido foi feito; vazio no pedido da avaliação.</summary>
+        /// <summary>Sessão registrada em que o pedido foi feito, quando foi feito nela.</summary>
         public Guid? AtendimentoId { get; set; }
         public int? NumeroSessao { get; set; }
 
-        /// <summary>"Avaliação de 12/04/2026" ou "Sessão nº 3 de 20/04/2026".</summary>
+        /// <summary>"Avaliação" ou "Tratamento" (também o pedido feito em uma sessão).</summary>
+        public string TipoOrigem { get; set; } = string.Empty;
+
+        /// <summary>Descrição da origem: "Avaliação de 12/04/2026" ou "Tratamento Hidroterapia".</summary>
         public string Origem { get; set; } = string.Empty;
 
-        /// <summary>Tratamento para o qual os exames foram pedidos; vazio quando não há vínculo.</summary>
+        /// <summary>Tratamento do pedido (a origem, ou o vínculo do pedido de uma avaliação); vazio sem vínculo.</summary>
         public Guid? TratamentoId { get; set; }
         public string NomeTratamento { get; set; } = string.Empty;
 

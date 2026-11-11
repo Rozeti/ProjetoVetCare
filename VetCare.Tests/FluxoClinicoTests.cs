@@ -13,7 +13,7 @@ namespace VetCare.Tests
     /// <summary>
     /// Fluxo clínico do animal: Animal → Avaliações → Tratamentos vinculados às avaliações →
     /// Evoluções vinculadas aos tratamentos. Receitas e pedidos de exame nascem de uma avaliação ou
-    /// de uma sessão registrada e ficam ligados ao tratamento para o qual foram feitos.
+    /// de um tratamento (direto nele ou no registro de uma das sessões dele).
     /// </summary>
     public class FluxoClinicoTests : BaseDeTeste
     {
@@ -357,6 +357,8 @@ namespace VetCare.Tests
 
             primeira.Sucesso.Should().BeTrue(primeira.Mensagem);
             primeira.Dados!.Origem.Should().StartWith("Avaliação de");
+            primeira.Dados.TipoOrigem.Should().Be(OrigemClinica.Avaliacao);
+            primeira.Dados.MotivoAvaliacao.Should().Be(Avaliacao.MotivoConsulta);
 
             var evolucao = await EvolucaoEm(Tratamento.Id, diasAtras: 1);
             var daEvolucao = ReceitaDe(Paciente.Id);
@@ -365,7 +367,9 @@ namespace VetCare.Tests
             var segunda = await CasoDeReceitas(ComoVeterinario()).Emitir(daEvolucao);
 
             segunda.Sucesso.Should().BeTrue(segunda.Mensagem);
-            segunda.Dados!.Origem.Should().StartWith("Sessão nº 1 de ");
+            segunda.Dados!.TipoOrigem.Should().Be(OrigemClinica.Tratamento, "a receita feita em uma sessão é do tratamento dela");
+            segunda.Dados.Origem.Should().Be("Tratamento Reabilitação de teste");
+            segunda.Dados.AtendimentoId.Should().Be(evolucao.Id, "a sessão fica guardada, mas não é mostrada como origem");
             segunda.Dados.TratamentoId.Should().Be(Tratamento.Id, "a receita da sessão é do tratamento da sessão");
             segunda.Dados.NomeTratamento.Should().Be("Reabilitação de teste");
         }
@@ -566,10 +570,11 @@ namespace VetCare.Tests
             var pedido = resultado.Dados!;
             pedido.AtendimentoId.Should().Be(evolucao.Id);
             pedido.NumeroSessao.Should().Be(1);
-            pedido.Origem.Should().StartWith("Sessão nº 1 de ");
+            pedido.TipoOrigem.Should().Be(OrigemClinica.Tratamento);
+            pedido.Origem.Should().Be("Tratamento Reabilitação de teste");
             pedido.TratamentoId.Should().Be(Tratamento.Id);
             pedido.NomeTratamento.Should().Be("Reabilitação de teste");
-            pedido.AvaliacaoId.Should().Be(Avaliacao.Id, "a avaliação é a que originou o tratamento da sessão");
+            pedido.AvaliacaoId.Should().BeNull("a origem do pedido feito na sessão é o tratamento, não a avaliação");
 
             var prontuario = await CasoDeProntuario(ComoVeterinario()).Executar(Paciente.Id);
             prontuario.Dados!.Avaliacoes.Single().QuantidadePedidosExame.Should().Be(0,
@@ -758,6 +763,163 @@ namespace VetCare.Tests
             corrigido.Dados!.Exames.Should().Be("Hemograma completo");
             corrigido.Dados.AtendimentoId.Should().Be(evolucao.Id);
             corrigido.Dados.TratamentoId.Should().Be(Tratamento.Id, "o pedido da sessão fica com o tratamento da sessão");
+        }
+
+        // ------------------------------------------------------------------ origem no tratamento
+
+        [Fact]
+        public async Task Receita_e_pedido_nascem_no_proprio_tratamento()
+        {
+            var receita = ReceitaDe(Paciente.Id);
+            receita.TratamentoId = Tratamento.Id;
+
+            var daReceita = await CasoDeReceitas(ComoVeterinario()).Emitir(receita);
+            var doPedido = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                TratamentoId = Tratamento.Id,
+                Exames = "Ultrassonografia do joelho"
+            });
+
+            daReceita.Sucesso.Should().BeTrue(daReceita.Mensagem);
+            daReceita.Dados!.TipoOrigem.Should().Be(OrigemClinica.Tratamento);
+            daReceita.Dados.Origem.Should().Be("Tratamento Reabilitação de teste");
+            daReceita.Dados.AvaliacaoId.Should().BeNull();
+            daReceita.Dados.AtendimentoId.Should().BeNull();
+            daReceita.Dados.TratamentoId.Should().Be(Tratamento.Id);
+
+            doPedido.Sucesso.Should().BeTrue(doPedido.Mensagem);
+            doPedido.Dados!.TipoOrigem.Should().Be(OrigemClinica.Tratamento);
+            doPedido.Dados.AvaliacaoId.Should().BeNull("o pedido do tratamento não é da avaliação");
+            doPedido.Dados.TratamentoId.Should().Be(Tratamento.Id);
+            doPedido.Dados.PacienteId.Should().Be(Paciente.Id, "o paciente vem do tratamento");
+            doPedido.Dados.VeterinarioId.Should().Be(Veterinario.Id);
+
+            Contexto.RegistrosAuditoria.Should().Contain(r =>
+                r.EntidadeId == daReceita.Dados.Id && r.Detalhe.Contains("emitida no tratamento Reabilitação de teste"));
+
+            // Os documentos do tratamento não contam como da avaliação que o originou.
+            var prontuario = (await CasoDeProntuario(ComoVeterinario()).Executar(Paciente.Id)).Dados!;
+            prontuario.Avaliacoes.Single().QuantidadeReceitas.Should().Be(0);
+            prontuario.Avaliacoes.Single().QuantidadePedidosExame.Should().Be(0);
+
+            var eventoDaReceita = prontuario.Historico.Single(e => e.Categoria == LinhaDoTempo.Categorias.Receita);
+            eventoDaReceita.Detalhes.Should().Be("Emitida no tratamento Reabilitação de teste");
+            eventoDaReceita.Campos["Origem"].Should().Be("Tratamento Reabilitação de teste");
+            eventoDaReceita.Campos.Should().NotContainKey("Tratamento", "a origem já diz qual é o tratamento");
+            eventoDaReceita.TratamentoId.Should().Be(Tratamento.Id);
+
+            prontuario.Historico.Single(e => e.Categoria == LinhaDoTempo.Categorias.Exame)
+                .Detalhes.Should().Be("Pedido feito no tratamento Reabilitação de teste");
+        }
+
+        [Fact]
+        public async Task Receita_da_avaliacao_mostra_a_avaliacao_como_origem_na_linha_do_tempo()
+        {
+            var receita = ReceitaDe(Paciente.Id);
+            receita.AvaliacaoId = Avaliacao.Id;
+            receita.TratamentoId = Tratamento.Id;
+
+            var emitida = await CasoDeReceitas(ComoVeterinario()).Emitir(receita);
+            emitida.Sucesso.Should().BeTrue(emitida.Mensagem);
+
+            var prontuario = (await CasoDeProntuario(ComoVeterinario()).Executar(Paciente.Id)).Dados!;
+            prontuario.Avaliacoes.Single().QuantidadeReceitas.Should().Be(1);
+
+            var evento = prontuario.Historico.Single(e => e.Categoria == LinhaDoTempo.Categorias.Receita);
+            evento.Detalhes.Should().StartWith("Emitida na avaliação de ");
+            evento.Campos["Origem"].Should().StartWith("Avaliação de ");
+            evento.Campos["Tratamento"].Should().Be("Reabilitação de teste", "a receita da avaliação ligada a um tratamento mostra os dois");
+        }
+
+        [Fact]
+        public async Task Tratamento_encerrado_ou_de_outro_animal_nao_recebe_receita_nem_pedido()
+        {
+            var concluido = await OutroTratamento(Paciente.Id, Avaliacao.Id, StatusTratamento.Concluido);
+            var inativado = await OutroTratamento(Paciente.Id, Avaliacao.Id, StatusTratamento.Inativado);
+
+            var receitaEncerrada = ReceitaDe(Paciente.Id);
+            receitaEncerrada.TratamentoId = concluido.Id;
+
+            var receitaDeOutroAnimal = ReceitaDe(_pacienteDoOutro.Id);
+            receitaDeOutroAnimal.TratamentoId = Tratamento.Id;
+            receitaDeOutroAnimal.VeterinarioId = _outroVeterinario.Id;
+
+            var primeira = await CasoDeReceitas(ComoVeterinario()).Emitir(receitaEncerrada);
+            var segunda = await CasoDeReceitas(ComoOutroVeterinario()).Emitir(receitaDeOutroAnimal);
+            var pedido = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                TratamentoId = inativado.Id,
+                Exames = "Hemograma"
+            });
+
+            primeira.Falha.Should().Be(TipoFalha.Validacao);
+            primeira.Mensagem.Should().Contain("planejados ou em andamento");
+            segunda.Falha.Should().Be(TipoFalha.Validacao);
+            segunda.Mensagem.Should().Contain("não pertence a este paciente");
+            pedido.Falha.Should().Be(TipoFalha.Validacao);
+            pedido.Mensagem.Should().Contain("inativado");
+            Contexto.Prescricoes.Should().BeEmpty();
+            Contexto.PedidosExame.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Receita_nao_aceita_avaliacao_e_sessao_juntas()
+        {
+            var evolucao = await EvolucaoEm(Tratamento.Id, diasAtras: 1);
+            var receita = ReceitaDe(Paciente.Id);
+            receita.AvaliacaoId = Avaliacao.Id;
+            receita.AtendimentoId = evolucao.Id;
+
+            var resultado = await CasoDeReceitas(ComoVeterinario()).Emitir(receita);
+
+            resultado.Falha.Should().Be(TipoFalha.Validacao);
+            resultado.Mensagem.Should().Contain("origem da receita");
+            Contexto.Prescricoes.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task Pedido_do_tratamento_emitido_pela_administracao_e_assinado_pelo_responsavel()
+        {
+            var tratamentoDoColega = await OutroTratamento(Paciente.Id, Avaliacao.Id);
+            tratamentoDoColega.VeterinarioId = _outroVeterinario.Id;
+            await Contexto.SaveChangesAsync();
+
+            var resultado = await CasoDeExames(ComoAdministrador()).Emitir(new CriarPedidoExameDTO
+            {
+                TratamentoId = tratamentoDoColega.Id,
+                Exames = "Hemograma"
+            });
+
+            resultado.Sucesso.Should().BeTrue(resultado.Mensagem);
+            resultado.Dados!.VeterinarioId.Should().Be(_outroVeterinario.Id, "sem veterinário logado, assina o responsável pelo tratamento");
+        }
+
+        [Fact]
+        public async Task Pedido_do_tratamento_nao_passa_para_uma_avaliacao()
+        {
+            var emitido = await CasoDeExames(ComoVeterinario()).Emitir(new CriarPedidoExameDTO
+            {
+                TratamentoId = Tratamento.Id,
+                Exames = "Hemograma"
+            });
+
+            var outraOrigem = await CasoDeExames(ComoVeterinario()).Atualizar(emitido.Dados!.Id, new AtualizarPedidoExameDTO
+            {
+                AvaliacaoId = Avaliacao.Id,
+                Exames = "Hemograma"
+            });
+
+            outraOrigem.Falha.Should().Be(TipoFalha.Validacao);
+            outraOrigem.Mensagem.Should().Contain("feito no tratamento");
+
+            var corrigido = await CasoDeExames(ComoVeterinario()).Atualizar(emitido.Dados.Id, new AtualizarPedidoExameDTO
+            {
+                Exames = "Hemograma completo"
+            });
+
+            corrigido.Sucesso.Should().BeTrue(corrigido.Mensagem);
+            corrigido.Dados!.TratamentoId.Should().Be(Tratamento.Id, "o pedido feito no tratamento continua nele");
+            corrigido.Dados.AvaliacaoId.Should().BeNull();
         }
 
         // ------------------------------------------------------------------ linha do tempo

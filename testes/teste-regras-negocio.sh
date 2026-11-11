@@ -258,19 +258,29 @@ r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\"
 checa "receita sem origem é recusada" "origem da receita" "$r"
 
 r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"atendimentoId\":\"$ATENDID\",\"itens\":[{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
-checa "receita emitida a partir da sessão registrada" "Sessão nº 1" "$r"
+checa "receita emitida no registro da sessão" "\"atendimentoId\":\"$ATENDID\"" "$r"
+checa "receita da sessão tem o tratamento como origem" "\"tipoOrigem\":\"Tratamento\"" "$r"
 checa "receita da sessão fica no tratamento da sessão" "\"tratamentoId\":\"$TRATID\"" "$r"
 
-r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"avaliacaoId\":\"$AVALID\",\"tratamentoId\":\"$TRATID\",\"itens\":[{\"medicamento\":\"Condroitina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
-checa "receita da avaliação ligada ao tratamento escolhido" "\"nomeTratamento\":\"Reabilita" "$r"
+r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"tratamentoId\":\"$TRATID\",\"itens\":[{\"medicamento\":\"Condroitina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\"}]}")
+checa "receita emitida no próprio tratamento" "\"origem\":\"Tratamento Reabilita" "$r"
+checa "receita do tratamento não fica na avaliação" "\"avaliacaoId\":null" "$r"
+
+r=$(post /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PETID\",\"veterinarioId\":\"$VETID\",\"avaliacaoId\":\"$AVALID\",\"itens\":[{\"medicamento\":\"Dipirona 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"se houver dor\"}]}")
+checa "receita emitida na avaliação" "\"tipoOrigem\":\"Avalia" "$r"
 
 r=$(post /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVALID\",\"exames\":\"Raio-X do joelho\",\"justificativa\":\"Controle pós-operatório\"}")
 checa "pedido de exame emitido a partir da avaliação" "\"avaliacaoId\":\"$AVALID\"" "$r"
 PEDIDOID=$(jsonval "$r" id)
 
 r=$(post /api/pedidos-exame "$ADMIN" "{\"atendimentoId\":\"$ATENDID\",\"exames\":\"Raio-X de controle\",\"justificativa\":\"Dor após a sessão\"}")
-checa "pedido de exame feito na sessão registrada" "Sessão nº 1" "$r"
+checa "pedido de exame feito no registro da sessão" "\"atendimentoId\":\"$ATENDID\"" "$r"
+checa "pedido da sessão tem o tratamento como origem" "\"tipoOrigem\":\"Tratamento\"" "$r"
 checa "pedido da sessão fica no tratamento da sessão" "\"tratamentoId\":\"$TRATID\"" "$r"
+
+r=$(post /api/pedidos-exame "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"exames\":\"Ultrassonografia do joelho\",\"justificativa\":\"Controle do tratamento\"}")
+checa "pedido de exame feito no próprio tratamento" "\"origem\":\"Tratamento Reabilita" "$r"
+checa "pedido do tratamento não fica na avaliação" "\"avaliacaoId\":null" "$r"
 
 r=$(post /api/pedidos-exame "$ADMIN" '{"exames":"Hemograma"}')
 checa "pedido de exame sem origem é recusado" "origem do pedido" "$r"
@@ -291,6 +301,9 @@ fi
 echo "== Situação do tratamento =="
 r=$(put "/api/tratamentos/$TRATID" "$ADMIN" '{"status":"Inativado"}')
 checa "tratamento inativado" "Inativado" "$r"
+
+r=$(post /api/pedidos-exame "$ADMIN" "{\"tratamentoId\":\"$TRATID\",\"exames\":\"Hemograma\"}")
+checa "tratamento inativado não recebe pedido de exame" "planejados ou em andamento" "$r"
 
 r=$(get "/api/atendimentos?tratamentoId=$TRATID" "$ADMIN")
 checa "inativar não apaga as evoluções" "\"numeroSessao\":1" "$r"

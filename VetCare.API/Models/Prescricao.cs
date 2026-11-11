@@ -9,16 +9,16 @@ namespace VetCare.API.Models
         public Guid VeterinarioId { get; set; }
 
         /// <summary>
-        /// Origem da receita: a avaliação ou a evolução em que foi prescrita. Toda receita nova tem
-        /// exatamente uma das duas; as anteriores à reorganização do fluxo clínico podem não ter.
+        /// Origem da receita: a avaliação em que foi prescrita ou o tratamento (direto nele ou no
+        /// registro de uma das sessões dele, guardada em <see cref="AtendimentoId"/>). As receitas
+        /// anteriores à reorganização do fluxo clínico podem não ter origem.
         /// </summary>
         public Guid? AvaliacaoId { get; set; }
         public Guid? AtendimentoId { get; set; }
 
         /// <summary>
-        /// Tratamento para o qual a receita foi prescrita. Na receita de uma sessão é sempre o
-        /// tratamento da própria sessão; na de uma avaliação é opcional, porque a receita pode
-        /// vir antes de qualquer tratamento.
+        /// Tratamento da receita. Na receita feita no tratamento ou em uma sessão é a origem dela; na
+        /// de uma avaliação é um vínculo opcional, porque a receita pode vir antes de qualquer tratamento.
         /// </summary>
         public Guid? TratamentoId { get; set; }
 

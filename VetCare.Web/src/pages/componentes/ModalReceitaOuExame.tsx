@@ -14,9 +14,9 @@ interface Props {
 }
 
 /**
- * Documentos clínicos emitidos a partir do registro de uma sessão: o veterinário escolhe entre a
- * receita de medicamento e o pedido de exame, preenche o formulário escolhido e é levado à aba
- * correspondente do prontuário. Os dois ficam ligados à sessão e ao tratamento dela.
+ * Documentos clínicos emitidos no registro de uma sessão: o veterinário escolhe entre a receita
+ * de medicamento e o pedido de exame, preenche o formulário escolhido e é levado à aba
+ * correspondente do prontuário. Os dois ficam no tratamento da sessão, que é a origem mostrada.
  */
 export function ModalReceitaOuExame({ sessao, ...props }: Props) {
   // Cada abertura monta o formulário do zero, sem efeito para limpá-lo.
@@ -65,8 +65,7 @@ function Conteudo({ sessao, aoFechar, aoSalvar }: Omit<Props, 'sessao'> & { sess
 
       {!tipo && (
         <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-          Escolha uma opção para abrir o formulário. O documento fica ligado a esta sessão e ao tratamento{' '}
-          {sessao.nomeTratamento}.
+          Escolha uma opção para abrir o formulário. O documento fica no tratamento {sessao.nomeTratamento}.
         </p>
       )}
 

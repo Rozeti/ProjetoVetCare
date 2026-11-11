@@ -278,7 +278,7 @@ try {
       { prefixo: 'Tratamentos', seletor: 'li[id^="tratamento-"] button[aria-expanded]', captura: '05d-tratamentos' },
       { prefixo: 'Sessões', texto: 'As sessões cadastradas nos tratamentos', captura: '05j-sessoes' },
       { prefixo: 'Vacinação', texto: 'Carteira de vacinação', captura: '05a-vacinacao' },
-      { prefixo: 'Medicação', texto: 'Receitas com os medicamentos prescritos', captura: '05b-medicacao' },
+      { prefixo: 'Medicação', texto: 'Receitas prescritas nas avaliações e nos tratamentos', captura: '05b-medicacao' },
       { prefixo: 'Exames', texto: 'Pedidos de exame', captura: '05e-exames' },
       { prefixo: 'Documentos', texto: 'Documento', captura: null },
     ];
@@ -348,6 +348,23 @@ try {
       );
       await capturar('05f-tratamento-expandido');
 
+      // Receitas e pedidos de exame também nascem no próprio tratamento (ativo).
+      const noTratamento = await pagina.evaluate(() => {
+        const aberto = document.querySelector('li[id^="tratamento-"] button[aria-expanded="true"]')?.closest('li');
+        const botoes = [...(aberto?.querySelectorAll('button') ?? [])].map((b) => b.innerText.trim());
+        return {
+          ativo: /Planejado|Em Andamento/.test(aberto?.innerText ?? ''),
+          receita: botoes.includes('Emitir receita'),
+          exames: botoes.includes('Pedir exames'),
+          topicos: ['Plano do tratamento', 'Receitas e pedidos de exame'].every((t) => aberto?.innerText.includes(t)),
+        };
+      });
+      registrar(
+        'Tratamento ativo: emitir receita e pedir exames no próprio tratamento, com tópicos destacados',
+        !noTratamento.ativo || (noTratamento.receita && noTratamento.exames && noTratamento.topicos),
+        JSON.stringify(noTratamento),
+      );
+
       // As sessões do tratamento aparecem em blocos: hoje, as próximas (a mais próxima
       // primeiro) e as anteriores (da mais recente para a mais antiga).
       const blocos = await pagina.evaluate(() => {
@@ -415,6 +432,49 @@ try {
       );
     }
 
+    // Medicação e Exames: itens resumidos com a origem (avaliação ou tratamento), que expandem.
+    for (const [prefixo, item, topico] of [
+      ['Medicação', 'receita', 'Medicamento'],
+      ['Exames', 'pedido', 'Exame'],
+    ]) {
+      const indice = abas.findIndex((t) => t.startsWith(prefixo));
+      if (indice < 0) continue;
+      const botoes = await pagina.$$('[role="tab"]');
+      await botoes[indice].click();
+      const temItens = await pagina
+        .waitForSelector(`li[id^="${item}-"] button[aria-expanded]`, { timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!temItens) continue;
+      const resumo = await pagina.evaluate((item) => {
+        const linhas = [...document.querySelectorAll(`li[id^="${item}-"]`)];
+        const fechados = linhas.every((li) => li.querySelector('button[aria-expanded]').getAttribute('aria-expanded') === 'false');
+        const comOrigem = linhas.every((li) => /Avaliação|Tratamento/.test(li.innerText));
+        const semSessao = linhas.every((li) => !/Sessão nº/.test(li.innerText));
+        linhas[0].querySelector('button[aria-expanded]').click();
+        return { fechados, comOrigem, semSessao, total: linhas.length };
+      }, item);
+      const expandiu = await pagina
+        .waitForFunction(
+          (item, topico) => {
+            const aberto = document.querySelector(`li[id^="${item}-"] button[aria-expanded="true"]`)?.closest('li');
+            const titulos = [...(aberto?.querySelectorAll('h4') ?? [])].map((h) => h.innerText.trim());
+            return titulos.includes('Origem') && titulos.some((t) => t.startsWith(topico));
+          },
+          { timeout: 8000 },
+          item,
+          topico,
+        )
+        .then(() => true)
+        .catch(() => false);
+      registrar(
+        `${prefixo}: itens resumidos com a origem, que expandem em tópicos`,
+        resumo.fechados && resumo.comOrigem && resumo.semSessao && expandiu,
+        `${resumo.total} itens`,
+      );
+      await capturar(item === 'receita' ? '05b-receita-expandida' : '05e-pedido-expandido');
+    }
+
     // Carteira com filtro e paginação: a aba Vacinação tem busca e seletor de situação.
     const indiceVacinas = abas.findIndex((t) => t.startsWith('Vacinação'));
     if (indiceVacinas >= 0) {
@@ -430,21 +490,21 @@ try {
 
   // ---- Sessões: a gestão das sessões cadastradas, separadas pela situação, sem cadastro
   await irPara(`/sessoes`, 'networkidle2');
-  await esperarTexto('As sessões cadastradas nos tratamentos da clínica');
-  await pagina.waitForSelector('table', { timeout: 8000 }).catch(() => null);
+  await esperarTexto('As sessões dos tratamentos da clínica');
+  await pagina.waitForSelector('section[aria-label] li', { timeout: 8000 }).catch(() => null);
   const telaSessoes = await pagina.evaluate(() => ({
-    tabela: !!document.querySelector('table'),
+    tabela: document.querySelectorAll('section[aria-label] h3').length > 0 && !document.querySelector('table'),
     situacoes: [...document.querySelectorAll('[role="tab"]')].map((b) => b.innerText.replace(/\s*\d+$/, '').trim()),
     filtros: document.querySelectorAll('select, input[type="date"]').length,
     cadastro: [...document.querySelectorAll('button')].some((b) => /^(Registrar|Cadastrar|Agendar)/.test(b.innerText.trim())),
   }));
   registrar(
-    'Tela de sessões organizada pela situação, com filtros',
+    'Tela de sessões organizada pela situação, agrupada por dia, com filtros',
     telaSessoes.tabela &&
       ['Todas', 'Agendadas', 'Aguardando registro', 'Realizadas', 'Canceladas', 'Inativadas'].every((s) =>
         telaSessoes.situacoes.includes(s),
       ) &&
-      telaSessoes.filtros === 5,
+      telaSessoes.filtros === 4,
     `${telaSessoes.situacoes.join(' | ')}; ${telaSessoes.filtros} filtros`,
   );
   registrar('Tela de sessões sem cadastro de sessão', !telaSessoes.cadastro);
@@ -457,7 +517,7 @@ try {
   const soRealizadas = await pagina
     .waitForFunction(
       () => {
-        const linhas = [...document.querySelectorAll('table tbody tr')];
+        const linhas = [...document.querySelectorAll('section[aria-label] li')];
         return linhas.length > 0 && linhas.every((l) => l.innerText.includes('Realizada'));
       },
       { timeout: 8000 },
@@ -470,7 +530,7 @@ try {
   // Do registro da sessão sai uma receita ou um pedido de exame: o veterinário escolhe o tipo,
   // preenche o formulário e vai para a aba do documento, que mostra o tratamento da sessão.
   const abriuRegistro = await pagina.evaluate(() => {
-    const botao = document.querySelector('table tbody tr button[aria-label^="Ver o registro da sessão"]');
+    const botao = document.querySelector('section[aria-label] li button[aria-label^="Ver o registro da sessão"]');
     botao?.click();
     return !!botao;
   });
@@ -555,8 +615,8 @@ try {
 
     const referencia = await pagina.evaluate(() => document.querySelector('li[id^="pedido-"]')?.innerText ?? '');
     registrar(
-      'Pedido mostra o tratamento e a sessão de origem',
-      /Tratamento: \S/.test(referencia) && referencia.includes('Origem: Sessão nº'),
+      'Pedido feito na sessão mostra o tratamento como origem',
+      /Tratamento \S/.test(referencia) && !referencia.includes('Sessão nº'),
       referencia.split('\n').slice(0, 3).join(' / '),
     );
     await capturar('05k-exames-com-tratamento');

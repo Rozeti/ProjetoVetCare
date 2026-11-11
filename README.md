@@ -231,15 +231,18 @@ evolução; na interface tudo se chama sessão, para não haver dois nomes para 
 
 - **Avaliação**: motivo da consulta, observações, possível diagnóstico e veterinário
   responsável (RN-010). Pertence ao animal e pode originar nenhum, um ou vários tratamentos,
-  receitas e pedidos de exame.
+  receitas e pedidos de exame; aberta, mostra o que originou, com atalhos para cada item.
 - **Tratamento**: só existe a partir de uma avaliação. Tem nome, tipo, descrição, duração
   prevista, frequência, sessões previstas e veterinário, com a situação **Planejado**, **Em
   andamento**, **Concluído** ou **Inativado**. Pode ser editado; inativar não apaga as sessões
   registradas e permite reativar; concluído é definitivo. O primeiro atendimento registrado
   põe um tratamento planejado em andamento. Na aba Tratamentos cada tratamento ocupa uma linha
   resumida (nome, situação, tipo, veterinário, início, próxima sessão e sessões realizadas do
-  total previsto) que se expande com os detalhes, as ações e as sessões dele; a aba
-  Avaliações segue o mesmo formato.
+  total previsto) que se expande com os detalhes, as receitas e os pedidos de exame do
+  tratamento, as ações (**Emitir receita**, **Pedir exames**, editar, concluir, inativar) e as
+  sessões dele. As abas Avaliações, Medicação e Exames seguem o mesmo formato, e o registro
+  aberto mostra cada tópico (motivo da consulta, plano do tratamento, medicamentos, exames
+  solicitados, orientações...) com o título em destaque.
 - **Sessão**: cadastrada no tratamento — o único lugar do sistema onde se cadastram sessões.
   O cadastro é feito pelo plano: **quantas sessões**, **a partir de quando**, em **quais dias
   da semana** e em **que horário** (início e término, os dois obrigatórios; a duração padrão
@@ -269,13 +272,15 @@ evolução; na interface tudo se chama sessão, para não haver dois nomes para 
   escala de dor e fotos e vídeos. No registro de uma sessão já feita, o botão **Receita ou
   pedido de exame** abre um formulário único: o veterinário escolhe receita de medicamento ou
   pedido de exame, preenche e vai direto para a aba Medicação ou Exames do prontuário. O
-  documento fica ligado à sessão e ao tratamento dela.
+  documento fica no tratamento da sessão, que é a origem mostrada.
 - **Sessões**, no menu (Administrador e Veterinário): a gestão das sessões da clínica,
   separadas pela situação em abas com a contagem de cada uma — **Agendadas**, **Aguardando
   registro** (o horário já passou e o atendimento ainda não foi registrado), **Realizadas**,
-  **Canceladas** e **Inativadas** —, com filtros por animal, tratamento, veterinário e
-  período. Daqui se abre o registro do atendimento, se inativa ou reativa uma sessão e se vai
-  ao tratamento no prontuário; a tela não cadastra sessões. No prontuário, a aba Sessões lista
+  **Canceladas** e **Inativadas** —, com filtros numa barra só (animal, tratamento depois de
+  escolhido o animal, veterinário e período). As sessões aparecem agrupadas por dia, uma
+  linha cada: horário, animal e tutor, tratamento, veterinário e situação. Daqui se abre o
+  registro do atendimento, se inativa ou reativa uma sessão e se vai ao tratamento no
+  prontuário; a tela não cadastra sessões. No prontuário, a aba Sessões lista
   as sessões do animal com filtro por tratamento, situação e período.
 - **Linha do tempo**: avaliações, início e encerramento (conclusão ou inativação) dos
   tratamentos, sessões, cirurgias e procedimentos, vacinações, receitas, pedidos de exame e
@@ -283,17 +288,19 @@ evolução; na interface tudo se chama sessão, para não haver dois nomes para 
   categoria, descrição resumida e responsável; o período (de/até) e as categorias filtram a
   lista, e selecionar um evento abre o registro completo. A lista é neutra: o tipo de
   registro aparece pelo ícone e pelo nome, sem uma cor para cada categoria.
-- **Medicação**: as receitas vêm de uma avaliação ou de uma sessão (a origem é
-  obrigatória), podem ser impressas e são canceladas com motivo, nunca apagadas. Cada receita
-  mostra o **tratamento** para o qual foi prescrita: na receita de uma sessão é sempre o
-  tratamento da sessão; na de uma avaliação é opcional (vem sugerido quando a avaliação
-  originou um único tratamento ativo). O nome do tratamento leva a ele, e a lista ganha um
-  filtro por tratamento quando mistura mais de um.
-- **Pedidos de exame** vêm de uma avaliação ou de uma sessão registrada, mostram o
-  tratamento e a origem como as receitas e podem ser impressos. Quem assinou (e a
-  administração) edita o pedido, com a versão anterior guardada, ou o exclui: depois da
-  confirmação, a exclusão tira o pedido do prontuário e fica registrada na auditoria. O
-  pedido feito numa sessão continua ligado a ela e ao tratamento dela.
+- **Medicação**: toda receita tem uma **origem**, a avaliação em que foi prescrita ou o
+  tratamento — emitida no próprio tratamento ou no registro de uma das sessões dele, que conta
+  como do tratamento (a sessão não é mostrada como origem). As receitas aparecem em linhas
+  resumidas (data, situação, origem e medicamentos) que se expandem com os medicamentos e a
+  dosagem, frequência, duração e via de cada um, as orientações, a validade e quem assina. A
+  origem leva à avaliação ou ao tratamento, e a lista ganha um filtro pela origem quando
+  mistura mais de uma. Receitas podem ser impressas e são canceladas com motivo, nunca
+  apagadas.
+- **Pedidos de exame** seguem o mesmo formato e a mesma regra de origem e podem ser
+  impressos. Quem assinou (e a administração) edita o pedido, com a versão anterior guardada,
+  ou o exclui: depois da confirmação, a exclusão tira o pedido do prontuário e fica
+  registrada na auditoria. O pedido feito no tratamento (ou numa sessão dele) continua no
+  tratamento; o de uma avaliação pode passar a outra avaliação do animal.
 - **Alertas clínicos** no topo do prontuário, sem título nem moldura: cada um é só o nome e a
   descrição, na cor da gravidade.
 - Mídias, documentos e observações internas restritas à equipe clínica.
@@ -412,7 +419,7 @@ controller traduz isso no status correto (400, 401, 403, 404, 409 ou 423).
 ### Banco de dados
 
 O esquema tem **26 tabelas, 53 chaves estrangeiras e 91 índices** (contando as chaves
-primárias), criado por sete migrações: a inicial; os canais de entrega das notificações, os
+primárias), criado por oito migrações: a inicial; os canais de entrega das notificações, os
 aparelhos registrados para push e o código de recuperação de senha; o veterinário responsável
 por paciente; o esquema de doses e a recorrência da carteira de vacinação; o fluxo clínico
 (avaliação do animal → tratamento → evolução, com os pedidos de exame); o horário de término
@@ -420,8 +427,12 @@ e a inativação das sessões (`SessoesComHorarioDeFimEInativacao`), que preench
 sessões existentes com a duração padrão da clínica; e o vínculo de receitas e pedidos de
 exame com o tratamento (`VinculoDeReceitasEPedidosAoTratamento`), que também permite o pedido
 de exame feito numa sessão e liga os registros existentes só quando o tratamento é certo — o
-da sessão de origem, ou o único tratamento que a avaliação originou. As duas últimas podem
-ser desfeitas (`Down`). Nenhum relacionamento
+da sessão de origem, ou o único tratamento que a avaliação originou; e a origem no tratamento
+(`OrigemDeReceitasEPedidosNoTratamento`), em que o pedido de exame deixa de exigir uma
+avaliação: o feito no tratamento ou numa sessão dele guarda só o tratamento. As três últimas
+podem ser desfeitas (`Down`); depois do `Down` desta última, um pedido feito no tratamento
+passa a ser lido como pedido da avaliação ligado ao tratamento, porque o modelo anterior não
+distingue os dois. Nenhum relacionamento
 do domínio apaga em cascata: excluir um registro clínico precisa ser uma decisão explícita, o
 que preserva a integridade do histórico (RN-004).
 

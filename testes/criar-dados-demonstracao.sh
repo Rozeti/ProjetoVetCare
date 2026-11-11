@@ -108,18 +108,18 @@ envia POST /api/sessoes "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"veterinarioId\":
 echo "  2 sessões futuras cadastradas de uma vez, aguardando confirmação do tutor"
 
 echo "== Receituário e pedidos de exame =="
-# Toda receita tem origem (a avaliação ou a sessão em que foi prescrita) e pode ficar ligada ao
-# tratamento para o qual foi feita; a da sessão fica sempre no tratamento da sessão.
-envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"avaliacaoId\":\"$AVAL\",\"tratamentoId\":\"$TRAT\",\"orientacoes\":\"Suspender exercícios de impacto até a próxima reavaliação. Retornar imediatamente em caso de aumento da claudicação.\",\"itens\":[{\"medicamento\":\"Condroitina + Glucosamina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 60 dias\",\"via\":\"Oral\",\"observacao\":\"Administrar junto com alimento.\"},{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 5 dias\",\"via\":\"Oral\",\"observacao\":\"Não associar a outros anti-inflamatórios.\"}]}" > /dev/null
-echo "  receita com 2 medicamentos emitida a partir da avaliação, para o tratamento de reabilitação"
+# Toda receita tem origem: a avaliação em que foi prescrita ou o tratamento (direto nele ou no
+# registro de uma das sessões dele, que fica no tratamento da sessão).
+envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"avaliacaoId\":\"$AVAL\",\"orientacoes\":\"Suspender exercícios de impacto até a próxima reavaliação. Retornar imediatamente em caso de aumento da claudicação.\",\"itens\":[{\"medicamento\":\"Condroitina + Glucosamina 500mg\",\"dosagem\":\"1 comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 60 dias\",\"via\":\"Oral\",\"observacao\":\"Administrar junto com alimento.\"},{\"medicamento\":\"Meloxicam 2mg\",\"dosagem\":\"meio comprimido\",\"frequencia\":\"a cada 24 horas\",\"duracao\":\"por 5 dias\",\"via\":\"Oral\",\"observacao\":\"Não associar a outros anti-inflamatórios.\"}]}" > /dev/null
+echo "  receita com 2 medicamentos emitida na avaliação"
 
 if [ -n "${EVOL:-}" ]; then
   envia POST /api/prescricoes "$ADMIN" "{\"pacienteId\":\"$PET\",\"veterinarioId\":\"$VET\",\"atendimentoId\":\"$EVOL\",\"orientacoes\":\"Usar apenas nos dias de sessão, se houver desconforto após os exercícios.\",\"itens\":[{\"medicamento\":\"Gabapentina 100mg\",\"dosagem\":\"1 cápsula\",\"frequencia\":\"a cada 12 horas\",\"duracao\":\"por 7 dias\",\"via\":\"Oral\"}]}" > /dev/null
   echo "  receita emitida a partir da última sessão registrada"
 fi
 
-envia POST /api/pedidos-exame "$ADMIN" "{\"avaliacaoId\":\"$AVAL\",\"tratamentoId\":\"$TRAT\",\"exames\":\"Raio-X do joelho direito em duas incidências\nHemograma completo\",\"justificativa\":\"Controle radiográfico da reconstrução do ligamento e acompanhamento do uso de anti-inflamatório.\"}" > /dev/null
-echo "  pedido de exame emitido a partir da avaliação, para o tratamento de reabilitação"
+envia POST /api/pedidos-exame "$ADMIN" "{\"tratamentoId\":\"$TRAT\",\"exames\":\"Raio-X do joelho direito em duas incidências\nHemograma completo\",\"justificativa\":\"Controle radiográfico da reconstrução do ligamento e acompanhamento do uso de anti-inflamatório.\"}" > /dev/null
+echo "  pedido de exame emitido no tratamento de reabilitação"
 
 if [ -n "${EVOL:-}" ]; then
   envia POST /api/pedidos-exame "$ADMIN" "{\"atendimentoId\":\"$EVOL\",\"exames\":\"Ultrassonografia do joelho direito\",\"justificativa\":\"Desconforto ao apoio no fim da sessão; avaliar menisco e derrame articular.\"}" > /dev/null

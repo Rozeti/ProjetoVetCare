@@ -361,7 +361,7 @@ function PedidosExame({ pedidos }: { pedidos: PedidoExame[] }) {
             {pedido.nomeVeterinario}
             {pedido.crmv ? ` · ${pedido.crmv}` : ''}
           </Text>
-          {pedido.nomeTratamento ? (
+          {pedido.nomeTratamento && pedido.tipoOrigem !== 'Tratamento' ? (
             <Text style={estilos.detalheSuave}>Tratamento: {pedido.nomeTratamento}</Text>
           ) : null}
           {pedido.origem ? <Text style={estilos.detalheSuave}>Origem: {pedido.origem}</Text> : null}
@@ -573,7 +573,7 @@ function Medicacao({ prescricoes }: { prescricoes: Prescricao[] }) {
             {prescricao.crmv ? ` · ${prescricao.crmv}` : ''}
             {prescricao.validaAte ? ` · válida até ${formatarDia(prescricao.validaAte)}` : ''}
           </Text>
-          {prescricao.nomeTratamento ? (
+          {prescricao.nomeTratamento && prescricao.tipoOrigem !== 'Tratamento' ? (
             <Text style={estilos.detalheSuave}>Tratamento: {prescricao.nomeTratamento}</Text>
           ) : null}
           {prescricao.origem ? <Text style={estilos.detalheSuave}>Origem: {prescricao.origem}</Text> : null}
